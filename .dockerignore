@@ -1,0 +1,14 @@
+.venv/
+.git/
+.claude/
+__pycache__/
+*.pyc
+.pytest_cache/
+adr/
+k8s/
+scripts/
+tests/
+test-repo/
+docker-compose.yaml
+CLAUDE.md
+README.md

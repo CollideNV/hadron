@@ -1,0 +1,43 @@
+# This is a reference template for the K8sJobSpawner.
+# The actual Job is created programmatically by the controller.
+# This file documents the expected Job structure.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hadron-worker-cr-PLACEHOLDER
+  namespace: hadron
+  labels:
+    app: hadron-worker
+    cr-id: CR-PLACEHOLDER
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: hadron-worker
+        cr-id: CR-PLACEHOLDER
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: worker
+          image: hadron-worker:latest
+          imagePullPolicy: Never
+          command: ["python", "-m", "hadron.worker.main", "--cr-id=CR-PLACEHOLDER"]
+          envFrom:
+            - configMapRef:
+                name: hadron-config
+          env:
+            - name: HADRON_ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: hadron-secrets
+                  key: anthropic-api-key
+                  optional: true
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "2"

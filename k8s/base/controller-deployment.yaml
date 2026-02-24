@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hadron-config
+  namespace: hadron
+data:
+  HADRON_POSTGRES_URL: "postgresql+asyncpg://hadron:hadron@hadron-postgres:5432/hadron"
+  HADRON_POSTGRES_URL_SYNC: "postgresql+psycopg://hadron:hadron@hadron-postgres:5432/hadron"
+  HADRON_REDIS_URL: "redis://hadron-redis:6379/0"
+  HADRON_WORKSPACE_DIR: "/workspace"
+  HADRON_LOG_LEVEL: "INFO"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hadron-controller
+  namespace: hadron
+  labels:
+    app: hadron-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hadron-controller
+  template:
+    metadata:
+      labels:
+        app: hadron-controller
+    spec:
+      containers:
+        - name: controller
+          image: hadron-controller:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: hadron-config
+          env:
+            - name: HADRON_ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: hadron-secrets
+                  key: anthropic-api-key
+                  optional: true
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hadron-controller
+  namespace: hadron
+  labels:
+    app: hadron-controller
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    app: hadron-controller
