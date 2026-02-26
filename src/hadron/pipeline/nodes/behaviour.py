@@ -65,7 +65,7 @@ async def behaviour_translation_node(state: PipelineState, config: RunnableConfi
 """
         user_prompt = composer.compose_user_prompt(task_payload, feedback)
 
-        spec_model = configurable.get("model", "claude-sonnet-4-20250514")
+        spec_model = configurable.get("model", "default")
         if event_bus:
             await event_bus.emit(PipelineEvent(
                 cr_id=cr_id, event_type=EventType.AGENT_STARTED,
@@ -168,7 +168,7 @@ Please read the .feature files in the repository and verify them against this CR
 """
         user_prompt = composer.compose_user_prompt(task_payload)
 
-        verifier_model = configurable.get("model", "claude-sonnet-4-20250514")
+        verifier_model = configurable.get("model", "default")
         task = AgentTask(
             role="spec_verifier",
             system_prompt=system_prompt,

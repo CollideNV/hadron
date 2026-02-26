@@ -13,6 +13,30 @@ OnToolCall = Callable[[str, dict[str, Any], str], Awaitable[None]]
 OnAgentEvent = Callable[[str, dict[str, Any]], Awaitable[None]]
 
 
+# ---------------------------------------------------------------------------
+# Model → provider mapping
+# ---------------------------------------------------------------------------
+
+def provider_for_model(model: str) -> str:
+    """Return the provider name for a model identifier.
+
+    Falls back to heuristic prefix matching if the model is not in the
+    explicit map.
+    """
+    from hadron.config.providers import get_provider_for_model as _get
+    provider = _get(model)
+    if provider:
+        return provider
+    
+    # Heuristic fallback
+    if model.startswith("claude"):
+        return "anthropic"
+    if model.startswith("gemini"):
+        return "gemini"
+    
+    return "unknown"
+
+
 @dataclass
 class AgentTask:
     """Task definition for an agent invocation."""
@@ -24,7 +48,7 @@ class AgentTask:
     allowed_tools: list[str] = field(default_factory=lambda: [
         "read_file", "write_file", "list_directory", "run_command"
     ])
-    model: str = "claude-sonnet-4-20250514"
+    model: str = "gemini-3-pro-preview"
     max_tokens: int = 16384
     max_tool_rounds: int = 50
     on_tool_call: OnToolCall | None = None
@@ -54,8 +78,28 @@ class AgentEvent:
 
 
 class AgentBackend(Protocol):
-    """Protocol for agent backend implementations."""
+    """Protocol for agent backend implementations.
+
+    Every concrete backend must expose a ``name`` so the provider-chain
+    machinery can route tasks to the right backend based on the model's
+    provider.
+    """
+
+    @property
+    def name(self) -> str:
+        """Short provider identifier, e.g. ``'anthropic'``, ``'gemini'``."""
+        ...
 
     async def execute(self, task: AgentTask) -> AgentResult: ...
 
-    async def stream(self, task: AgentTask) -> AsyncIterator[AgentEvent]: ...
+    def stream(self, task: AgentTask) -> AsyncIterator[AgentEvent]:
+        """Return an async iterator of events.
+
+        Implementations are typically async generator functions — they
+        return an AsyncGenerator (which is an AsyncIterator) directly
+        without needing to be awaited.  Callers use::
+
+            async for event in backend.stream(task):
+                ...
+        """
+        ...

@@ -68,7 +68,7 @@ async def review_node(state: PipelineState, config: RunnableConfig) -> dict[str,
 """
         user_prompt = composer.compose_user_prompt(task_payload)
 
-        reviewer_model = configurable.get("model", "claude-sonnet-4-20250514")
+        reviewer_model = configurable.get("model", "default")
         reviewer_tools = ["read_file", "list_directory"]
         if event_bus:
             await event_bus.emit(PipelineEvent(

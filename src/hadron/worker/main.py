@@ -16,6 +16,8 @@ import redis.asyncio as aioredis
 from sqlalchemy import select, update
 
 from hadron.agent.claude import ClaudeAgentBackend
+from hadron.agent.gemini import GeminiAgentBackend
+from hadron.agent.provider_chain import BackendRegistry, ProviderChain, ProviderChainConfig
 from hadron.config.bootstrap import load_bootstrap_config
 from hadron.config.defaults import get_config_snapshot
 from hadron.db.engine import create_engine, create_session_factory
@@ -66,7 +68,20 @@ async def run_worker(cr_id: str) -> None:
 
     event_bus = RedisEventBus(redis_client)
     intervention_mgr = InterventionManager(redis_client)
-    agent_backend = ClaudeAgentBackend(cfg.anthropic_api_key)
+
+    # Build the provider chain (§9.3) — register all configured backends
+    registry = BackendRegistry()
+    if cfg.anthropic_api_key:
+        registry.register(ClaudeAgentBackend(cfg.anthropic_api_key))
+    if cfg.gemini_api_key:
+        registry.register(GeminiAgentBackend(cfg.gemini_api_key))
+    # Fallback: if no keys are set at all, register Claude anyway so the
+    # pipeline can surface a clear API-key error rather than a chain error.
+    if not registry.providers:
+        registry.register(ClaudeAgentBackend())
+
+    chain_order = get_config_snapshot().get("pipeline", {}).get("provider_chain", ["anthropic", "gemini"])
+    agent_backend = ProviderChain(registry, ProviderChainConfig(chain=chain_order))
 
     try:
         # Load CR from database
@@ -140,7 +155,7 @@ async def run_worker(cr_id: str) -> None:
                     "intervention_manager": intervention_mgr,
                     "agent_backend": agent_backend,
                     "workspace_dir": cfg.workspace_dir,
-                    "model": config_snapshot.get("pipeline", {}).get("default_model", "claude-sonnet-4-20250514"),
+                    "model": config_snapshot.get("pipeline", {}).get("default_model", "gemini-3-pro-preview"),
                     "redis": redis_client,
                 }
             }

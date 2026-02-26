@@ -62,7 +62,7 @@ async def rebase_node(state: PipelineState, config: RunnableConfig) -> dict[str,
             # Get conflict details
             conflict_files = await wm.get_conflict_files(worktree_path)
 
-            resolver_model = configurable.get("model", "claude-sonnet-4-20250514")
+            resolver_model = configurable.get("model", "default")
             resolver_tools = ["read_file", "write_file", "list_directory", "run_command"]
             if event_bus:
                 await event_bus.emit(PipelineEvent(

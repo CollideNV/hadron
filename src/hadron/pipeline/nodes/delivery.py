@@ -12,6 +12,8 @@ from hadron.git.worktree import WorktreeManager
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 
+import os
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,6 +23,8 @@ async def delivery_node(state: PipelineState, config: RunnableConfig) -> dict[st
     event_bus = configurable.get("event_bus")
     workspace_dir = configurable.get("workspace_dir", "/tmp/hadron-workspace")
     cr_id = state["cr_id"]
+    
+    logger.info("Entering delivery node for CR %s", cr_id)
 
     if event_bus:
         await event_bus.emit(PipelineEvent(
@@ -29,28 +33,63 @@ async def delivery_node(state: PipelineState, config: RunnableConfig) -> dict[st
 
     wm = WorktreeManager(workspace_dir)
     delivery_results = []
+    
+    # Prevent git from prompting for credentials
+    git_env = os.environ.copy()
+    git_env["GIT_TERMINAL_PROMPT"] = "0"
 
     for repo in state.get("affected_repos", []):
         repo_name = repo.get("repo_name", "")
         worktree_path = repo.get("worktree_path", "")
         test_command = repo.get("test_command", "pytest")
+        
+        logger.info("Running pre-delivery tests for %s in %s", repo_name, worktree_path)
 
         # Run full test suite
-        proc = await asyncio.create_subprocess_shell(
-            test_command, cwd=worktree_path,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
-        )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
-        test_output = stdout.decode(errors="replace")
-        tests_passing = proc.returncode == 0
+        try:
+            # Ensure we are in the correct directory
+            if not test_command.startswith("cd "):
+                test_command = f"cd {worktree_path} && {test_command}"
+                
+            proc = await asyncio.create_subprocess_shell(
+                test_command, 
+                stdout=asyncio.subprocess.PIPE, 
+                stderr=asyncio.subprocess.STDOUT,
+                env=git_env,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
+            test_output = stdout.decode(errors="replace")
+            tests_passing = proc.returncode == 0
+            logger.info("Tests finished for %s (passed=%s)", repo_name, tests_passing)
+        except asyncio.TimeoutError:
+            logger.error("Tests timed out for %s", repo_name)
+            test_output = "Tests timed out after 120s"
+            tests_passing = False
+            if 'proc' in locals():
+                try:
+                    proc.kill()
+                except:
+                    pass
+        except Exception as e:
+            logger.error("Test execution failed for %s: %s", repo_name, e)
+            test_output = str(e)
+            tests_passing = False
 
         # Push branch
         branch_pushed = False
         if tests_passing:
             try:
-                await wm.commit_and_push(worktree_path, f"chore: final push for {cr_id}")
+                logger.info("Pushing changes for %s", repo_name)
+                # Add timeout to push to prevent hanging on credentials
+                await asyncio.wait_for(
+                    wm.commit_and_push(worktree_path, f"chore: final push for {cr_id}"),
+                    timeout=60
+                )
                 branch_pushed = True
-            except RuntimeError as e:
+                logger.info("Push successful for %s", repo_name)
+            except asyncio.TimeoutError:
+                logger.error("Push timed out for %s (likely credential issue)", repo_name)
+            except Exception as e:
                 logger.warning("Push failed for %s: %s", repo_name, e)
 
         delivery_results.append({

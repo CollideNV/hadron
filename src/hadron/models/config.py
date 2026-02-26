@@ -27,6 +27,10 @@ class BootstrapConfig(BaseModel):
         default="",
         description="Anthropic API key for Claude agent backend.",
     )
+    gemini_api_key: str = Field(
+        default="",
+        description="Google Gemini API key for Gemini agent backend.",
+    )
     workspace_dir: str = Field(
         default="/tmp/hadron-workspace",
         description="Root directory for git clones and worktrees.",

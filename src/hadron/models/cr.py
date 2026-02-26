@@ -26,6 +26,10 @@ class RawChangeRequest(BaseModel):
         default="python",
         description="Primary language of the target repo.",
     )
+    model: str | None = Field(
+        default=None,
+        description="Model override for the pipeline (e.g. gemini-3-pro-preview).",
+    )
 
 
 class StructuredChangeRequest(BaseModel):

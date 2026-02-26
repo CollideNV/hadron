@@ -35,6 +35,10 @@ async def trigger_pipeline(cr: RawChangeRequest, request: Request) -> dict:
     cr_id = f"CR-{uuid.uuid4().hex[:8]}"
     config_snapshot = get_config_snapshot()
 
+    # Apply model override if specified in CR
+    if cr.model:
+        config_snapshot["pipeline"]["default_model"] = cr.model
+
     # Create CR run record
     cr_run = CRRun(
         cr_id=cr_id,

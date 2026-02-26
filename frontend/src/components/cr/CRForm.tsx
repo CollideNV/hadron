@@ -1,5 +1,6 @@
-import { useState } from "react";
-import type { RawChangeRequest } from "../../api/types";
+import { useState, useEffect } from "react";
+import type { RawChangeRequest, ModelConfig } from "../../api/types";
+import { listModels } from "../../api/client";
 
 interface CRFormProps {
   onSubmit: (cr: RawChangeRequest) => void;
@@ -16,6 +17,12 @@ export default function CRForm({ onSubmit, submitting }: CRFormProps) {
   const [branch, setBranch] = useState("main");
   const [testCommand, setTestCommand] = useState("pytest");
   const [language, setLanguage] = useState("python");
+  const [model, setModel] = useState("default");
+  const [models, setModels] = useState<ModelConfig[]>([]);
+
+  useEffect(() => {
+    listModels().then(setModels).catch(console.error);
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,6 +33,7 @@ export default function CRForm({ onSubmit, submitting }: CRFormProps) {
       repo_default_branch: branch,
       test_command: testCommand,
       language,
+      model: model === "default" ? undefined : model,
     });
   };
 
@@ -112,6 +120,28 @@ export default function CRForm({ onSubmit, submitting }: CRFormProps) {
           </select>
         </div>
       </div>
+
+      <div>
+        <label className="block text-xs font-medium text-text-muted mb-1.5">
+          Model
+        </label>
+        <select
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          className={inputClass}
+        >
+          <option value="default">Default (Gemini 3 Pro Preview)</option>
+          {models.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.name} ({m.provider})
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-text-dim">
+          Select the AI model used for all pipeline stages.
+        </p>
+      </div>
+
       <button
         type="submit"
         disabled={submitting || !title || !description}

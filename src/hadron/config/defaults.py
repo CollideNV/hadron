@@ -13,7 +13,9 @@ PIPELINE_DEFAULTS: dict = {
     "max_tdd_iterations": 5,
     "max_cost_usd": 10.0,
     # Agent model
-    "default_model": "claude-sonnet-4-20250514",
+    "default_model": "gemini-3-pro-preview",
+    # Provider chain — ordered list of providers to try (§9.3)
+    "provider_chain": ["gemini", "anthropic"],
     # Delivery
     "delivery_strategy": "self_contained",
     # Timeouts (seconds)

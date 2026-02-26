@@ -94,7 +94,7 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
                     review_feedback += f"- [{f.get('severity', '')}] {f.get('message', '')} ({f.get('file', '')}:{f.get('line', 0)})\n"
 
         # === RED PHASE: Write failing tests ===
-        test_model = configurable.get("model", "claude-sonnet-4-20250514")
+        test_model = configurable.get("model", "default")
         test_tools = ["read_file", "write_file", "list_directory", "run_command"]
 
         if event_bus:
@@ -147,7 +147,7 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
         test_output = ""
         iteration = 0
 
-        code_model = configurable.get("model", "claude-sonnet-4-20250514")
+        code_model = configurable.get("model", "default")
         code_tools = ["read_file", "write_file", "list_directory", "run_command"]
 
         for iteration in range(max_iterations):

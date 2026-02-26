@@ -1,4 +1,9 @@
-import type { CRRun, RawChangeRequest } from "./types";
+import type {
+  CRRun,
+  RawChangeRequest,
+  ModelConfig,
+  ProviderConfig,
+} from "./types";
 
 const BASE = "/api";
 
@@ -16,6 +21,18 @@ async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
 
 export async function listPipelines(): Promise<CRRun[]> {
   return fetchJSON<CRRun[]>("/pipeline/list");
+}
+
+export async function listModels(): Promise<ModelConfig[]> {
+  const data = await fetchJSON<{ models: ModelConfig[] }>("/config/models");
+  return data.models;
+}
+
+export async function listProviders(): Promise<ProviderConfig[]> {
+  const data = await fetchJSON<{ providers: ProviderConfig[] }>(
+    "/config/providers",
+  );
+  return data.providers;
 }
 
 export async function getPipelineStatus(crId: string): Promise<CRRun> {
@@ -44,7 +61,11 @@ export async function sendIntervention(
 export async function resumePipeline(
   crId: string,
   stateOverrides: Record<string, unknown> = {},
-): Promise<{ status: string; cr_id: string; overrides: Record<string, unknown> }> {
+): Promise<{
+  status: string;
+  cr_id: string;
+  overrides: Record<string, unknown>;
+}> {
   return fetchJSON(`/pipeline/${crId}/resume`, {
     method: "POST",
     body: JSON.stringify({ state_overrides: stateOverrides }),
@@ -66,7 +87,9 @@ export async function getConversation(
   crId: string,
   key: string,
 ): Promise<Record<string, unknown>[]> {
-  return fetchJSON(`/pipeline/${crId}/conversation?key=${encodeURIComponent(key)}`);
+  return fetchJSON(
+    `/pipeline/${crId}/conversation?key=${encodeURIComponent(key)}`,
+  );
 }
 
 export async function getWorkerLogs(crId: string): Promise<string> {
