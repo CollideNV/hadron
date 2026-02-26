@@ -3,7 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Protocol
+from typing import Any, AsyncIterator, Callable, Awaitable, Protocol
+
+
+# Callback type: (tool_name, tool_input, result_snippet) -> None
+OnToolCall = Callable[[str, dict[str, Any], str], Awaitable[None]]
+
+# Rich event callback: (event_type, data_dict) -> None
+OnAgentEvent = Callable[[str, dict[str, Any]], Awaitable[None]]
 
 
 @dataclass
@@ -20,6 +27,9 @@ class AgentTask:
     model: str = "claude-sonnet-4-20250514"
     max_tokens: int = 16384
     max_tool_rounds: int = 50
+    on_tool_call: OnToolCall | None = None
+    on_event: OnAgentEvent | None = None
+    nudge_poll: Callable[[], Awaitable[str | None]] | None = None
 
 
 @dataclass
@@ -31,6 +41,8 @@ class AgentResult:
     output_tokens: int = 0
     cost_usd: float = 0.0
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    conversation: list[dict[str, Any]] = field(default_factory=list)
+    round_count: int = 0
 
 
 @dataclass

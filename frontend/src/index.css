@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+@theme {
+  /* Collide brand — from collide.be */
+  --color-bg: #001827;
+  --color-bg-surface: #0a2234;
+  --color-bg-card: #122f32;
+  --color-bg-card-hover: #1a3a3e;
+  --color-bg-elevated: #1b2833;
+  --color-border: #455560;
+  --color-border-subtle: #2a3f4a;
+
+  --color-text: #faf9fe;
+  --color-text-muted: #95a1a8;
+  --color-text-dim: #63717a;
+
+  --color-accent: #37e284;
+  --color-accent-dim: rgba(55, 226, 132, 0.12);
+  --color-accent-glow: rgba(55, 226, 132, 0.3);
+
+  --color-status-completed: #37e284;
+  --color-status-active: #37e284;
+  --color-status-failed: #ff4157;
+  --color-status-pending: #455560;
+  --color-status-paused: #f0b832;
+  --color-status-running: #37e284;
+
+  --color-severity-critical: #ff4157;
+  --color-severity-major: #ff6b6b;
+  --color-severity-minor: #f0b832;
+  --color-severity-info: #4dc9f6;
+}
+
+body {
+  margin: 0;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background-color: #001827;
+  color: #faf9fe;
+}
+
+/* Scrollbar styling for dark theme */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a3f4a;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #455560;
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 4px rgba(55, 226, 132, 0.4);
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(55, 226, 132, 0.8);
+    opacity: 0.85;
+  }
+}
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes flow {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+.animate-flow {
+  background-size: 200% 100%;
+  animation: flow 2s linear infinite;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+
+@keyframes flow-line {
+  0% { stroke-dashoffset: 20; }
+  100% { stroke-dashoffset: 0; }
+}
+.animate-flow-line {
+  stroke-dasharray: 4 4;
+  animation: flow-line 1s linear infinite;
+}

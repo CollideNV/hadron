@@ -44,6 +44,12 @@ spec:
                   name: hadron-secrets
                   key: anthropic-api-key
                   optional: true
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hadron-secrets
+                  key: github-token
+                  optional: true
           resources:
             requests:
               memory: "256Mi"

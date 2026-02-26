@@ -53,8 +53,8 @@ def after_rebase(state: PipelineState) -> str:
     """Route after rebase.
 
     Returns:
-        "delivery" — rebase clean
-        "paused" — conflicts (MVP: no merge conflict agent)
+        "delivery" — rebase clean (or conflicts resolved by agent)
+        "paused" — unresolvable conflicts
     """
     if state.get("rebase_clean", True):
         return "delivery"

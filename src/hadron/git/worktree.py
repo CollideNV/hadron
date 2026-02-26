@@ -10,6 +10,21 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+def _git_env() -> dict[str, str]:
+    """Build environment for git subprocesses, injecting credentials if available."""
+    env = dict(os.environ)
+    # If GITHUB_TOKEN is set, configure git to use it for HTTPS clones
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if token:
+        env["GIT_ASKPASS"] = "/bin/echo"
+        env["GIT_TERMINAL_PROMPT"] = "0"
+        # Use a credential helper that returns the token
+        env["GIT_CONFIG_COUNT"] = "1"
+        env["GIT_CONFIG_KEY_0"] = "url.https://x-access-token:" + token + "@github.com/.insteadOf"
+        env["GIT_CONFIG_VALUE_0"] = "https://github.com/"
+    return env
+
+
 async def _run_git(
     *args: str,
     cwd: str | Path | None = None,
@@ -21,6 +36,7 @@ async def _run_git(
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         cwd=cwd,
+        env=_git_env(),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -153,6 +169,38 @@ class WorktreeManager:
         except RuntimeError:
             await _run_git("rebase", "--abort", cwd=wt, check=False)
             return False
+
+    async def rebase_keep_conflicts(self, worktree_path: str | Path, base_branch: str = "main") -> bool:
+        """Fetch and rebase, keeping conflicts for agent resolution. Returns True if clean."""
+        wt = Path(worktree_path)
+        await _run_git("fetch", "origin", base_branch, cwd=wt)
+        try:
+            await _run_git("rebase", f"origin/{base_branch}", cwd=wt)
+            return True
+        except RuntimeError:
+            # Leave the rebase in progress — agent will resolve conflicts
+            return False
+
+    async def get_conflict_files(self, worktree_path: str | Path) -> list[str]:
+        """List files with merge conflicts."""
+        wt = Path(worktree_path)
+        output = await _run_git("diff", "--name-only", "--diff-filter=U", cwd=wt, check=False)
+        return [f for f in output.splitlines() if f.strip()]
+
+    async def continue_rebase(self, worktree_path: str | Path) -> bool:
+        """Continue rebase after conflicts are resolved. Returns True if successful."""
+        wt = Path(worktree_path)
+        try:
+            await _run_git("add", "-A", cwd=wt)
+            await _run_git("rebase", "--continue", cwd=wt)
+            return True
+        except RuntimeError:
+            return False
+
+    async def abort_rebase(self, worktree_path: str | Path) -> None:
+        """Abort an in-progress rebase."""
+        wt = Path(worktree_path)
+        await _run_git("rebase", "--abort", cwd=wt, check=False)
 
     async def get_directory_tree(self, worktree_path: str | Path, max_depth: int = 3) -> str:
         """Get a directory tree listing for context."""

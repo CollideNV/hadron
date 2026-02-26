@@ -50,7 +50,9 @@ async def trigger_pipeline(cr: RawChangeRequest, request: Request) -> dict:
         await session.commit()
 
     # Spawn worker
-    spawner = getattr(request.app.state, "job_spawner", None) or SubprocessJobSpawner()
+    spawner = getattr(request.app.state, "job_spawner", None) or SubprocessJobSpawner(
+        redis=getattr(request.app.state, "redis", None),
+    )
     await spawner.spawn(cr_id)
 
     return {"cr_id": cr_id, "status": "pending"}

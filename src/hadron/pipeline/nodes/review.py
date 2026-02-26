@@ -13,6 +13,10 @@ from hadron.agent.prompt import PromptComposer
 from hadron.git.worktree import WorktreeManager
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
+from hadron.pipeline.nodes import (
+    emit_cost_update, make_agent_event_emitter, make_nudge_poller,
+    make_tool_call_emitter, store_conversation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +36,7 @@ async def review_node(state: PipelineState, config: RunnableConfig) -> dict[str,
 
     composer = PromptComposer()
     structured_cr = state.get("structured_cr", {})
+    redis_client = configurable.get("redis")
     review_results = []
     total_cost = 0.0
     total_input = 0
@@ -63,10 +68,12 @@ async def review_node(state: PipelineState, config: RunnableConfig) -> dict[str,
 """
         user_prompt = composer.compose_user_prompt(task_payload)
 
+        reviewer_model = configurable.get("model", "claude-sonnet-4-20250514")
+        reviewer_tools = ["read_file", "list_directory"]
         if event_bus:
             await event_bus.emit(PipelineEvent(
                 cr_id=cr_id, event_type=EventType.AGENT_STARTED, stage="review",
-                data={"role": "reviewer", "repo": repo_name},
+                data={"role": "reviewer", "repo": repo_name, "model": reviewer_model, "allowed_tools": reviewer_tools},
             ))
 
         task = AgentTask(
@@ -74,10 +81,14 @@ async def review_node(state: PipelineState, config: RunnableConfig) -> dict[str,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             working_directory=worktree_path,
-            allowed_tools=["read_file", "list_directory"],
-            model=configurable.get("model", "claude-sonnet-4-20250514"),
+            allowed_tools=reviewer_tools,
+            model=reviewer_model,
+            on_tool_call=make_tool_call_emitter(event_bus, cr_id, "review", "reviewer", repo_name),
+            on_event=make_agent_event_emitter(event_bus, cr_id, "review", "reviewer", repo_name),
+            nudge_poll=make_nudge_poller(redis_client, cr_id, "reviewer") if redis_client else None,
         )
         result = await agent_backend.execute(task)
+        await emit_cost_update(event_bus, cr_id, "review", result, total_cost)
         total_cost += result.cost_usd
         total_input += result.input_tokens
         total_output += result.output_tokens
@@ -96,6 +107,12 @@ async def review_node(state: PipelineState, config: RunnableConfig) -> dict[str,
         passed = review.get("review_passed", True)
         findings = review.get("findings", [])
 
+        # Override: only block on critical/major findings — minor/info should never block
+        blocking_findings = [f for f in findings if f.get("severity") in ("critical", "major")]
+        if not blocking_findings and not passed:
+            logger.info("Review for %s had no critical/major findings — overriding to passed", repo_name)
+            passed = True
+
         if event_bus:
             for finding in findings:
                 await event_bus.emit(PipelineEvent(
@@ -110,10 +127,24 @@ async def review_node(state: PipelineState, config: RunnableConfig) -> dict[str,
             "review_iteration": state.get("review_loop_count", 0) + 1,
         })
 
+        # Store conversation
+        rv_conv_key = ""
+        if redis_client and result.conversation:
+            rv_conv_key = await store_conversation(redis_client, cr_id, "reviewer", repo_name, result.conversation)
+
         if event_bus:
             await event_bus.emit(PipelineEvent(
                 cr_id=cr_id, event_type=EventType.AGENT_COMPLETED, stage="review",
-                data={"role": "reviewer", "repo": repo_name, "passed": passed},
+                data={
+                    "role": "reviewer", "repo": repo_name, "passed": passed,
+                    "output": result.output[:2000],
+                    "input_tokens": result.input_tokens,
+                    "output_tokens": result.output_tokens,
+                    "cost_usd": result.cost_usd,
+                    "tool_calls_count": len(result.tool_calls),
+                    "round_count": result.round_count,
+                    "conversation_key": rv_conv_key,
+                },
             ))
 
     all_passed = all(r["review_passed"] for r in review_results)

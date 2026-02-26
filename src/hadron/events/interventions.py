@@ -34,3 +34,20 @@ class InterventionManager:
         if value is None:
             return None
         return value.decode() if isinstance(value, bytes) else value
+
+    async def set_nudge(self, cr_id: str, role: str, message: str) -> None:
+        """Set an agent-level nudge (picked up between tool-use rounds)."""
+        key = f"hadron:cr:{cr_id}:nudge:{role}"
+        await self._redis.set(key, message)
+
+    async def poll_nudge(self, cr_id: str, role: str) -> str | None:
+        """Atomically get+delete a nudge for a specific agent role."""
+        key = f"hadron:cr:{cr_id}:nudge:{role}"
+        pipe = self._redis.pipeline()
+        pipe.get(key)
+        pipe.delete(key)
+        results = await pipe.execute()
+        value = results[0]
+        if value is None:
+            return None
+        return value.decode() if isinstance(value, bytes) else value

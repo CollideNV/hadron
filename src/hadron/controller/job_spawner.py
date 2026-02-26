@@ -6,7 +6,7 @@ import asyncio
 import logging
 import os
 import sys
-from typing import Protocol
+from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +20,9 @@ class JobSpawner(Protocol):
 class SubprocessJobSpawner:
     """Spawns workers as local subprocesses. For local dev and testing."""
 
-    def __init__(self) -> None:
+    def __init__(self, redis: Any = None) -> None:
         self._processes: dict[str, asyncio.subprocess.Process] = {}
+        self._redis = redis
 
     async def spawn(self, cr_id: str) -> None:
         """Spawn a worker subprocess for the given CR."""
@@ -38,13 +39,24 @@ class SubprocessJobSpawner:
         asyncio.create_task(self._log_output(cr_id, proc))
 
     async def _log_output(self, cr_id: str, proc: asyncio.subprocess.Process) -> None:
-        """Log worker output in background."""
+        """Log worker output in background and store in Redis."""
         try:
             stdout, _ = await proc.communicate()
+            full_output = ""
             if stdout:
-                for line in stdout.decode(errors="replace").splitlines():
+                full_output = stdout.decode(errors="replace")
+                for line in full_output.splitlines():
                     logger.info("[worker:%s] %s", cr_id, line)
             logger.info("Worker for CR %s exited with code %s", cr_id, proc.returncode)
+
+            # Store in Redis for log retrieval (24h TTL)
+            if self._redis and full_output:
+                try:
+                    await self._redis.set(
+                        f"hadron:cr:{cr_id}:worker_log", full_output, ex=86400,
+                    )
+                except Exception as e:
+                    logger.warning("Failed to store worker log in Redis for CR %s: %s", cr_id, e)
         except Exception as e:
             logger.error("Error logging worker output for CR %s: %s", cr_id, e)
         finally:
