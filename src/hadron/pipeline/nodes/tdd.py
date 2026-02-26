@@ -99,7 +99,10 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
 
         if event_bus:
             await event_bus.emit(PipelineEvent(
-                cr_id=cr_id, event_type=EventType.AGENT_STARTED, stage="tdd",
+                cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="tdd:test_writer",
+            ))
+            await event_bus.emit(PipelineEvent(
+                cr_id=cr_id, event_type=EventType.AGENT_STARTED, stage="tdd:test_writer",
                 data={"role": "test_writer", "repo": repo_name, "model": test_model, "allowed_tools": test_tools},
             ))
 
@@ -112,12 +115,12 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
             user_prompt=test_user,
             working_directory=worktree_path,
             model=test_model,
-            on_tool_call=make_tool_call_emitter(event_bus, cr_id, "tdd", "test_writer", repo_name),
-            on_event=make_agent_event_emitter(event_bus, cr_id, "tdd", "test_writer", repo_name),
+            on_tool_call=make_tool_call_emitter(event_bus, cr_id, "tdd:test_writer", "test_writer", repo_name),
+            on_event=make_agent_event_emitter(event_bus, cr_id, "tdd:test_writer", "test_writer", repo_name),
             nudge_poll=make_nudge_poller(redis_client, cr_id, "test_writer") if redis_client else None,
         )
         test_result = await agent_backend.execute(test_task)
-        await emit_cost_update(event_bus, cr_id, "tdd", test_result, total_cost)
+        await emit_cost_update(event_bus, cr_id, "tdd:test_writer", test_result, total_cost)
         total_cost += test_result.cost_usd
         total_input += test_result.input_tokens
         total_output += test_result.output_tokens
@@ -129,7 +132,7 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
 
         if event_bus:
             await event_bus.emit(PipelineEvent(
-                cr_id=cr_id, event_type=EventType.AGENT_COMPLETED, stage="tdd",
+                cr_id=cr_id, event_type=EventType.AGENT_COMPLETED, stage="tdd:test_writer",
                 data={
                     "role": "test_writer", "repo": repo_name,
                     "output": test_result.output[:2000],
@@ -141,6 +144,9 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
                     "conversation_key": tw_conv_key,
                 },
             ))
+            await event_bus.emit(PipelineEvent(
+                cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="tdd:test_writer",
+            ))
 
         # === GREEN PHASE: Implement code (with retry loop) ===
         tests_passing = False
@@ -150,10 +156,15 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
         code_model = configurable.get("model", "claude-sonnet-4-20250514")
         code_tools = ["read_file", "write_file", "list_directory", "run_command"]
 
+        if event_bus:
+            await event_bus.emit(PipelineEvent(
+                cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="tdd:code_writer",
+            ))
+
         for iteration in range(max_iterations):
             if event_bus:
                 await event_bus.emit(PipelineEvent(
-                    cr_id=cr_id, event_type=EventType.AGENT_STARTED, stage="tdd",
+                    cr_id=cr_id, event_type=EventType.AGENT_STARTED, stage="tdd:code_writer",
                     data={"role": "code_writer", "repo": repo_name, "iteration": iteration, "model": code_model, "allowed_tools": code_tools},
                 ))
 
@@ -171,12 +182,12 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
                 user_prompt=code_user,
                 working_directory=worktree_path,
                 model=code_model,
-                on_tool_call=make_tool_call_emitter(event_bus, cr_id, "tdd", "code_writer", repo_name),
-                on_event=make_agent_event_emitter(event_bus, cr_id, "tdd", "code_writer", repo_name),
+                on_tool_call=make_tool_call_emitter(event_bus, cr_id, "tdd:code_writer", "code_writer", repo_name),
+                on_event=make_agent_event_emitter(event_bus, cr_id, "tdd:code_writer", "code_writer", repo_name),
                 nudge_poll=make_nudge_poller(redis_client, cr_id, "code_writer") if redis_client else None,
             )
             code_result = await agent_backend.execute(code_task)
-            await emit_cost_update(event_bus, cr_id, "tdd", code_result, total_cost)
+            await emit_cost_update(event_bus, cr_id, "tdd:code_writer", code_result, total_cost)
             total_cost += code_result.cost_usd
             total_input += code_result.input_tokens
             total_output += code_result.output_tokens
@@ -188,7 +199,7 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
 
             if event_bus:
                 await event_bus.emit(PipelineEvent(
-                    cr_id=cr_id, event_type=EventType.AGENT_COMPLETED, stage="tdd",
+                    cr_id=cr_id, event_type=EventType.AGENT_COMPLETED, stage="tdd:code_writer",
                     data={
                         "role": "code_writer", "repo": repo_name, "iteration": iteration,
                         "output": code_result.output[:2000],
@@ -206,7 +217,7 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
 
             if event_bus:
                 await event_bus.emit(PipelineEvent(
-                    cr_id=cr_id, event_type=EventType.TEST_RUN, stage="tdd",
+                    cr_id=cr_id, event_type=EventType.TEST_RUN, stage="tdd:code_writer",
                     data={
                         "repo": repo_name,
                         "passed": tests_passing,
@@ -220,6 +231,12 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
                 break
             else:
                 logger.info("Tests failing for %s at iteration %d, retrying...", repo_name, iteration)
+
+        if event_bus:
+            await event_bus.emit(PipelineEvent(
+                cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="tdd:code_writer",
+                data={"tests_passing": tests_passing, "iterations": iteration + 1},
+            ))
 
         # Commit the work
         from hadron.git.worktree import WorktreeManager

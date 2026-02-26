@@ -31,13 +31,22 @@ function getStageColor(stageName: string): string {
   return GROUP_ACCENT[group] || "#37e284";
 }
 
+function subStageLabel(stage: string): string {
+  if (!stage.includes(":")) return stage;
+  return stage.split(":")[1].replace(/_/g, " ");
+}
+
 function summarize(event: PipelineEvent): string {
   const d = event.data;
   switch (event.event_type) {
     case "stage_entered":
-      return `Entering ${event.stage}`;
+      return event.stage.includes(":")
+        ? `Entering ${subStageLabel(event.stage)}`
+        : `Entering ${event.stage}`;
     case "stage_completed":
-      return `Completed ${event.stage}`;
+      return event.stage.includes(":")
+        ? `Completed ${subStageLabel(event.stage)}`
+        : `Completed ${event.stage}`;
     case "agent_started":
       return `Agent ${d.role} started${d.repo ? ` (${d.repo})` : ""}`;
     case "agent_completed":
@@ -52,6 +61,8 @@ function summarize(event: PipelineEvent): string {
       return `Cost: $${((d.total_cost_usd as number) || 0).toFixed(4)}`;
     case "pipeline_started":
       return "Pipeline started";
+    case "pipeline_resumed":
+      return "Pipeline resumed";
     case "pipeline_completed":
       return "Pipeline completed";
     case "pipeline_failed":
@@ -133,25 +144,46 @@ export default function StageDetailLog({
         </span>
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-2 space-y-0.5">
-        {events.map((event, i) => (
-          <div
-            key={i}
-            className="flex items-start gap-2 text-xs py-1 animate-fade-in"
-          >
-            <span className="text-text-dim font-mono whitespace-nowrap text-[10px]">
-              {formatTime(event.timestamp)}
-            </span>
-            <span
-              className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-medium whitespace-nowrap"
-              style={badgeStyle(event.event_type, stageColor)}
-            >
-              {event.event_type.replace(/_/g, " ")}
-            </span>
-            <span className="text-text-muted truncate">
-              {summarize(event)}
-            </span>
-          </div>
-        ))}
+        {events.map((event, i) => {
+          const isSubStageHeader =
+            event.event_type === "stage_entered" && event.stage.includes(":");
+
+          return (
+            <div key={i}>
+              {isSubStageHeader && (
+                <div
+                  className="flex items-center gap-2 mt-3 mb-1 pt-2 border-t"
+                  style={{ borderColor: `${stageColor}25` }}
+                >
+                  <span
+                    className="w-1 h-3 rounded-full"
+                    style={{ backgroundColor: stageColor }}
+                  />
+                  <span
+                    className="text-[10px] font-semibold uppercase tracking-wider"
+                    style={{ color: stageColor }}
+                  >
+                    {subStageLabel(event.stage)}
+                  </span>
+                </div>
+              )}
+              <div className="flex items-start gap-2 text-xs py-1 animate-fade-in">
+                <span className="text-text-dim font-mono whitespace-nowrap text-[10px]">
+                  {formatTime(event.timestamp)}
+                </span>
+                <span
+                  className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-medium whitespace-nowrap"
+                  style={badgeStyle(event.event_type, stageColor)}
+                >
+                  {event.event_type.replace(/_/g, " ")}
+                </span>
+                <span className="text-text-muted truncate">
+                  {summarize(event)}
+                </span>
+              </div>
+            </div>
+          );
+        })}
         <div ref={bottomRef} />
       </div>
     </div>

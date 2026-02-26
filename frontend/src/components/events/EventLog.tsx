@@ -42,12 +42,20 @@ const STAGE_LABEL: Record<string, string> = {
 };
 
 /* ── Types ── */
+interface SubStageInfo {
+  label: string;
+  enteredAt: number | null;
+  completedAt: number | null;
+  agents: AgentSpan[];
+}
+
 interface StageInfo {
   stage: string;
   enteredAt: number | null;
   completedAt: number | null;
   events: PipelineEvent[];
   agents: AgentSpan[];
+  subStages: Map<string, SubStageInfo>;
 }
 
 interface AgentSpan {
@@ -59,6 +67,15 @@ interface AgentSpan {
 }
 
 /* ── Helpers ── */
+function getOrCreateSubStage(info: StageInfo, subKey: string): SubStageInfo {
+  let sub = info.subStages.get(subKey);
+  if (!sub) {
+    sub = { label: subKey, enteredAt: null, completedAt: null, agents: [] };
+    info.subStages.set(subKey, sub);
+  }
+  return sub;
+}
+
 function buildStageInfos(events: PipelineEvent[]): StageInfo[] {
   const map = new Map<string, StageInfo>();
 
@@ -70,14 +87,17 @@ function buildStageInfos(events: PipelineEvent[]): StageInfo[] {
       completedAt: null,
       events: [],
       agents: [],
+      subStages: new Map(),
     });
   }
 
-  let currentAgent: AgentSpan | null = null;
+  // Track current agent per sub-stage (or base stage) for concurrent reviewers
+  const agentByKey = new Map<string, AgentSpan>();
 
   for (const e of events) {
-    // Normalize stage key — strip ":repo_name" suffixes
+    // Normalize stage key — strip ":sub_stage" suffixes
     const baseStage = e.stage.split(":")[0];
+    const subKey = e.stage.includes(":") ? e.stage.split(":")[1] : null;
     const info = map.get(baseStage);
     if (!info) continue;
 
@@ -85,28 +105,51 @@ function buildStageInfos(events: PipelineEvent[]): StageInfo[] {
 
     switch (e.event_type) {
       case "stage_entered":
-        info.enteredAt ??= e.timestamp;
+        if (subKey) {
+          const sub = getOrCreateSubStage(info, subKey);
+          sub.enteredAt ??= e.timestamp;
+        } else {
+          info.enteredAt ??= e.timestamp;
+        }
         break;
       case "stage_completed":
-        info.completedAt = e.timestamp;
+        if (subKey) {
+          const sub = getOrCreateSubStage(info, subKey);
+          sub.completedAt = e.timestamp;
+        } else {
+          info.completedAt = e.timestamp;
+        }
         break;
-      case "agent_started":
-        currentAgent = {
+      case "agent_started": {
+        const agentTrackKey = subKey || `${baseStage}:${e.data.role}:${e.data.repo}`;
+        const agent: AgentSpan = {
           role: (e.data.role as string) || "agent",
           repo: (e.data.repo as string) || "",
           startedAt: e.timestamp,
           completedAt: null,
           toolCalls: [],
         };
-        info.agents.push(currentAgent);
+        agentByKey.set(agentTrackKey, agent);
+        if (subKey) {
+          getOrCreateSubStage(info, subKey).agents.push(agent);
+        } else {
+          info.agents.push(agent);
+        }
         break;
-      case "agent_completed":
-        if (currentAgent) currentAgent.completedAt = e.timestamp;
-        currentAgent = null;
+      }
+      case "agent_completed": {
+        const agentTrackKey = subKey || `${baseStage}:${e.data.role}:${e.data.repo}`;
+        const tracked = agentByKey.get(agentTrackKey);
+        if (tracked) tracked.completedAt = e.timestamp;
+        agentByKey.delete(agentTrackKey);
         break;
-      case "agent_tool_call":
-        if (currentAgent) currentAgent.toolCalls.push(e);
+      }
+      case "agent_tool_call": {
+        const agentTrackKey = subKey || `${baseStage}:${e.data.role}:${e.data.repo}`;
+        const tracked = agentByKey.get(agentTrackKey);
+        if (tracked) tracked.toolCalls.push(e);
         break;
+      }
     }
   }
 
@@ -342,9 +385,41 @@ function StageRow({
       {/* Expanded detail */}
       {expanded && (
         <div className="pb-2 space-y-1">
-          {info.agents.map((agent, i) => (
-            <AgentRow key={i} agent={agent} color={color} />
-          ))}
+          {info.subStages.size > 0 ? (
+            /* Render sub-stage grouped sections */
+            Array.from(info.subStages.entries()).map(([key, sub]) => {
+              const subDuration =
+                sub.enteredAt && sub.completedAt
+                  ? formatDuration(sub.enteredAt, sub.completedAt)
+                  : sub.enteredAt
+                    ? "..."
+                    : "";
+              return (
+                <div key={key} className="ml-2">
+                  <div className="flex items-center gap-2 px-2 py-1.5">
+                    <span
+                      className="w-1 h-4 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: sub.completedAt ? `${color}60` : color }}
+                    />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color }}>
+                      {key.replace(/_/g, " ")}
+                    </span>
+                    <span className="text-[10px] text-text-dim font-mono ml-auto">
+                      {subDuration}
+                    </span>
+                  </div>
+                  {sub.agents.map((agent, i) => (
+                    <AgentRow key={i} agent={agent} color={color} />
+                  ))}
+                </div>
+              );
+            })
+          ) : (
+            /* Flat agent list for stages without sub-stages */
+            info.agents.map((agent, i) => (
+              <AgentRow key={i} agent={agent} color={color} />
+            ))
+          )}
 
           {/* Show non-agent, non-stage events */}
           {info.events
