@@ -79,13 +79,27 @@ def _make_tools(allowed: list[str], working_dir: str | None) -> list[dict]:
     return [all_tools[name] for name in allowed if name in all_tools]
 
 
+def _safe_resolve(working_dir: str, user_path: str) -> Path:
+    """Resolve a user-provided path and ensure it stays within working_dir.
+
+    Raises ValueError if the resolved path escapes the working directory.
+    """
+    root = Path(working_dir).resolve()
+    resolved = (root / user_path).resolve()
+    if not resolved.is_relative_to(root):
+        raise ValueError(
+            f"Path escapes working directory: {user_path}"
+        )
+    return resolved
+
+
 async def _execute_tool(
     name: str, input_data: dict[str, Any], working_dir: str
 ) -> str:
     """Execute a tool call and return the result string."""
     try:
         if name == "read_file":
-            path = Path(working_dir) / input_data["path"]
+            path = _safe_resolve(working_dir, input_data["path"])
             if not path.is_file():
                 return f"Error: File not found: {input_data['path']}"
             content = path.read_text()
@@ -94,13 +108,13 @@ async def _execute_tool(
             return content
 
         elif name == "write_file":
-            path = Path(working_dir) / input_data["path"]
+            path = _safe_resolve(working_dir, input_data["path"])
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(input_data["content"])
             return f"File written: {input_data['path']}"
 
         elif name == "list_directory":
-            dir_path = Path(working_dir) / input_data.get("path", ".")
+            dir_path = _safe_resolve(working_dir, input_data.get("path", "."))
             if not dir_path.is_dir():
                 return f"Error: Not a directory: {input_data.get('path', '.')}"
             entries = sorted(dir_path.iterdir())
@@ -118,7 +132,12 @@ async def _execute_tool(
                 stderr=asyncio.subprocess.STDOUT,
                 env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
             )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
+            try:
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                return "Error: Command timed out after 120s (process killed)"
             output = stdout.decode(errors="replace")
             if len(output) > 50_000:
                 output = output[:50_000] + "\n... (truncated)"
@@ -126,6 +145,8 @@ async def _execute_tool(
 
         else:
             return f"Error: Unknown tool: {name}"
+    except ValueError as e:
+        return f"Error: {e}"
     except Exception as e:
         return f"Error executing {name}: {e}"
 

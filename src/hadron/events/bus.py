@@ -17,7 +17,7 @@ class EventBus(Protocol):
 
     async def subscribe(self, cr_id: str, last_id: str = "0") -> AsyncIterator[PipelineEvent]: ...
 
-    async def replay(self, cr_id: str, from_id: str = "0") -> list[PipelineEvent]: ...
+    async def replay(self, cr_id: str, from_id: str = "0") -> tuple[list[PipelineEvent], str]: ...
 
 
 def _stream_key(cr_id: str) -> str:
@@ -58,15 +58,22 @@ class RedisEventBus:
                                 raw = raw.decode()
                             yield PipelineEvent.model_validate_json(raw)
 
-    async def replay(self, cr_id: str, from_id: str = "0") -> list[PipelineEvent]:
-        """Return all events in the stream from from_id (inclusive)."""
+    async def replay(self, cr_id: str, from_id: str = "0") -> tuple[list[PipelineEvent], str]:
+        """Return all events in the stream from from_id (inclusive) and the last stream ID.
+
+        Returns:
+            Tuple of (events, last_stream_id). last_stream_id is "0" if the stream
+            is empty, suitable for passing directly to subscribe().
+        """
         key = _stream_key(cr_id)
         entries = await self._redis.xrange(key, min=from_id)
         events = []
-        for _msg_id, fields in entries:
+        last_id = "0"
+        for msg_id, fields in entries:
+            last_id = msg_id if isinstance(msg_id, str) else msg_id.decode()
             raw = fields.get(b"data") or fields.get("data")
             if raw:
                 if isinstance(raw, bytes):
                     raw = raw.decode()
                 events.append(PipelineEvent.model_validate_json(raw))
-        return events
+        return events, last_id

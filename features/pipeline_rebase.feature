@@ -30,3 +30,9 @@ Feature: Rebase and Conflict Resolution
     When the maximum conflict resolution attempts are exhausted
     Then the rebase is aborted
     And the pipeline pauses for human intervention
+
+  Scenario: Default routing when rebase state is absent
+    Given the pipeline state has no rebase_clean field set
+    When the rebase routing decision is made
+    Then rebase_clean defaults to true
+    And the pipeline proceeds to delivery

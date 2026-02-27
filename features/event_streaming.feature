@@ -8,7 +8,15 @@ Feature: Event Streaming
     When a client connects to "GET /api/events/stream?cr_id={cr_id}"
     Then all existing events are replayed first
     And new events are streamed in real-time as they occur
+    And there is no gap between replayed and live events
     And the connection closes on terminal events
+
+  Scenario: Gap-free handoff between replay and subscribe
+    Given events have been emitted to a CR's stream
+    When the SSE endpoint replays existing events
+    Then the last stream ID from the replay is captured
+    And the live subscription starts from that stream ID
+    So that events emitted during the replay are not lost
 
   Scenario: Emit pipeline lifecycle events
     When a pipeline runs from start to finish

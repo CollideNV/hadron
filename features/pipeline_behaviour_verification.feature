@@ -17,14 +17,19 @@ Feature: Behaviour Verification
 
   Scenario: Specs fail verification with retries remaining
     Given the Spec Verifier returns verified as false
-    And the verification loop count is below the maximum of 3
+    And the verification loop count is below the maximum (default 3)
     When the verification routing decision is made
     Then the pipeline routes back to behaviour translation with the feedback
     And the verification loop count is incremented
 
   Scenario: Specs fail verification with no retries remaining
     Given the Spec Verifier returns verified as false
-    And the verification loop count has reached the maximum of 3
+    And the verification loop count has reached the maximum (default 3)
     When the verification routing decision is made
     Then the pipeline pauses with a circuit breaker
     And a PIPELINE_PAUSED event is emitted
+
+  Scenario: Custom verification loop limit from config
+    Given config_snapshot.pipeline.max_verification_loops is set to a custom value
+    When the verification routing decision is made
+    Then the custom limit is used instead of the default 3

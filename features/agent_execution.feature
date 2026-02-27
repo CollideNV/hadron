@@ -17,6 +17,25 @@ Feature: Agent Execution
     And it can use list_directory to explore the directory structure
     And it can use run_command to execute shell commands
 
+  Scenario: File tools are confined to the working directory
+    Given an agent is executing in a working directory
+    When a tool receives a path containing "../" that escapes the working directory
+    Then the tool returns an error "Path escapes working directory"
+    And the file system is not accessed
+    When a tool receives an absolute path outside the working directory
+    Then the tool returns the same confinement error
+    When a tool path resolves through a symlink to a location outside the working directory
+    Then the tool returns the same confinement error
+    When a path like "subdir/../file.txt" resolves back inside the working directory
+    Then the tool allows the operation
+
+  Scenario: Command timeout kills the process
+    Given an agent executes a run_command tool call
+    When the command exceeds the 120-second timeout
+    Then the process is killed
+    And the tool returns a timeout error
+    And no zombie process is left behind
+
   Scenario: Rate limit retry with backoff
     Given the Claude API returns a rate limit error
     When the agent backend retries

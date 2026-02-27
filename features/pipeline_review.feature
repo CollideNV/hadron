@@ -35,16 +35,21 @@ Feature: Code Review
 
   Scenario: Review fails with critical or major findings and retries remaining
     Given at least one reviewer returns a critical or major finding
-    And the review loop count is below the maximum of 3
+    And the review loop count is below the maximum (default 3)
     When the review routing decision is made
     Then the pipeline routes back to the TDD stage with the findings
     And the review loop count is incremented
 
   Scenario: Review fails with no retries remaining
     Given the review has failed
-    And the review loop count has reached the maximum of 3
+    And the review loop count has reached the maximum (default 3)
     When the review routing decision is made
     Then the pipeline pauses with a circuit breaker
+
+  Scenario: Custom review loop limit from config
+    Given config_snapshot.pipeline.max_review_dev_loops is set to a custom value
+    When the review routing decision is made
+    Then the custom limit is used instead of the default 3
 
   Scenario: Deterministic diff scope analysis
     Given the TDD stage has produced code changes
