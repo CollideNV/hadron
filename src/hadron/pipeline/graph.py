@@ -32,7 +32,7 @@ def _paused_node(state: PipelineState, config: RunnableConfig) -> dict:
 def build_pipeline_graph() -> StateGraph:
     """Build the complete pipeline graph.
 
-    Graph structure follows architecture §5.3:
+    Graph structure follows adr/orchestration.md §5.3:
         Intake → Repo ID → Worktree Setup → Behaviour Translation → Behaviour Verification
             ↕ (verification loop)
         → TDD → Review

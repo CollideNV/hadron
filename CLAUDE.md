@@ -57,7 +57,7 @@ Single installation serves multiple tenants on shared infrastructure. OIDC handl
 
 ## Implementation Roadmap
 
-The roadmap in `adr/architecture.md` §22 defines 8 phases:
+The roadmap in `adr/roadmap.md` §22 defines 8 phases:
 
 1. **Foundation (Wk 1-2):** Project skeleton (LangGraph + FastAPI), runtime config, PipelineState, WorktreeManager, agent backend interface, event bus, intervention manager, prompt templates
 2. **Core Stages (Wk 3-5):** All agent prompts, intake, fan-out/fan-in, Behaviour Translation/Verification, TDD, Code Review, feedback loops

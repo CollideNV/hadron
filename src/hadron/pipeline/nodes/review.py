@@ -1,6 +1,6 @@
 """Code Review node — 3 parallel reviewers + deterministic diff scope pre-pass.
 
-Architecture: ADR §8.7, §12.5, §12.6.
+Architecture: adr/stages.md §8.7, adr/security.md §12.5, §12.6.
 
 Flow per repo:
   1. Get diff from worktree
@@ -47,7 +47,7 @@ def _build_security_payload(
     behaviour_specs: list[dict[str, Any]],
     repo_name: str,
 ) -> str:
-    """Build the task payload for the Security Reviewer (ADR §12.5).
+    """Build the task payload for the Security Reviewer (adr/security.md §12.5).
 
     The CR description is explicitly marked as untrusted external input.
     Diff scope flags are included as a dedicated section.
@@ -117,7 +117,7 @@ def _build_spec_compliance_payload(
     """Build the task payload for the Spec Compliance Reviewer.
 
     Includes specs for this repo plus summaries from other repos for
-    cross-repo awareness (ADR §8.7).
+    cross-repo awareness (adr/stages.md §8.7).
     """
     # This repo's specs (full)
     repo_specs = [s for s in behaviour_specs if s.get("repo_name") == repo_name]
@@ -258,7 +258,7 @@ async def _run_single_reviewer(
 async def review_node(state: PipelineState, config: RunnableConfig) -> dict[str, Any]:
     """Three parallel reviewers examine the diff for each repo.
 
-    Per ADR §8.7 / §12.5 / §12.6:
+    Per adr/stages.md §8.7 / adr/security.md §12.5 / §12.6:
     - Security Reviewer (adversarial trust model, Layer 3 defense)
     - Quality Reviewer (correctness, architecture, performance)
     - Spec Compliance Reviewer (code matches behaviour specs)

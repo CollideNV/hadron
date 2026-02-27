@@ -26,7 +26,7 @@ def _truncate(text: str, max_chars: int) -> str:
 
 
 class PromptComposer:
-    """Assembles 4-layer prompts per architecture §11.
+    """Assembles 4-layer prompts per adr/agents.md §11.
 
     Layer 1: Role system prompt (from templates)
     Layer 2: Repo context (AGENTS.md + directory tree)

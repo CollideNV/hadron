@@ -1,6 +1,6 @@
 """PipelineState — the central data structure flowing through every LangGraph node.
 
-This is a TypedDict (LangGraph requirement). Fields are grouped per architecture §5.2.
+This is a TypedDict (LangGraph requirement). Fields are grouped per adr/orchestration.md §5.2.
 Cost fields use Annotated reducers so parallel nodes accumulate correctly.
 """
 

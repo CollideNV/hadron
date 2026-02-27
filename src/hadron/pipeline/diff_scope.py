@@ -1,4 +1,4 @@
-"""Deterministic diff scope analyser — Layer 4 of prompt injection defense (ADR §12.6).
+"""Deterministic diff scope analyser — Layer 4 of prompt injection defense (adr/security.md §12.6).
 
 Parses unified diffs to detect changes to config files, dependency manifests,
 and other sensitive paths. Produces warning flags injected into the Security
