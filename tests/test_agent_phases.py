@@ -62,6 +62,26 @@ def _make_tool_response(tool_name: str, tool_input: dict, tool_id: str = "tu_1",
     return response
 
 
+def _make_stream_context(response):
+    """Build a mock async context manager for messages.stream() that returns a final message."""
+
+    class _EmptyAsyncIter:
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise StopAsyncIteration
+
+    stream_cm = AsyncMock()
+    stream_cm.__aenter__ = AsyncMock(return_value=stream_cm)
+    stream_cm.__aexit__ = AsyncMock(return_value=False)
+    # Provide a proper async iterator (yields nothing — we only need get_final_message)
+    empty = _EmptyAsyncIter()
+    stream_cm.__aiter__ = MagicMock(return_value=empty)
+    stream_cm.get_final_message = AsyncMock(return_value=response)
+    return stream_cm
+
+
 # ---------------------------------------------------------------------------
 # Per-model cost calculation
 # ---------------------------------------------------------------------------
@@ -216,21 +236,26 @@ class TestExplorePhase:
 
 
 # ---------------------------------------------------------------------------
-# Plan phase
+# Plan phase (uses streaming)
 # ---------------------------------------------------------------------------
 
 
 class TestPlanPhase:
     @pytest.mark.asyncio
-    async def test_plan_single_call_no_tools(self, tmp_workdir: Path) -> None:
+    async def test_plan_uses_streaming_no_tools(self, tmp_workdir: Path) -> None:
         backend = ClaudeAgentBackend(api_key="test-key")
 
         explore_resp = _make_api_response("Found codebase structure.")
-        plan_resp = _make_api_response("Plan: 1. Create file 2. Add tests")
+        plan_resp = _make_api_response("Plan: 1. Create file 2. Add tests", input_tokens=200, output_tokens=100)
         act_resp = _make_api_response("Executed the plan.")
 
-        with patch.object(backend._client.messages, "create", new_callable=AsyncMock) as mock_create:
-            mock_create.side_effect = [explore_resp, plan_resp, act_resp]
+        plan_stream = _make_stream_context(plan_resp)
+
+        with (
+            patch.object(backend._client.messages, "create", new_callable=AsyncMock) as mock_create,
+            patch.object(backend._client.messages, "stream", return_value=plan_stream) as mock_stream,
+        ):
+            mock_create.side_effect = [explore_resp, act_resp]
 
             task = AgentTask(
                 role="code_writer",
@@ -242,21 +267,28 @@ class TestPlanPhase:
             )
             result = await backend.execute(task)
 
-        # Plan call (second) should use opus and have no tools
-        plan_call = mock_create.call_args_list[1]
-        assert plan_call.kwargs["model"] == "claude-opus-4-20250514"
-        assert "tools" not in plan_call.kwargs
+        # Plan call should use streaming with opus model
+        mock_stream.assert_called_once()
+        stream_kwargs = mock_stream.call_args.kwargs
+        assert stream_kwargs["model"] == "claude-opus-4-20250514"
+        # No tools in plan call
+        assert "tools" not in stream_kwargs
 
     @pytest.mark.asyncio
     async def test_plan_receives_exploration_and_task(self, tmp_workdir: Path) -> None:
         backend = ClaudeAgentBackend(api_key="test-key")
 
         explore_resp = _make_api_response("Exploration summary here.")
-        plan_resp = _make_api_response("Implementation plan.")
+        plan_resp = _make_api_response("Implementation plan.", input_tokens=200, output_tokens=100)
         act_resp = _make_api_response("Done.")
 
-        with patch.object(backend._client.messages, "create", new_callable=AsyncMock) as mock_create:
-            mock_create.side_effect = [explore_resp, plan_resp, act_resp]
+        plan_stream = _make_stream_context(plan_resp)
+
+        with (
+            patch.object(backend._client.messages, "create", new_callable=AsyncMock) as mock_create,
+            patch.object(backend._client.messages, "stream", return_value=plan_stream) as mock_stream,
+        ):
+            mock_create.side_effect = [explore_resp, act_resp]
 
             task = AgentTask(
                 role="code_writer",
@@ -268,8 +300,8 @@ class TestPlanPhase:
             )
             await backend.execute(task)
 
-        plan_call = mock_create.call_args_list[1]
-        plan_user = plan_call.kwargs["messages"][0]["content"]
+        stream_kwargs = mock_stream.call_args.kwargs
+        plan_user = stream_kwargs["messages"][0]["content"]
         assert "Exploration summary here." in plan_user
         assert "Implement feature X." in plan_user
 
@@ -278,11 +310,16 @@ class TestPlanPhase:
         backend = ClaudeAgentBackend(api_key="test-key")
 
         explore_resp = _make_api_response("Summary.")
-        plan_resp = _make_api_response("Plan.")
+        plan_resp = _make_api_response("Plan.", input_tokens=200, output_tokens=100)
         act_resp = _make_api_response("Done.")
 
-        with patch.object(backend._client.messages, "create", new_callable=AsyncMock) as mock_create:
-            mock_create.side_effect = [explore_resp, plan_resp, act_resp]
+        plan_stream = _make_stream_context(plan_resp)
+
+        with (
+            patch.object(backend._client.messages, "create", new_callable=AsyncMock) as mock_create,
+            patch.object(backend._client.messages, "stream", return_value=plan_stream) as mock_stream,
+        ):
+            mock_create.side_effect = [explore_resp, act_resp]
 
             task = AgentTask(
                 role="code_writer",
@@ -294,8 +331,8 @@ class TestPlanPhase:
             )
             await backend.execute(task)
 
-        plan_call = mock_create.call_args_list[1]
-        plan_system = plan_call.kwargs["system"]
+        stream_kwargs = mock_stream.call_args.kwargs
+        plan_system = stream_kwargs["system"]
         assert "You are a code writer. Follow TDD." in plan_system
 
 
@@ -310,11 +347,16 @@ class TestActPhase:
         backend = ClaudeAgentBackend(api_key="test-key")
 
         explore_resp = _make_api_response("Exploration context.")
-        plan_resp = _make_api_response("Step 1: do X. Step 2: do Y.")
+        plan_resp = _make_api_response("Step 1: do X. Step 2: do Y.", input_tokens=200, output_tokens=100)
         act_resp = _make_api_response("All done.")
 
-        with patch.object(backend._client.messages, "create", new_callable=AsyncMock) as mock_create:
-            mock_create.side_effect = [explore_resp, plan_resp, act_resp]
+        plan_stream = _make_stream_context(plan_resp)
+
+        with (
+            patch.object(backend._client.messages, "create", new_callable=AsyncMock) as mock_create,
+            patch.object(backend._client.messages, "stream", return_value=plan_stream),
+        ):
+            mock_create.side_effect = [explore_resp, act_resp]
 
             task = AgentTask(
                 role="code_writer",
@@ -326,7 +368,8 @@ class TestActPhase:
             )
             result = await backend.execute(task)
 
-        act_call = mock_create.call_args_list[2]
+        # Act is the second messages.create call (after explore)
+        act_call = mock_create.call_args_list[1]
         act_user = act_call.kwargs["messages"][0]["content"]
         assert "Step 1: do X. Step 2: do Y." in act_user
         assert "Exploration context." in act_user
@@ -337,11 +380,16 @@ class TestActPhase:
         backend = ClaudeAgentBackend(api_key="test-key")
 
         explore_resp = _make_api_response("Summary.")
-        plan_resp = _make_api_response("Plan.")
+        plan_resp = _make_api_response("Plan.", input_tokens=200, output_tokens=100)
         act_resp = _make_api_response("Done.")
 
-        with patch.object(backend._client.messages, "create", new_callable=AsyncMock) as mock_create:
-            mock_create.side_effect = [explore_resp, plan_resp, act_resp]
+        plan_stream = _make_stream_context(plan_resp)
+
+        with (
+            patch.object(backend._client.messages, "create", new_callable=AsyncMock) as mock_create,
+            patch.object(backend._client.messages, "stream", return_value=plan_stream),
+        ):
+            mock_create.side_effect = [explore_resp, act_resp]
 
             task = AgentTask(
                 role="code_writer",
@@ -354,7 +402,7 @@ class TestActPhase:
             )
             await backend.execute(task)
 
-        act_call = mock_create.call_args_list[2]
+        act_call = mock_create.call_args_list[1]
         assert act_call.kwargs["model"] == "claude-sonnet-4-20250514"
 
 
@@ -372,8 +420,13 @@ class TestCostAggregation:
         plan_resp = _make_api_response("Plan.", input_tokens=2000, output_tokens=1000)
         act_resp = _make_api_response("Done.", input_tokens=3000, output_tokens=1500)
 
-        with patch.object(backend._client.messages, "create", new_callable=AsyncMock) as mock_create:
-            mock_create.side_effect = [explore_resp, plan_resp, act_resp]
+        plan_stream = _make_stream_context(plan_resp)
+
+        with (
+            patch.object(backend._client.messages, "create", new_callable=AsyncMock) as mock_create,
+            patch.object(backend._client.messages, "stream", return_value=plan_stream),
+        ):
+            mock_create.side_effect = [explore_resp, act_resp]
 
             task = AgentTask(
                 role="code_writer",
@@ -413,11 +466,16 @@ class TestPhaseEvents:
             events.append((event_type, data))
 
         explore_resp = _make_api_response("Summary.")
-        plan_resp = _make_api_response("Plan.")
+        plan_resp = _make_api_response("Plan.", input_tokens=200, output_tokens=100)
         act_resp = _make_api_response("Done.")
 
-        with patch.object(backend._client.messages, "create", new_callable=AsyncMock) as mock_create:
-            mock_create.side_effect = [explore_resp, plan_resp, act_resp]
+        plan_stream = _make_stream_context(plan_resp)
+
+        with (
+            patch.object(backend._client.messages, "create", new_callable=AsyncMock) as mock_create,
+            patch.object(backend._client.messages, "stream", return_value=plan_stream),
+        ):
+            mock_create.side_effect = [explore_resp, act_resp]
 
             task = AgentTask(
                 role="code_writer",

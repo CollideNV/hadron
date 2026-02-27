@@ -570,15 +570,25 @@ class ClaudeAgentBackend:
         user_prompt: str,
         max_tokens: int,
     ) -> _PhaseResult:
-        """Single API call for the plan phase — no tools."""
+        """Single streaming API call for the plan phase — no tools.
+
+        Uses streaming because the Anthropic SDK requires it for calls
+        that may exceed 10 minutes (e.g. Opus with large context).
+        """
         for attempt in range(_RATE_LIMIT_MAX_RETRIES):
             try:
-                response = await self._client.messages.create(
+                text = ""
+                input_tokens = 0
+                output_tokens = 0
+                async with self._client.messages.stream(
                     model=model,
                     max_tokens=max_tokens,
                     system=system_prompt,
                     messages=[{"role": "user", "content": user_prompt}],
-                )
+                ) as stream:
+                    async for event in stream:
+                        pass
+                    response = await stream.get_final_message()
                 break
             except anthropic.RateLimitError as e:
                 if attempt == _RATE_LIMIT_MAX_RETRIES - 1:
@@ -603,10 +613,10 @@ class ClaudeAgentBackend:
             output_tokens=response.usage.output_tokens,
             cost_usd=cost,
             tool_calls=[],
-            conversation=_serialize_messages([
+            conversation=[
                 {"role": "user", "content": user_prompt},
-                {"role": "assistant", "content": response.content},
-            ]),
+                {"role": "assistant", "content": text},
+            ],
             round_count=1,
         )
 
