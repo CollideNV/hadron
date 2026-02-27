@@ -66,6 +66,9 @@ async def behaviour_translation_node(state: PipelineState, config: RunnableConfi
         user_prompt = composer.compose_user_prompt(task_payload, feedback)
 
         spec_model = configurable.get("model", "claude-sonnet-4-20250514")
+        explore_model = configurable.get("explore_model", "")
+        plan_model = configurable.get("plan_model", "")
+
         if event_bus:
             await event_bus.emit(PipelineEvent(
                 cr_id=cr_id, event_type=EventType.AGENT_STARTED,
@@ -79,6 +82,8 @@ async def behaviour_translation_node(state: PipelineState, config: RunnableConfi
             user_prompt=user_prompt,
             working_directory=worktree_path,
             model=spec_model,
+            explore_model=explore_model,
+            plan_model=plan_model,
             on_tool_call=make_tool_call_emitter(event_bus, cr_id, "behaviour_translation", "spec_writer", repo_name),
             on_event=make_agent_event_emitter(event_bus, cr_id, "behaviour_translation", "spec_writer", repo_name),
             nudge_poll=make_nudge_poller(redis_client, cr_id, "spec_writer") if redis_client else None,
@@ -169,12 +174,15 @@ Please read the .feature files in the repository and verify them against this CR
         user_prompt = composer.compose_user_prompt(task_payload)
 
         verifier_model = configurable.get("model", "claude-sonnet-4-20250514")
+        explore_model = configurable.get("explore_model", "")
+
         task = AgentTask(
             role="spec_verifier",
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             working_directory=worktree_path,
             model=verifier_model,
+            explore_model=explore_model,
             on_tool_call=make_tool_call_emitter(event_bus, cr_id, "behaviour_verification", "spec_verifier", repo_name),
             on_event=make_agent_event_emitter(event_bus, cr_id, "behaviour_verification", "spec_verifier", repo_name),
             nudge_poll=make_nudge_poller(redis_client, cr_id, "spec_verifier") if redis_client else None,

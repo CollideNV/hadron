@@ -1003,6 +1003,38 @@ Primary provider (e.g. Anthropic Claude Sonnet)
 
 **Prompt compatibility:** Different providers may need different prompt formatting. The prompt template system (§11) supports provider-specific variants. A role prompt can have a primary version (optimised for Claude) and a fallback version (adapted for GPT). If no variant exists, the primary prompt is used — most prompts work across providers with some quality degradation.
 
+### 9.4 Three-Phase Agent Execution
+
+Agent invocations can run in up to three phases, each using a different model optimised for its task. This spreads load across separate rate-limit pools, keeps exploration tokens out of the action context, and uses Opus for one high-quality strategic planning call.
+
+| Phase | Default Model | Tools | Purpose |
+|-------|--------------|-------|---------|
+| **Explore** | Haiku ($0.80/$4) | `read_file`, `list_directory` (read-only) | Discover codebase structure, read relevant files |
+| **Plan** | Opus ($15/$75) | None (single API call) | Analyse exploration results, produce implementation plan |
+| **Act** | Sonnet ($3/$15) | All tools | Execute the plan with focused tool calls |
+
+**Benefits:**
+- Three separate rate-limit pools (30k input tokens/min each = 90k effective)
+- Exploration tokens stay in Haiku context, never re-sent to Sonnet
+- Opus produces a high-quality plan that focuses Sonnet's work
+- Cheaper overall: Haiku for bulk reading, Opus for one strategic call
+
+**Per-role phase configuration:**
+
+| Role | Phases | Rationale |
+|------|--------|-----------|
+| `intake_parser` | None | Single structured-output call, no exploration |
+| `spec_writer` | Explore → Plan → Act | Read repo, plan spec coverage, write .feature files |
+| `spec_verifier` | Explore → Act | Read specs + CR, verify (plan adds little) |
+| `test_writer` | Explore → Plan → Act | Discover test patterns, plan tests, write tests |
+| `code_writer` | Explore → Plan → Act | Understand codebase, plan implementation, write code |
+| `security_reviewer` | Explore only | Reads diff + files, outputs JSON |
+| `quality_reviewer` | Explore only | Reads diff + files, outputs JSON |
+| `spec_compliance_reviewer` | Explore only | Reads diff + files, outputs JSON |
+| `conflict_resolver` | Explore → Act | Read conflicts, resolve them |
+
+Phases are controlled by `explore_model` and `plan_model` fields on `AgentTask`. Empty string skips the phase. When neither is set, the agent runs identically to a single-phase invocation (backwards compatible).
+
 ---
 
 ## 10. Landscape Intelligence

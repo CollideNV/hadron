@@ -59,6 +59,7 @@ export function useEventStream(crId: string | undefined): EventStreamState {
 
       switch (event.event_type) {
         case "pipeline_started":
+        case "pipeline_resumed":
           status = "running";
           break;
         case "pipeline_completed":

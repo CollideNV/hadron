@@ -27,6 +27,7 @@ spec:
       labels:
         app: hadron-controller
     spec:
+      serviceAccountName: hadron-controller
       containers:
         - name: controller
           image: hadron-controller:latest

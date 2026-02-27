@@ -30,6 +30,11 @@ class AgentTask:
     on_tool_call: OnToolCall | None = None
     on_event: OnAgentEvent | None = None
     nudge_poll: Callable[[], Awaitable[str | None]] | None = None
+    # Three-phase execution: explore (read-only) → plan (single call) → act (full tools)
+    explore_model: str = ""  # Empty = skip explore phase
+    plan_model: str = ""  # Empty = skip plan phase
+    explore_max_rounds: int = 20
+    explore_tools: list[str] = field(default_factory=lambda: ["read_file", "list_directory"])
 
 
 @dataclass

@@ -12,8 +12,10 @@ PIPELINE_DEFAULTS: dict = {
     "max_review_dev_loops": 3,
     "max_tdd_iterations": 5,
     "max_cost_usd": 10.0,
-    # Agent model
+    # Agent models (three-phase execution)
     "default_model": "claude-sonnet-4-20250514",
+    "explore_model": "claude-haiku-4-5-20251001",
+    "plan_model": "claude-opus-4-20250514",
     # Delivery
     "delivery_strategy": "self_contained",
     # Timeouts (seconds)

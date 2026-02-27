@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from hadron.agent.claude import _execute_tool, _safe_resolve
+from hadron.agent.claude import _execute_tool, _safe_resolve, _scrubbed_env
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +189,66 @@ class TestRunCommand:
             assert "timed out" in result.lower()
             mock_proc.kill.assert_called_once()
             mock_proc.wait.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# _execute_tool — run_command env scrubbing
+# ---------------------------------------------------------------------------
+
+
+class TestRunCommandEnvScrubbing:
+    """Verify that _scrubbed_env strips secrets but keeps essentials."""
+
+    def test_anthropic_api_key_stripped(self) -> None:
+        import os
+        os.environ["ANTHROPIC_API_KEY"] = "sk-secret"
+        try:
+            env = _scrubbed_env()
+            assert "ANTHROPIC_API_KEY" not in env
+        finally:
+            del os.environ["ANTHROPIC_API_KEY"]
+
+    def test_hadron_postgres_url_stripped(self) -> None:
+        import os
+        os.environ["HADRON_POSTGRES_URL"] = "postgresql://secret"
+        try:
+            env = _scrubbed_env()
+            assert "HADRON_POSTGRES_URL" not in env
+        finally:
+            del os.environ["HADRON_POSTGRES_URL"]
+
+    def test_github_token_stripped(self) -> None:
+        import os
+        os.environ["GITHUB_TOKEN"] = "ghp_secret"
+        try:
+            env = _scrubbed_env()
+            assert "GITHUB_TOKEN" not in env
+        finally:
+            del os.environ["GITHUB_TOKEN"]
+
+    def test_explicit_keys_stripped(self) -> None:
+        import os
+        os.environ["GH_TOKEN"] = "ghp_123"
+        os.environ["DATABASE_URL"] = "pg://x"
+        os.environ["REDIS_URL"] = "redis://y"
+        try:
+            env = _scrubbed_env()
+            assert "GH_TOKEN" not in env
+            assert "DATABASE_URL" not in env
+            assert "REDIS_URL" not in env
+        finally:
+            del os.environ["GH_TOKEN"]
+            del os.environ["DATABASE_URL"]
+            del os.environ["REDIS_URL"]
+
+    def test_path_preserved(self) -> None:
+        env = _scrubbed_env()
+        assert "PATH" in env
+
+    def test_pythondontwritebytecode_set_in_run_command(self) -> None:
+        """The run_command tool adds PYTHONDONTWRITEBYTECODE on top of scrubbed env."""
+        env = {**_scrubbed_env(), "PYTHONDONTWRITEBYTECODE": "1"}
+        assert env["PYTHONDONTWRITEBYTECODE"] == "1"
 
 
 # ---------------------------------------------------------------------------

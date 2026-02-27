@@ -42,6 +42,7 @@ export default function CRDetailPage() {
           e.stage === selectedStage ||
           e.stage.startsWith(selectedStage + ":") ||
           e.event_type === "pipeline_started" ||
+          e.event_type === "pipeline_resumed" ||
           e.event_type === "pipeline_completed" ||
           e.event_type === "pipeline_failed",
       )

@@ -16,6 +16,7 @@ export function connectEventStream(
 
   const EVENT_NAMES: EventType[] = [
     "pipeline_started",
+    "pipeline_resumed",
     "pipeline_completed",
     "pipeline_failed",
     "pipeline_paused",

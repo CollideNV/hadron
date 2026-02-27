@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from langgraph.types import RunnableConfig
 
-import asyncio
 import logging
 from typing import Any
 
@@ -16,21 +15,9 @@ from hadron.pipeline.nodes import (
     emit_cost_update, make_agent_event_emitter, make_nudge_poller,
     make_tool_call_emitter, store_conversation,
 )
+from hadron.pipeline.testing import run_test_command
 
 logger = logging.getLogger(__name__)
-
-
-async def _run_tests(worktree_path: str, test_command: str) -> tuple[bool, str]:
-    """Run the test suite and return (passed, output)."""
-    proc = await asyncio.create_subprocess_shell(
-        test_command,
-        cwd=worktree_path,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-    )
-    stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
-    output = stdout.decode(errors="replace")
-    return proc.returncode == 0, output
 
 
 async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, Any]:
@@ -64,12 +51,6 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
         test_command = repo.get("test_command", "pytest")
         language = repo.get("language", "python")
 
-        # Interpolate template variables in test_command
-        test_command = test_command.replace("{cr_id}", cr_id)
-        # If test_command doesn't reference the worktree path, run it from there
-        if worktree_path and not test_command.startswith("cd "):
-            test_command = f"cd {worktree_path} && {test_command}"
-
         repo_context = composer.build_repo_context(
             agents_md=repo.get("agents_md", ""),
             language=language,
@@ -95,6 +76,8 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
 
         # === RED PHASE: Write failing tests ===
         test_model = configurable.get("model", "claude-sonnet-4-20250514")
+        explore_model = configurable.get("explore_model", "")
+        plan_model = configurable.get("plan_model", "")
         test_tools = ["read_file", "write_file", "list_directory", "run_command"]
 
         if event_bus:
@@ -115,6 +98,8 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
             user_prompt=test_user,
             working_directory=worktree_path,
             model=test_model,
+            explore_model=explore_model,
+            plan_model=plan_model,
             on_tool_call=make_tool_call_emitter(event_bus, cr_id, "tdd:test_writer", "test_writer", repo_name),
             on_event=make_agent_event_emitter(event_bus, cr_id, "tdd:test_writer", "test_writer", repo_name),
             nudge_poll=make_nudge_poller(redis_client, cr_id, "test_writer") if redis_client else None,
@@ -182,6 +167,8 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
                 user_prompt=code_user,
                 working_directory=worktree_path,
                 model=code_model,
+                explore_model=explore_model,
+                plan_model=plan_model,
                 on_tool_call=make_tool_call_emitter(event_bus, cr_id, "tdd:code_writer", "code_writer", repo_name),
                 on_event=make_agent_event_emitter(event_bus, cr_id, "tdd:code_writer", "code_writer", repo_name),
                 nudge_poll=make_nudge_poller(redis_client, cr_id, "code_writer") if redis_client else None,
@@ -213,7 +200,9 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
                 ))
 
             # Run tests
-            tests_passing, test_output = await _run_tests(worktree_path, test_command)
+            tests_passing, test_output = await run_test_command(
+                worktree_path, test_command, cr_id,
+            )
 
             if event_bus:
                 await event_bus.emit(PipelineEvent(

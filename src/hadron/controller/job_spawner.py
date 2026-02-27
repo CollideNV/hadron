@@ -102,17 +102,40 @@ class K8sJobSpawner:
                     ),
                     spec=client.V1PodSpec(
                         restart_policy="Never",
+                        service_account_name="hadron-controller",
                         containers=[
                             client.V1Container(
                                 name="worker",
                                 image=self._worker_image,
+                                image_pull_policy="Never",
                                 command=["python", "-m", "hadron.worker.main", f"--cr-id={cr_id}"],
                                 env_from=[
                                     client.V1EnvFromSource(
                                         config_map_ref=client.V1ConfigMapEnvSource(
                                             name="hadron-config",
                                         )
-                                    )
+                                    ),
+                                ],
+                                env=[
+                                    client.V1EnvVar(
+                                        name="HADRON_ANTHROPIC_API_KEY",
+                                        value_from=client.V1EnvVarSource(
+                                            secret_key_ref=client.V1SecretKeySelector(
+                                                name="hadron-secrets",
+                                                key="anthropic-api-key",
+                                            )
+                                        ),
+                                    ),
+                                    client.V1EnvVar(
+                                        name="GITHUB_TOKEN",
+                                        value_from=client.V1EnvVarSource(
+                                            secret_key_ref=client.V1SecretKeySelector(
+                                                name="hadron-secrets",
+                                                key="github-token",
+                                                optional=True,
+                                            )
+                                        ),
+                                    ),
                                 ],
                                 resources=client.V1ResourceRequirements(
                                     requests={"memory": "512Mi", "cpu": "500m"},

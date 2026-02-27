@@ -30,6 +30,7 @@ export interface RawChangeRequest {
 
 export const EVENT_TYPES = [
   "pipeline_started",
+  "pipeline_resumed",
   "pipeline_completed",
   "pipeline_failed",
   "pipeline_paused",

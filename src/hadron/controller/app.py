@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -14,8 +15,15 @@ from fastapi.staticfiles import StaticFiles
 from hadron.config.bootstrap import load_bootstrap_config
 from hadron.db.engine import create_engine, create_session_factory
 from hadron.events.bus import RedisEventBus
-from hadron.controller.job_spawner import SubprocessJobSpawner
+from hadron.controller.job_spawner import K8sJobSpawner, SubprocessJobSpawner
 from hadron.events.interventions import InterventionManager
+
+logger = logging.getLogger(__name__)
+
+
+def _running_in_k8s() -> bool:
+    """Detect whether we are running inside a Kubernetes pod."""
+    return Path("/var/run/secrets/kubernetes.io/serviceaccount/token").exists()
 
 
 @asynccontextmanager
@@ -33,7 +41,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.redis = redis_client
     app.state.event_bus = RedisEventBus(redis_client)
     app.state.intervention_mgr = InterventionManager(redis_client)
-    app.state.job_spawner = SubprocessJobSpawner(redis=redis_client)
+
+    if _running_in_k8s():
+        logger.info("Running in Kubernetes — using K8sJobSpawner")
+        app.state.job_spawner = K8sJobSpawner()
+    else:
+        logger.info("Running outside Kubernetes — using SubprocessJobSpawner")
+        app.state.job_spawner = SubprocessJobSpawner(redis=redis_client)
 
     yield
 

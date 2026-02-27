@@ -123,9 +123,9 @@ async def resume_pipeline(cr_id: str, body: ResumeRequest, request: Request) -> 
     # Emit event so dashboard updates
     await request.app.state.event_bus.emit(PipelineEvent(
         cr_id=cr_id,
-        event_type=EventType.PIPELINE_STARTED,
+        event_type=EventType.PIPELINE_RESUMED,
         stage="controller",
-        data={"resumed": True, "overrides": body.state_overrides},
+        data={"overrides": body.state_overrides},
     ))
 
     return {"status": "resumed", "cr_id": cr_id, "overrides": body.state_overrides}

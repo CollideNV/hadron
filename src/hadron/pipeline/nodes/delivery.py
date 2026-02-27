@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from langgraph.types import RunnableConfig
 
-import asyncio
 import logging
 from typing import Any
 
 from hadron.git.worktree import WorktreeManager
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
+from hadron.pipeline.testing import run_test_command
 
 logger = logging.getLogger(__name__)
 
@@ -36,13 +36,9 @@ async def delivery_node(state: PipelineState, config: RunnableConfig) -> dict[st
         test_command = repo.get("test_command", "pytest")
 
         # Run full test suite
-        proc = await asyncio.create_subprocess_shell(
-            test_command, cwd=worktree_path,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+        tests_passing, test_output = await run_test_command(
+            worktree_path, test_command, cr_id,
         )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
-        test_output = stdout.decode(errors="replace")
-        tests_passing = proc.returncode == 0
 
         # Push branch
         branch_pushed = False

@@ -179,7 +179,10 @@ async def _run_single_reviewer(
     system_prompt = composer.compose_system_prompt(role)
     user_prompt = composer.compose_user_prompt(task_payload)
 
-    model = configurable.get("model", "claude-sonnet-4-20250514")
+    # Reviewers are explore-only: they read files and output JSON.
+    # Both explore and act phases use the explore model (cheap, read-only).
+    explore_model = configurable.get("explore_model", "")
+    model = explore_model or configurable.get("model", "claude-sonnet-4-20250514")
     tools = ["read_file", "list_directory"]
 
     if event_bus:
@@ -198,6 +201,7 @@ async def _run_single_reviewer(
         working_directory=worktree_path,
         allowed_tools=tools,
         model=model,
+        explore_model=explore_model,
         on_tool_call=make_tool_call_emitter(event_bus, cr_id, sub_stage, role, repo_name),
         on_event=make_agent_event_emitter(event_bus, cr_id, sub_stage, role, repo_name),
         nudge_poll=make_nudge_poller(redis_client, cr_id, role) if redis_client else None,

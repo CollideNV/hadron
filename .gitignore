@@ -17,6 +17,9 @@ node_modules/
 *.swp
 *.swo
 
+# Build output
+out/
+
 # Testing
 .pytest_cache/
 .coverage

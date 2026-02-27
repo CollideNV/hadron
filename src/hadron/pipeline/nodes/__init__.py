@@ -81,6 +81,20 @@ def make_agent_event_emitter(
                 stage=stage,
                 data={"role": role, "repo": repo, "text": data["text"]},
             ))
+        elif event_type == "phase_started":
+            await event_bus.emit(PipelineEvent(
+                cr_id=cr_id,
+                event_type=EventType.PHASE_STARTED,
+                stage=stage,
+                data={"role": role, "repo": repo, **data},
+            ))
+        elif event_type == "phase_completed":
+            await event_bus.emit(PipelineEvent(
+                cr_id=cr_id,
+                event_type=EventType.PHASE_COMPLETED,
+                stage=stage,
+                data={"role": role, "repo": repo, **data},
+            ))
 
     return _on_event
 

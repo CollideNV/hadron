@@ -133,6 +133,7 @@ async def run_worker(cr_id: str) -> None:
             ))
 
             # Run the graph
+            pipeline_cfg = config_snapshot.get("pipeline", {})
             runnable_config = {
                 "configurable": {
                     "thread_id": cr_id,
@@ -140,7 +141,9 @@ async def run_worker(cr_id: str) -> None:
                     "intervention_manager": intervention_mgr,
                     "agent_backend": agent_backend,
                     "workspace_dir": cfg.workspace_dir,
-                    "model": config_snapshot.get("pipeline", {}).get("default_model", "claude-sonnet-4-20250514"),
+                    "model": pipeline_cfg.get("default_model", "claude-sonnet-4-20250514"),
+                    "explore_model": pipeline_cfg.get("explore_model", ""),
+                    "plan_model": pipeline_cfg.get("plan_model", ""),
                     "redis": redis_client,
                 }
             }

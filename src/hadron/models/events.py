@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 class EventType(str, Enum):
     PIPELINE_STARTED = "pipeline_started"
+    PIPELINE_RESUMED = "pipeline_resumed"
     PIPELINE_COMPLETED = "pipeline_completed"
     PIPELINE_FAILED = "pipeline_failed"
     PIPELINE_PAUSED = "pipeline_paused"
@@ -24,6 +25,8 @@ class EventType(str, Enum):
     TEST_RUN = "test_run"
     REVIEW_FINDING = "review_finding"
     INTERVENTION_SET = "intervention_set"
+    PHASE_STARTED = "phase_started"
+    PHASE_COMPLETED = "phase_completed"
     COST_UPDATE = "cost_update"
     ERROR = "error"
 

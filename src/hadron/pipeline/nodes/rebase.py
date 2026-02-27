@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from langgraph.types import RunnableConfig
 
-import asyncio
 import logging
 from typing import Any
 
@@ -17,6 +16,7 @@ from hadron.pipeline.nodes import (
     emit_cost_update, make_agent_event_emitter, make_nudge_poller,
     make_tool_call_emitter, store_conversation,
 )
+from hadron.pipeline.testing import run_test_command
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +63,7 @@ async def rebase_node(state: PipelineState, config: RunnableConfig) -> dict[str,
             conflict_files = await wm.get_conflict_files(worktree_path)
 
             resolver_model = configurable.get("model", "claude-sonnet-4-20250514")
+            explore_model = configurable.get("explore_model", "")
             resolver_tools = ["read_file", "write_file", "list_directory", "run_command"]
             if event_bus:
                 await event_bus.emit(PipelineEvent(
@@ -89,6 +90,7 @@ Please read each conflicting file, resolve the conflict markers, and write the r
                 user_prompt=user_prompt,
                 working_directory=worktree_path,
                 model=resolver_model,
+                explore_model=explore_model,
                 on_tool_call=make_tool_call_emitter(event_bus, cr_id, "rebase", "conflict_resolver", repo_name),
                 on_event=make_agent_event_emitter(event_bus, cr_id, "rebase", "conflict_resolver", repo_name),
                 nudge_poll=make_nudge_poller(redis_client, cr_id, "conflict_resolver") if redis_client else None,
@@ -160,17 +162,11 @@ Please read each conflicting file, resolve the conflict markers, and write the r
     for repo in state.get("affected_repos", []):
         repo_name = repo.get("repo_name", "")
         worktree_path = repo.get("worktree_path", "")
-        test_command = repo.get("test_command", "pytest").replace("{cr_id}", cr_id)
-        if worktree_path and not test_command.startswith("cd "):
-            test_command = f"cd {worktree_path} && {test_command}"
-        proc = await asyncio.create_subprocess_shell(
-            test_command, cwd=worktree_path,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
-        )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
-        if proc.returncode != 0:
+        test_command = repo.get("test_command", "pytest")
+        passed, output = await run_test_command(worktree_path, test_command, cr_id)
+        if not passed:
             test_passed = False
-            logger.warning("Post-rebase tests failed for %s: %s", repo_name, stdout.decode(errors="replace")[-500:])
+            logger.warning("Post-rebase tests failed for %s: %s", repo_name, output[-500:])
 
     if event_bus:
         await event_bus.emit(PipelineEvent(
