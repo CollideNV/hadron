@@ -49,10 +49,17 @@ async def trigger_pipeline(cr: RawChangeRequest, request: Request) -> dict:
         session.add(cr_run)
         await session.commit()
 
-    # Spawn worker
+    # Spawn one worker per repo URL
     spawner = getattr(request.app.state, "job_spawner", None) or SubprocessJobSpawner(
         redis=getattr(request.app.state, "redis", None),
     )
-    await spawner.spawn(cr_id)
+    repo_urls = cr.repo_urls
+    default_branch = cr.repo_default_branch
 
-    return {"cr_id": cr_id, "status": "pending"}
+    workers_spawned: list[dict] = []
+    for url in repo_urls:
+        repo_name = url.rstrip("/").split("/")[-1]
+        await spawner.spawn(cr_id, repo_url=url, repo_name=repo_name, default_branch=default_branch)
+        workers_spawned.append({"repo_url": url, "repo_name": repo_name})
+
+    return {"cr_id": cr_id, "status": "pending", "workers": workers_spawned}

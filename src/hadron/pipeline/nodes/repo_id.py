@@ -1,4 +1,4 @@
-"""Repo Identification node — MVP: reads affected repos from input."""
+"""Repo Identification node — MVP: validates repo from worker input."""
 
 from __future__ import annotations
 
@@ -14,9 +14,10 @@ logger = logging.getLogger(__name__)
 
 
 async def repo_id_node(state: PipelineState, config: RunnableConfig) -> dict[str, Any]:
-    """Identify affected repositories.
+    """Validate the repo assigned to this worker.
 
-    MVP: Uses the repo info provided at CR intake time. No LLM or landscape intelligence.
+    MVP: Each worker receives its repo from the Controller at spawn time.
+    No LLM or landscape intelligence needed.
     """
     configurable = config.get("configurable", {})
     event_bus = configurable.get("event_bus")
@@ -27,21 +28,22 @@ async def repo_id_node(state: PipelineState, config: RunnableConfig) -> dict[str
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="repo_id"
         ))
 
-    # MVP: repos come from the initial CR submission
-    repos = state.get("affected_repos", [])
-    if not repos:
-        logger.error("No affected repos specified for CR %s", cr_id)
+    repo = state.get("repo", {})
+    if not repo or not repo.get("repo_url"):
+        logger.error("No repo specified for worker (CR %s)", cr_id)
         return {
             "current_stage": "repo_id",
             "status": "failed",
-            "error": "No affected repositories specified",
+            "error": "No repository specified for this worker",
             "stage_history": [{"stage": "repo_id", "status": "failed"}],
         }
+
+    repo_name = repo.get("repo_name", repo.get("repo_url", ""))
 
     if event_bus:
         await event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="repo_id",
-            data={"repos": [r.get("repo_name", r.get("repo_url", "")) for r in repos]},
+            data={"repo": repo_name},
         ))
 
     return {

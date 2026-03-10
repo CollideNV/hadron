@@ -28,36 +28,35 @@ async def delivery_node(state: PipelineState, config: RunnableConfig) -> dict[st
         ))
 
     wm = WorktreeManager(workspace_dir)
-    delivery_results = []
 
-    for repo in state.get("affected_repos", []):
-        repo_name = repo.get("repo_name", "")
-        worktree_path = repo.get("worktree_path", "")
-        test_command = repo.get("test_command", "pytest")
+    repo = state.get("repo", {})
+    repo_name = repo.get("repo_name", "")
+    worktree_path = repo.get("worktree_path", "")
+    test_command = repo.get("test_commands", ["pytest"])[0]
 
-        # Run full test suite
-        tests_passing, test_output = await run_test_command(
-            worktree_path, test_command, cr_id,
-        )
+    # Run full test suite
+    tests_passing, test_output = await run_test_command(
+        worktree_path, test_command, cr_id,
+    )
 
-        # Push branch
-        branch_pushed = False
-        if tests_passing:
-            try:
-                await wm.commit_and_push(worktree_path, f"chore: final push for {cr_id}")
-                branch_pushed = True
-            except RuntimeError as e:
-                logger.warning("Push failed for %s: %s", repo_name, e)
+    # Push branch
+    branch_pushed = False
+    if tests_passing:
+        try:
+            await wm.commit_and_push(worktree_path, f"chore: final push for {cr_id}")
+            branch_pushed = True
+        except RuntimeError as e:
+            logger.warning("Push failed for %s: %s", repo_name, e)
 
-        delivery_results.append({
-            "repo_name": repo_name,
-            "test_output": test_output[-2000:],
-            "tests_passing": tests_passing,
-            "branch_pushed": branch_pushed,
-            "pr_url": "",
-        })
+    delivery_results = [{
+        "repo_name": repo_name,
+        "test_output": test_output[-2000:],
+        "tests_passing": tests_passing,
+        "branch_pushed": branch_pushed,
+        "pr_url": "",
+    }]
 
-    all_delivered = all(r["tests_passing"] and r["branch_pushed"] for r in delivery_results)
+    all_delivered = tests_passing and branch_pushed
 
     if event_bus:
         await event_bus.emit(PipelineEvent(

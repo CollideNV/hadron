@@ -1,4 +1,9 @@
-"""Worktree Setup node — clone repos and create feature branch worktrees."""
+"""Worktree Setup node — clone repo and create feature branch worktree.
+
+Each worker handles exactly one repo. This node clones the repo,
+creates a worktree, reads AGENTS.md/CLAUDE.md, and auto-detects
+languages and test commands from marker files.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +12,7 @@ from langgraph.types import RunnableConfig
 import logging
 from typing import Any
 
+from hadron.git.detect import detect_languages_and_tests
 from hadron.git.worktree import WorktreeManager
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
@@ -15,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 async def worktree_setup_node(state: PipelineState, config: RunnableConfig) -> dict[str, Any]:
-    """Clone repos and set up worktrees for the CR."""
+    """Clone repo and set up worktree for the CR."""
     configurable = config.get("configurable", {})
     event_bus = configurable.get("event_bus")
     workspace_dir = configurable.get("workspace_dir", "/tmp/hadron-workspace")
@@ -27,44 +33,52 @@ async def worktree_setup_node(state: PipelineState, config: RunnableConfig) -> d
         ))
 
     wm = WorktreeManager(workspace_dir)
-    repos = state.get("affected_repos", [])
-    updated_repos = []
+    repo = state.get("repo", {})
+    repo_url = repo["repo_url"]
+    repo_name = repo.get("repo_name", repo_url.rstrip("/").split("/")[-1])
+    default_branch = repo.get("default_branch", "main")
 
-    for repo in repos:
-        repo_url = repo["repo_url"]
-        repo_name = repo.get("repo_name", repo_url.rstrip("/").split("/")[-1])
-        default_branch = repo.get("default_branch", "main")
+    logger.info("Setting up worktree for %s (CR %s)", repo_name, cr_id)
 
-        logger.info("Setting up worktree for %s (CR %s)", repo_name, cr_id)
+    await wm.clone_bare(repo_url, repo_name)
+    worktree_path = await wm.create_worktree(repo_name, cr_id, default_branch)
 
-        await wm.clone_bare(repo_url, repo_name)
-        worktree_path = await wm.create_worktree(repo_name, cr_id, default_branch)
+    # Read AGENTS.md / CLAUDE.md if present
+    agents_md = ""
+    for agents_file in ["AGENTS.md", "CLAUDE.md"]:
+        agents_path = worktree_path / agents_file
+        if agents_path.exists():
+            agents_md = agents_path.read_text()
+            break
 
-        # Read AGENTS.md if it exists
-        agents_md = ""
-        for agents_file in ["AGENTS.md", "CLAUDE.md"]:
-            agents_path = worktree_path / agents_file
-            if agents_path.exists():
-                agents_md = agents_path.read_text()
-                break
+    # Auto-detect languages and test commands (AGENTS.md overrides marker files)
+    languages, test_commands = detect_languages_and_tests(
+        str(worktree_path), agents_md=agents_md,
+    )
 
-        dir_tree = await wm.get_directory_tree(worktree_path)
+    dir_tree = await wm.get_directory_tree(worktree_path)
 
-        updated_repos.append({
-            **repo,
-            "repo_name": repo_name,
-            "worktree_path": str(worktree_path),
-            "agents_md": agents_md,
-        })
+    updated_repo = {
+        **repo,
+        "repo_name": repo_name,
+        "worktree_path": str(worktree_path),
+        "agents_md": agents_md,
+        "languages": languages,
+        "test_commands": test_commands,
+    }
 
     if event_bus:
         await event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="worktree_setup",
-            data={"worktrees": [r["worktree_path"] for r in updated_repos]},
+            data={
+                "worktree_path": str(worktree_path),
+                "languages": languages,
+                "test_commands": test_commands,
+            },
         ))
 
     return {
-        "affected_repos": updated_repos,
+        "repo": updated_repo,
         "current_stage": "worktree_setup",
         "stage_history": [{"stage": "worktree_setup", "status": "completed"}],
     }

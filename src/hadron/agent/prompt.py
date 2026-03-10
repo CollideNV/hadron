@@ -66,17 +66,18 @@ class PromptComposer:
         self,
         agents_md: str = "",
         directory_tree: str = "",
-        language: str = "",
-        test_command: str = "",
+        languages: list[str] | None = None,
+        test_commands: list[str] | None = None,
     ) -> str:
         """Build Layer 2 repo context string."""
         parts = []
         if agents_md:
             parts.append(f"### AGENTS.md\n\n{agents_md}")
-        if language:
-            parts.append(f"### Language: {language}")
-        if test_command:
-            parts.append(f"### Test command: `{test_command}`")
+        if languages:
+            parts.append(f"### Languages: {', '.join(languages)}")
+        if test_commands:
+            cmds = ", ".join(f"`{c}`" for c in test_commands)
+            parts.append(f"### Test commands: {cmds}")
         if directory_tree:
             parts.append(f"### Directory Structure\n\n```\n{directory_tree}\n```")
         return "\n\n".join(parts)

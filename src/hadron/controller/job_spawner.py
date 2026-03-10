@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class JobSpawner(Protocol):
     """Protocol for job spawner implementations."""
 
-    async def spawn(self, cr_id: str) -> None: ...
+    async def spawn(self, cr_id: str, repo_url: str, repo_name: str = "", default_branch: str = "main") -> None: ...
 
 
 class SubprocessJobSpawner:
@@ -24,19 +24,26 @@ class SubprocessJobSpawner:
         self._processes: dict[str, asyncio.subprocess.Process] = {}
         self._redis = redis
 
-    async def spawn(self, cr_id: str) -> None:
-        """Spawn a worker subprocess for the given CR."""
-        logger.info("Spawning subprocess worker for CR %s", cr_id)
+    async def spawn(self, cr_id: str, repo_url: str, repo_name: str = "", default_branch: str = "main") -> None:
+        """Spawn a worker subprocess for a single repo within a CR."""
+        if not repo_name:
+            repo_name = repo_url.rstrip("/").split("/")[-1]
+        worker_key = f"{cr_id}:{repo_name}"
+        logger.info("Spawning subprocess worker for CR %s, repo %s", cr_id, repo_name)
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, "-m", "hadron.worker.main", f"--cr-id={cr_id}",
+            sys.executable, "-m", "hadron.worker.main",
+            f"--cr-id={cr_id}",
+            f"--repo-url={repo_url}",
+            f"--repo-name={repo_name}",
+            f"--default-branch={default_branch}",
             env=dict(os.environ),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
-        self._processes[cr_id] = proc
+        self._processes[worker_key] = proc
 
         # Fire and forget — log output in background
-        asyncio.create_task(self._log_output(cr_id, proc))
+        asyncio.create_task(self._log_output(worker_key, proc))
 
     async def _log_output(self, cr_id: str, proc: asyncio.subprocess.Process) -> None:
         """Log worker output in background and store in Redis."""
@@ -74,9 +81,12 @@ class K8sJobSpawner:
         self._namespace = namespace
         self._worker_image = worker_image
 
-    async def spawn(self, cr_id: str) -> None:
-        """Create a K8s Job for the given CR."""
+    async def spawn(self, cr_id: str, repo_url: str, repo_name: str = "", default_branch: str = "main") -> None:
+        """Create a K8s Job for a single repo within a CR."""
         from kubernetes import client, config as k8s_config
+
+        if not repo_name:
+            repo_name = repo_url.rstrip("/").split("/")[-1]
 
         try:
             k8s_config.load_incluster_config()
@@ -85,20 +95,21 @@ class K8sJobSpawner:
 
         batch_v1 = client.BatchV1Api()
 
-        job_name = f"hadron-worker-{cr_id.lower().replace('_', '-')}"
+        safe_name = f"{cr_id}-{repo_name}".lower().replace("_", "-")
+        job_name = f"hadron-worker-{safe_name}"
 
         job = client.V1Job(
             metadata=client.V1ObjectMeta(
                 name=job_name,
                 namespace=self._namespace,
-                labels={"app": "hadron-worker", "cr-id": cr_id},
+                labels={"app": "hadron-worker", "cr-id": cr_id, "repo-name": repo_name},
             ),
             spec=client.V1JobSpec(
                 backoff_limit=1,
                 ttl_seconds_after_finished=3600,
                 template=client.V1PodTemplateSpec(
                     metadata=client.V1ObjectMeta(
-                        labels={"app": "hadron-worker", "cr-id": cr_id},
+                        labels={"app": "hadron-worker", "cr-id": cr_id, "repo-name": repo_name},
                     ),
                     spec=client.V1PodSpec(
                         restart_policy="Never",
@@ -108,7 +119,13 @@ class K8sJobSpawner:
                                 name="worker",
                                 image=self._worker_image,
                                 image_pull_policy="Never",
-                                command=["python", "-m", "hadron.worker.main", f"--cr-id={cr_id}"],
+                                command=[
+                                    "python", "-m", "hadron.worker.main",
+                                    f"--cr-id={cr_id}",
+                                    f"--repo-url={repo_url}",
+                                    f"--repo-name={repo_name}",
+                                    f"--default-branch={default_branch}",
+                                ],
                                 env_from=[
                                     client.V1EnvFromSource(
                                         config_map_ref=client.V1ConfigMapEnvSource(

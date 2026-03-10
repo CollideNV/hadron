@@ -1,6 +1,9 @@
-"""Worker entry point — executes the pipeline for a single CR.
+"""Worker entry point — executes the pipeline for a single repo within a CR.
 
-Usage: python -m hadron.worker.main --cr-id=CR-123
+Each worker handles exactly one repository. The Controller spawns one worker
+per repo_url in the CR.
+
+Usage: python -m hadron.worker.main --cr-id=CR-123 --repo-url=https://... [--repo-name=myrepo]
 """
 
 from __future__ import annotations
@@ -10,7 +13,6 @@ import asyncio
 import json
 import logging
 import sys
-import uuid
 
 import redis.asyncio as aioredis
 from sqlalchemy import select, update
@@ -52,12 +54,15 @@ def _pick_resume_node(overrides: dict) -> str:
     return max(nodes, key=lambda n: PIPELINE_NODE_ORDER.index(n) if n in PIPELINE_NODE_ORDER else -1)
 
 
-async def run_worker(cr_id: str) -> None:
-    """Execute the pipeline for a single CR."""
+async def run_worker(cr_id: str, repo_url: str, repo_name: str = "", default_branch: str = "main") -> None:
+    """Execute the pipeline for a single repo within a CR."""
     cfg = load_bootstrap_config()
     logging.basicConfig(level=getattr(logging, cfg.log_level), format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
-    logger.info("Worker starting for CR %s", cr_id)
+    if not repo_name:
+        repo_name = repo_url.rstrip("/").split("/")[-1]
+
+    logger.info("Worker starting for CR %s, repo %s (%s)", cr_id, repo_name, repo_url)
 
     # Connect to infrastructure
     engine = create_engine(cfg.postgres_url)
@@ -94,13 +99,11 @@ async def run_worker(cr_id: str) -> None:
             "external_id": cr_run.external_id or "",
             "raw_cr_title": raw_cr.get("title", ""),
             "raw_cr_text": raw_cr.get("description", ""),
-            "affected_repos": [{
-                "repo_url": raw_cr.get("repo_url", ""),
-                "repo_name": raw_cr.get("repo_url", "").rstrip("/").split("/")[-1] if raw_cr.get("repo_url") else "",
-                "default_branch": raw_cr.get("repo_default_branch", "main"),
-                "test_command": raw_cr.get("test_command", "pytest"),
-                "language": raw_cr.get("language", "python"),
-            }],
+            "repo": {
+                "repo_url": repo_url,
+                "repo_name": repo_name,
+                "default_branch": default_branch,
+            },
             "config_snapshot": config_snapshot,
             "status": "running",
             "cost_input_tokens": 0,
@@ -136,7 +139,7 @@ async def run_worker(cr_id: str) -> None:
             pipeline_cfg = config_snapshot.get("pipeline", {})
             runnable_config = {
                 "configurable": {
-                    "thread_id": cr_id,
+                    "thread_id": f"{cr_id}:{repo_name}",
                     "event_bus": event_bus,
                     "intervention_manager": intervention_mgr,
                     "agent_backend": agent_backend,
@@ -240,8 +243,11 @@ async def run_worker(cr_id: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Hadron pipeline worker")
     parser.add_argument("--cr-id", required=True, help="Change Request ID to process")
+    parser.add_argument("--repo-url", required=True, help="Repository URL to process")
+    parser.add_argument("--repo-name", default="", help="Repository name (derived from URL if omitted)")
+    parser.add_argument("--default-branch", default="main", help="Default branch name")
     args = parser.parse_args()
-    asyncio.run(run_worker(args.cr_id))
+    asyncio.run(run_worker(args.cr_id, args.repo_url, args.repo_name, args.default_branch))
 
 
 if __name__ == "__main__":
