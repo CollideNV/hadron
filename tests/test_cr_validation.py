@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from hadron.models.cr import RawChangeRequest, validate_test_command
+from hadron.pipeline.testing import run_test_command
 
 # Minimal valid fields for constructing a RawChangeRequest.
 _BASE = {"title": "Test CR", "description": "A change request"}
@@ -165,3 +166,44 @@ class TestRepoUrlValidation:
                 "https://github.com/org/repo",
                 "file:///etc/passwd",
             ])
+
+
+class TestCrIdSanitization:
+    """cr_id must be validated before interpolation into test commands."""
+
+    @pytest.mark.asyncio
+    async def test_safe_cr_id_accepted(self, tmp_path: pytest.TempPathFactory) -> None:
+        # cr_id validation should pass; command will fail (no pytest config) but that's fine
+        passed, output = await run_test_command(str(tmp_path), "pytest --co -q", "CR-abc123")
+        # We only care that cr_id wasn't rejected — pytest exit code doesn't matter here
+        assert "unsafe characters" not in output
+
+    @pytest.mark.asyncio
+    async def test_cr_id_with_semicolon_rejected(self, tmp_path: pytest.TempPathFactory) -> None:
+        passed, output = await run_test_command(str(tmp_path), "pytest", "x; rm -rf /")
+        assert passed is False
+        assert "unsafe characters" in output
+
+    @pytest.mark.asyncio
+    async def test_cr_id_with_spaces_rejected(self, tmp_path: pytest.TempPathFactory) -> None:
+        passed, output = await run_test_command(str(tmp_path), "pytest", "x && echo pwned")
+        assert passed is False
+        assert "unsafe characters" in output
+
+    @pytest.mark.asyncio
+    async def test_cr_id_with_backtick_rejected(self, tmp_path: pytest.TempPathFactory) -> None:
+        passed, output = await run_test_command(str(tmp_path), "pytest", "`whoami`")
+        assert passed is False
+        assert "unsafe characters" in output
+
+    @pytest.mark.asyncio
+    async def test_cr_id_with_dollar_rejected(self, tmp_path: pytest.TempPathFactory) -> None:
+        passed, output = await run_test_command(str(tmp_path), "pytest", "$(id)")
+        assert passed is False
+        assert "unsafe characters" in output
+
+    @pytest.mark.asyncio
+    async def test_normal_cr_id_format(self, tmp_path: pytest.TempPathFactory) -> None:
+        """Standard server-generated cr_id format should always pass."""
+        passed, output = await run_test_command(str(tmp_path), "pytest --co -q", "CR-deadbeef")
+        assert "unsafe characters" not in output

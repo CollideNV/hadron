@@ -56,15 +56,19 @@ _AGENT_COMMAND_ALLOWLIST: list[re.Pattern[str]] = [
 ]
 
 # Shell metacharacters that indicate chaining/piping — always rejected.
-_DANGEROUS_SHELL_CHARS = frozenset(";`$\n")
+_DANGEROUS_SHELL_CHARS = frozenset(";|`$\n")
 _DANGEROUS_SHELL_PATTERNS = ("&&", "||", "$(", ">", "<")
+
+# Subcommand flags for `find` that enable arbitrary execution — always blocked.
+_FIND_DANGEROUS_FLAGS = ("-exec", "-execdir", "-delete", "-ok", "-okdir")
 
 
 def _validate_agent_command(cmd: str) -> bool:
     """Check whether a command from an agent is allowed.
 
     Blocks shell metacharacters and unknown command prefixes.
-    Pipe (|) is allowed for simple output filtering (e.g. grep).
+    Additional restrictions apply to commands like ``find`` that have
+    dangerous flags (``-exec``, ``-delete``).
     """
     # Reject obviously dangerous patterns
     if any(c in cmd for c in _DANGEROUS_SHELL_CHARS):
@@ -73,7 +77,13 @@ def _validate_agent_command(cmd: str) -> bool:
         if pat in cmd:
             return False
     # Check against allowlist
-    return any(p.match(cmd) for p in _AGENT_COMMAND_ALLOWLIST)
+    if not any(p.match(cmd) for p in _AGENT_COMMAND_ALLOWLIST):
+        return False
+    # Extra guard: reject dangerous find flags even if prefix matches
+    if cmd.startswith("find "):
+        if any(flag in cmd for flag in _FIND_DANGEROUS_FLAGS):
+            return False
+    return True
 
 logger = logging.getLogger(__name__)
 

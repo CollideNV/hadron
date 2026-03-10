@@ -52,6 +52,12 @@ async def run_test_command(
     - Uses *cwd* instead of a ``cd … &&`` shell hack.
     - Kills the process on timeout rather than leaking it.
     """
+    # Defense-in-depth: reject cr_id values that aren't safe for shell interpolation.
+    # Server-generated cr_ids are always "CR-<hex>", but validate in case of misuse.
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", cr_id):
+        logger.error("cr_id rejected by safety check: %r", cr_id)
+        return False, f"Error: cr_id contains unsafe characters: {cr_id!r}"
+
     cmd = test_command.replace("{cr_id}", cr_id)
 
     if not validate_test_command(cmd):

