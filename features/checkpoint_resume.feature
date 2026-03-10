@@ -11,7 +11,7 @@ Feature: Checkpoint and Resume
 
   Scenario: Resume from checkpoint on worker restart
     Given a worker has terminated after checkpointing
-    When a new worker is spawned for the same CR
+    When a new worker is spawned for the same CR and repo
     Then it loads the latest checkpoint from PostgreSQL
     And it resumes execution from the last completed node
 

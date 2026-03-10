@@ -16,9 +16,9 @@ This document describes the architecture for a fully AI-driven Software Developm
 
 **Agent Backends (pluggable):** Claude Agent SDK, OpenCode SDK, or OpenAI Codex SDK — configurable per stage, per repo. Each agent role has an ordered provider chain for automatic failover, with retry policies, rate limit coordination, and proactive degradation routing.
 
-**Repo Management:** Git worktrees — one branch per repo per change request, pod-local fast storage, zero-copy stage handoffs.
+**Repo Management:** Git worktrees — one branch per repo per change request. Each repo runs in its own worker pod. Language and test tooling auto-detected from repo files (pyproject.toml, package.json, Cargo.toml, etc.).
 
-**Execution Sandboxing:** Kubernetes pods. Each change request runs in an ephemeral pod with process isolation, resource limits, and stage-aware network policies. AI-generated code runs egress-locked during TDD (LLM APIs and git only); full egress unlocked after Security Review passes. Test infrastructure (databases, caches) runs as ephemeral sidecars — no shared staging environments. Pod resources scale dynamically with CR complexity.
+**Execution Sandboxing:** Kubernetes pods. Each repo in a change request runs in its own ephemeral worker pod with process isolation, resource limits, and stage-aware network policies. AI-generated code runs egress-locked during TDD (LLM APIs and git only); full egress unlocked after Security Review passes. Test infrastructure (databases, caches) runs as ephemeral sidecars — no shared staging environments.
 
 **Prompt Injection Defense:** Six-layer defense model. Input risk screening at intake catches low-effort attacks. Behaviour specs act as a sanitised firewall between untrusted CR text and code-writing agents. Security Reviewer operates in adversarial mode — treats the CR as hostile, flags code that doesn't match specs regardless of stated justification. Deterministic diff scope analysis catches out-of-scope changes. Runtime containment (egress lock, command boundaries) limits blast radius. Optional human PR review as final layer.
 
@@ -30,13 +30,13 @@ This document describes the architecture for a fully AI-driven Software Developm
 
 **Control Room:** Real-time event stream via Redis Streams and Server-Sent Events (SSE), with three levels of observability (pipeline → subgraph → agent tool calls). Pause, redirect, skip, take over, or abort at any moment (via REST API). Pluggable notifications (Slack, Teams, email, GitHub, custom webhooks) ensure humans stay informed.
 
-**Multi-Repo Coordination:** When a CR affects multiple repos, agent instances run in parallel (one per repo) within the same worker pod. All repos share filesystem visibility. Fan-out/fan-in at each stage ensures coordinated progress.
+**Multi-Repo Coordination:** When a CR affects multiple repos, the Controller spawns one worker pod per repo. Each worker runs independently through the full pipeline (translate → TDD → review → push PR → terminate). The Controller tracks all workers for a CR and coordinates the release gate — once all repos have pushed reviewed PRs, a human can approve and merge them all.
 
 **Cost Tracking:** Token costs accumulated per agent call in real-time. Dashboard shows running cost per CR. Circuit breakers auto-pause when thresholds are exceeded.
 
 **Authentication:** OIDC-based, with Keycloak as the default identity provider. Role-based access controls who can view, intervene, approve releases, and administer the system. Multi-tenant: a single installation supports multiple teams with full logical isolation of repos, CRs, costs, and configuration.
 
-**Deployment:** Kubernetes-native. Three process types — a lightweight always-on **Controller** (intake, dashboard, webhooks), ephemeral **Worker** pods (one per CR, LangGraph executor + agents), and a **Landscape Scanner** (background knowledge-building). Runs on any cloud (EKS, GKE, AKS), on-prem, or local (k3s, kind).
+**Deployment:** Kubernetes-native. Three process types — a lightweight always-on **Controller** (intake, dashboard, webhooks, release coordination), ephemeral **Worker** pods (one per repo per CR, LangGraph executor + agents), and a **Landscape Scanner** (background knowledge-building). Runs on any cloud (EKS, GKE, AKS), on-prem, or local (k3s, kind).
 
 ---
 
@@ -110,7 +110,7 @@ This document describes the architecture for a fully AI-driven Software Developm
 | Pluggable CR sources | Pipeline doesn't own issue tracking — integrates with whatever exists |
 | LangGraph + PostgreSQL checkpointing | Durable state survives pod failures; any worker can resume any CR |
 | Redis for events + interventions | Decouples workers from controller; real-time pub/sub + persistent streams |
-| Ephemeral K8s worker pods | One pod per CR — perfect isolation, auto-cleanup, cloud-agnostic |
+| Ephemeral K8s worker pods | One pod per repo per CR — perfect isolation, auto-cleanup, cloud-agnostic, true parallelism across repos |
 | Pod IS the sandbox | No Docker-in-Docker; K8s provides all isolation natively |
 | emptyDir workspace | Pod-local fast SSD; no shared filesystem complexity |
 | Push to remote after every stage | All work survives pod failure; human take-over via git clone |
@@ -123,13 +123,13 @@ This document describes the architecture for a fully AI-driven Software Developm
 | Controller rolling updates | SSE drops on pod drain; client auto-reconnects to new pod, replays from Redis Stream. Workers are ephemeral (new image on next spawn). Scanner is a CronJob (picks up new image on next run). Zero-downtime deploys with no special machinery |
 | OIDC for authentication, pipeline DB for authorization | IdP tells us who you are. Our database decides what you can do and where. No dependency on IdP admin for day-to-day user/role management |
 | Multi-tenant on shared infrastructure | Single Controller, single DB, tenant ID on every row. No per-tenant deployment overhead. Scales from 1 team to N teams without architectural change |
-| One pod per CR, not one pod per repo | Cross-repo visibility (shared filesystem), single checkpoint, simple fan-out/fan-in. Pod-per-repo trades correctness simplicity for marginal parallelism — deferred until evidence of bottleneck |
+| One pod per repo, not one pod per CR | True parallelism — each repo gets its own pod and runs the full pipeline independently. Workers push PRs and terminate. Controller coordinates the release gate across all repos in a CR. Simpler worker code (no fan-out/fan-in loops), better resource utilisation, natural horizontal scaling |
 | Per-tenant roles in pipeline DB | A user can be Admin in one tenant and Viewer in another. Managed via dashboard, not the IdP |
 | Tenant switcher in dashboard | User selects active tenant. All views, actions, and events scope to it. `X-Tenant-ID` header on every API call |
 | Role-based access with Approver gate | Release approval is the critical safety checkpoint — only authorised humans |
 | Infrastructure-as-a-Sidecar | Test databases and caches are ephemeral pod sidecars. No shared staging. All state wiped when the pod dies |
 | Stage-aware network policy (egress locking) | AI-generated code runs network-locked during TDD. Full egress unlocked only after Security Review passes |
-| Dynamic worker sizing | Pod resources scale with CR complexity (repo count × weight). 1-repo fix gets a small pod; 5-repo feature gets a large one |
+| Dynamic worker sizing | Pod resources scale with repo characteristics (test suite weight, compilation heaviness). Each repo has its own pod — no multi-repo resource contention |
 | Atomic Merge Check (stale approval protection) | After approval, verify main hasn't moved. If it has, auto-rebase and re-test before merging — no human re-approval needed unless tests fail |
 | Agent Retrospective (post-CR knowledge distillation) | Lightweight LLM call after every CR extracts repo-specific learnings. Future CRs benefit from past mistakes |
 | Resume-with-Validation (Sync Node) | After human take-over, pipeline diffs, updates specs, and re-runs tests before the AI continues. Never operates on stale assumptions |
@@ -143,13 +143,14 @@ This document describes the architecture for a fully AI-driven Software Developm
 | Adversarial Security Reviewer | Security Reviewer has a fundamentally different trust model than code-writing agents. CR description marked as untrusted. "The CR asked for it" is not a valid justification for suspicious code |
 | Diff scope analysis is deterministic, not LLM | Can't be prompt-injected. Flags files/endpoints/dependencies outside expected scope. Structural check, not semantic |
 | Four-layer prompt composition | Each layer changes at different rate — enables independent evolution |
+| Auto-detect languages and test tooling | Workers detect languages and test commands from repo marker files (pyproject.toml, package.json, Cargo.toml, etc.). AGENTS.md overrides take precedence. No manual configuration needed per CR |
 | AGENTS.md convention | Teams control agent behaviour in their codebase — primary customisation lever |
 | Versioned prompts with A/B testing | Prompts evolve based on metrics, not intuition |
 | Scanner as separate process | Knowledge-building never blocks pipeline; improves continuously |
 | Repo identification: manual → LLM → auto | Progressive trust: start safe, earn confidence, automate when proven |
 | Feedback loop on repo identification | System gets smarter with every human correction |
-| Parallel agent instances per repo | Multi-repo CRs run N agents in parallel — all repos in one pod, one graph, shared visibility |
-| Fan-out / fan-in per stage | All repos complete a stage before any advances to the next — ensures coordinated feedback loops |
+| Independent worker per repo | Multi-repo CRs spawn N workers that run fully independently. No coordination needed until the release gate |
+| Release coordination in Controller | Workers push PRs and terminate. Controller tracks all repos for a CR and presents a unified release gate when all PRs are ready |
 | Checkpoint-and-terminate during waits | Worker pods release compute during CI and approval waits; new pod resumes from checkpoint |
 | Duplicate CR detection on external ID | Prevents double-processing from webhook retries or multi-source triggers |
 | Pluggable secret providers | Vault, AWS SM, Azure KV, GCP SM, or K8s Secrets — whatever the deployment needs |
@@ -168,7 +169,7 @@ This document describes the architecture for a fully AI-driven Software Developm
 | Substantive source changes auto-pause | Description/criteria edits pause the pipeline immediately — continuing against stale requirements is wasteful. Human decides: re-trigger, redirect, or continue |
 | Pipeline never transitions directly to failed | Always pauses first. Human sees failure context and decides: retry, redirect, take over, or give up |
 | Re-run from scratch or checkpoint | Operator chooses: full restart, resume from checkpoint, or resume from specific stage. Previous attempt artifacts preserved |
-| Partial success is failure | Multi-repo CRs are atomic — no repo advances to delivery until all pass. You can't ship half a feature |
+| Partial success is failure | Multi-repo CRs are atomic at the release gate — all repos must have reviewed PRs before the human can approve. You can't ship half a feature |
 
 ---
 

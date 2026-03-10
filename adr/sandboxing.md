@@ -8,7 +8,7 @@
 
 ### 7.1 The Pod IS the Sandbox
 
-Each change request runs in its own ephemeral K8s pod. The pod provides all isolation — no Docker-in-Docker or nested containers.
+Each repo in a change request runs in its own ephemeral K8s pod. The pod provides all isolation — no Docker-in-Docker or nested containers. A CR affecting 3 repos spawns 3 independent worker pods.
 
 | Concern | How the K8s Pod Handles It |
 |---------|---------------------------|
@@ -117,30 +117,25 @@ AI-generated code is untrusted until reviewed. The pod's network policy changes 
 
 ### 7.5 Dynamic Worker Sizing
 
-Instead of static resource limits for every pod, the Job Spawner is **complexity-aware**. It calculates pod requests/limits based on the CR's characteristics, determined during the Repo Identification phase:
+Since each repo gets its own worker pod, sizing is per-repo rather than per-CR. The Job Spawner sizes each pod based on the repo's characteristics:
 
-```
-Pod Resources = Base_Resources + (Affected_Repos × Repo_Weight)
-```
+| Repo characteristic | Pod size | CPU request | Memory request |
+|--------------------|----------|-------------|----------------|
+| Small (lightweight tests, scripting language) | Small | 1 CPU | 4Gi |
+| Medium (moderate test suite, standard builds) | Medium | 2 CPU | 8Gi |
+| Large (heavy test suite, compiled language) | Large | 4 CPU | 16Gi |
 
-| CR complexity | Affected repos | Pod size | CPU request | Memory request |
-|--------------|---------------|----------|-------------|----------------|
-| Small | 1 repo | Small | 1 CPU | 4Gi |
-| Medium | 2–3 repos | Medium | 2 CPU | 8Gi |
-| Large | 4–6 repos | Large | 4 CPU | 16Gi |
-| XL | 7+ repos | XL | 6 CPU | 24Gi |
-
-The weight can be further adjusted by repo characteristics: monorepos with large test suites get more memory, repos with heavy compilation (Rust, Java) get more CPU. This is configurable per repo:
+This is configurable per repo:
 
 ```yaml
 repos:
   - name: "auth-service"
-    worker_weight: 1.0          # default
+    worker_weight: 1.0          # default — medium pod
   - name: "platform-monorepo"
-    worker_weight: 2.5          # large test suite, heavy builds
+    worker_weight: 2.5          # large test suite, heavy builds — large pod
 ```
 
-**Why this matters:** A 1-repo typo fix shouldn't claim 4 CPUs and 16Gi from the cluster while a 5-repo feature change is queued. Dynamic sizing improves cluster density and reduces queueing delays. The Controller calculates the size before spawning the Job, using information available from Repo Identification.
+**Why this matters:** Each repo gets exactly the resources it needs — a lightweight Python service gets a small pod while a Rust monorepo with a 30-minute test suite gets a large one. No resource contention between repos since they're in separate pods. The cluster autoscaler handles the aggregate demand.
 
 ### 7.6 Agent Command Boundaries
 

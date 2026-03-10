@@ -26,7 +26,7 @@
 - [ ] v1 prompt templates for all agent roles (including Retrospective Agent, Sync Agent, Input Screener)
 - [ ] AGENTS.md convention: discovery, parsing, injection
 - [ ] Intake node (structured output + source reporting + input risk screening)
-- [ ] Multi-repo fan-out / fan-in execution model
+- [ ] Multi-repo: Controller spawns one worker per repo, tracks completion
 - [ ] Behaviour Translation + Verification subgraphs (with cross-repo consistency, spec firewall design)
 - [ ] TDD Development subgraph (with intervention checks, per-repo parallelism)
 - [ ] Code Review subgraph (per-repo parallelism, cross-repo spec compliance, adversarial Security Reviewer prompt)
@@ -82,7 +82,7 @@
 - [ ] Controller Deployment + Service + Ingress manifests
 - [ ] Worker Job template + stage-aware NetworkPolicy (egress-locked TDD → full egress after review)
 - [ ] Ephemeral test infrastructure: sidecar container injection from repo config / test-compose.yaml
-- [ ] Dynamic worker sizing: Job Spawner calculates pod resources from repo count × weight
+- [ ] Dynamic worker sizing: Job Spawner calculates pod resources from per-repo weight
 - [ ] Agent command boundaries: non-root user, seccomp profile, filesystem permissions, command allowlist
 - [ ] Git authentication: GitHub App token generation, per-tenant credential injection
 - [ ] Pluggable secret provider integration (K8s Secrets, Vault, AWS SM, etc.)
@@ -93,7 +93,7 @@
 - [ ] Local dev setup (kind cluster)
 - [ ] Jira + GitHub Issues connectors
 - [ ] OpenCode + Codex agent backends
-- [ ] E2E: multi-repo, mixed delivery, pod failure recovery
+- [ ] E2E: multi-repo (one worker per repo), mixed delivery, pod failure recovery
 
 ### Phase 7 — Production (Week 13)
 - [ ] System observability: Prometheus metrics, Grafana dashboards
@@ -127,8 +127,8 @@
 | Agent going wrong direction | Real-time events in control room; redirect early |
 | Incorrect code passes review | TDD + multi-reviewer + CI + human gate (5 layers) |
 | Token costs spiral | Per-call tracking, running total in dashboard, auto-pause at threshold |
-| Cross-repo conflicts | Consistency checker + shared worktree visibility + CI integration tests |
-| Cross-repo dependency during TDD | Agents share filesystem — can read sibling repos for API contracts |
+| Cross-repo conflicts | Controller validates cross-repo consistency at release gate + CI integration tests |
+| Cross-repo dependency during TDD | CR description provides shared context. Controller can inject cross-repo spec summaries into worker context |
 | CI webhook never arrives | Controller polls CI API as fallback after timeout |
 | Worker pod dies mid-pipeline | K8s Job restart; resume from PostgreSQL checkpoint + git remote |
 | Worker pod idle during CI wait | Checkpoint-and-terminate releases pod; new pod resumes on webhook |
@@ -147,7 +147,7 @@
 | Stale approval: main moved after approval | Atomic Merge Check auto-rebases and re-tests before merge. No manual re-approval unless tests fail |
 | AI-generated code exfiltrates data via network | Egress-locked during TDD — only LLM APIs and git allowed. Full egress after Security Review pass |
 | Test infrastructure leaks to shared staging | Infrastructure-as-a-Sidecar enforced — only ephemeral pod sidecars. NetworkPolicy blocks external DB access |
-| Small CRs waste cluster resources | Dynamic worker sizing — pod resources scale with complexity. 1-repo CR gets a small pod |
+| Small CRs waste cluster resources | Dynamic worker sizing — each repo's pod sized to its needs |
 | Human manually breaks code, AI continues blindly | Sync Node diffs changes, updates specs, re-runs full test suite before AI resumes. Pipeline re-pauses if tests fail |
 | Retrospective Agent hallucinates learnings | Non-blocking (skip on failure); learnings are additive context, not hard rules. Admins can prune via Knowledge Store |
 | Same mistake repeated across CRs | Retrospective learnings injected into Layer 2 context for future CRs touching the same repo |
@@ -168,8 +168,7 @@
 | Tenant data leaks across tenants | Tenant ID on every DB row + every Redis key prefix; Controller scopes all queries by active tenant from X-Tenant-ID header; user's tenant membership verified on every request |
 | Noisy neighbour (one tenant's CRs starve others) | Per-tenant resource quotas on K8s (optional); per-tenant concurrency limits in config |
 | Nobody notices release gate waiting | Pluggable notifications; Approver role gets auto-notified on preferred channel |
-| Monorepo: agents step on each other | Agents scoped to application directories; shared visibility prevents conflicts |
-| Parallel agents exhaust pod resources | Resource limits per agent; fan-out degree bounded by pod CPU/memory |
+| Monorepo: agents step on each other | Agents scoped to application directories within the same worker pod |
 | Primary LLM provider goes down | Provider chain fails over to next provider automatically; retry with backoff first |
 | All LLM providers down simultaneously | Pipeline pauses affected CRs; alerts operator; resumes when any provider recovers |
 | Rate limits hit across concurrent CRs | Shared token bucket per API key; proactive throttling before hitting 429s |
@@ -180,7 +179,7 @@
 | CR cancelled but artifacts left behind | Cleanup wizard guides operator; can be revisited later. Stale branches visible in dashboard |
 | Source issue changed mid-pipeline | Substantive changes (description, criteria) auto-pause pipeline with decision screen. Non-substantive changes notify only |
 | Failed CR re-run conflicts with old branch | Re-run uses new branch suffix (`-r2`); old artifacts preserved for reference |
-| Multi-repo partial failure blocks release | CR is atomic — entire CR pauses. Human redirects or takes over the failing repo, or retries/fails the whole CR |
+| Multi-repo partial failure blocks release | Workers are independent — failure in one repo doesn't affect others. Release gate waits for all repos. Human can redirect/retry the failing repo only |
 
 ---
 

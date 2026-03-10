@@ -3,10 +3,10 @@ Feature: Human Interventions
   instructions, sending nudges to specific agents, or resuming
   paused pipelines with state overrides.
 
-  Scenario: Set intervention on a running CR
-    When a user sends a POST to "/api/pipeline/{cr_id}/intervene" with instructions
-    Then the instructions are stored in Redis at "hadron:cr:{cr_id}:intervention"
-    And the worker picks up the intervention before the next node execution
+  Scenario: Set intervention on a running repo worker
+    When a user sends a POST to "/api/pipeline/{cr_id}/intervene" with instructions and a repo name
+    Then the instructions are stored in Redis at "hadron:cr:{cr_id}:repo:{repo}:intervention"
+    And the repo's worker picks up the intervention before the next node execution
 
   Scenario: Consume intervention atomically
     Given an intervention has been set for a CR
@@ -19,12 +19,12 @@ Feature: Human Interventions
     Then the nudge is stored in Redis at "hadron:cr:{cr_id}:nudge:{role}"
     And the agent picks up the nudge between tool-use rounds
 
-  Scenario: Resume a paused pipeline
-    Given a CR is in "paused" status
-    When a user sends a POST to "/api/pipeline/{cr_id}/resume" with state overrides
-    Then the CRRun status is updated to "running"
+  Scenario: Resume a paused repo worker
+    Given a repo worker for a CR is in "paused" status
+    When a user sends a POST to "/api/pipeline/{cr_id}/resume" with state overrides and a repo name
+    Then the repo worker status is updated to "running"
     And the overrides are stored in Redis with a 1-hour TTL
-    And a new worker is spawned
+    And a new worker is spawned for that repo
     And a PIPELINE_RESUMED event is emitted
 
   Scenario: Resume with review override

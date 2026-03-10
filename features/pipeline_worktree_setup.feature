@@ -1,9 +1,10 @@
 Feature: Worktree Setup
-  The worktree setup stage clones repositories as bare clones and
-  creates isolated git worktrees for the CR's feature branch.
+  The worktree setup stage clones the worker's repository as a bare
+  clone and creates an isolated git worktree for the CR's feature
+  branch. It also auto-detects languages and test tooling.
 
   Scenario: Clone and create worktree for a new repo
-    Given a CR with an identified repo that has not been cloned before
+    Given a worker has started for a repo that has not been cloned before
     When the worktree setup node executes
     Then the repo is cloned as a bare clone into the workspace
     And a worktree is created at "runs/cr-{cr_id}/{repo_name}/"
@@ -30,3 +31,38 @@ Feature: Worktree Setup
     When the worktree setup node completes
     Then a directory tree of the repo is captured at 3 levels depth
     And hidden directories and common noise directories are excluded
+
+  Scenario: Auto-detect Python project
+    Given the repo contains a pyproject.toml or setup.py
+    When the worktree setup node executes
+    Then "python" is added to the detected languages
+    And "pytest" is added to the detected test commands
+
+  Scenario: Auto-detect Node.js project
+    Given the repo contains a package.json
+    When the worktree setup node executes
+    Then "javascript" or "typescript" is added to the detected languages
+    And "npm test" is added to the detected test commands
+
+  Scenario: Auto-detect Rust project
+    Given the repo contains a Cargo.toml
+    When the worktree setup node executes
+    Then "rust" is added to the detected languages
+    And "cargo test" is added to the detected test commands
+
+  Scenario: Auto-detect Go project
+    Given the repo contains a go.mod
+    When the worktree setup node executes
+    Then "go" is added to the detected languages
+    And "go test ./..." is added to the detected test commands
+
+  Scenario: Polyglot repo with multiple languages
+    Given the repo contains both pyproject.toml and package.json
+    When the worktree setup node executes
+    Then both "python" and "javascript" are detected as languages
+    And both "pytest" and "npm test" are detected as test commands
+
+  Scenario: AGENTS.md overrides auto-detected test command
+    Given the repo's AGENTS.md specifies a custom test command
+    When the worktree setup node executes
+    Then the AGENTS.md test command takes precedence over auto-detected commands

@@ -18,7 +18,7 @@ The pipeline carries a state object through all nodes. Key state groups:
 |-------|--------|---------|
 | **CR Source** | source, external ID, external URL | Traceability back to origin |
 | **Change Request** | CR ID, raw text, structured CR | The work to be done |
-| **Repo Context** | affected repos, repo identification result, worktree paths, delivery configs | What repos, where on disk, how to deliver |
+| **Repo Context** | repo URL, repo name, worktree path, detected languages, test commands, delivery config | This worker's repo, where on disk, how to deliver |
 | **Behaviour** | specs per repo, verified flag, verification feedback | What to build |
 | **Development** | code changes, test results, dev iteration count | The building |
 | **Review** | findings per repo, critical flag, review iteration count | Quality checks |

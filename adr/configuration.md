@@ -39,11 +39,10 @@ controller:
 
 worker:
   image: "${REGISTRY}/hadron-worker:latest"
-  sizing:                                     # base resources; scaled by repo count × weight
-    small:  { cpu: "1",  memory: "4Gi"  }     # 1 repo
-    medium: { cpu: "2",  memory: "8Gi"  }     # 2-3 repos
-    large:  { cpu: "4",  memory: "16Gi" }     # 4-6 repos
-    xl:     { cpu: "6",  memory: "24Gi" }     # 7+ repos
+  sizing:                                     # per-repo pod sizing; each worker handles one repo
+    small:  { cpu: "1",  memory: "4Gi"  }     # lightweight repos (scripting, small test suites)
+    medium: { cpu: "2",  memory: "8Gi"  }     # standard repos (default)
+    large:  { cpu: "4",  memory: "16Gi" }     # heavy repos (compiled languages, large test suites)
 
 scanner:
   image: "${REGISTRY}/hadron-scanner:latest"

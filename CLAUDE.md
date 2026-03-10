@@ -18,7 +18,9 @@ Hadron is an AI-powered SDLC pipeline by Collide. It transforms change requests 
 
 ### Pipeline Stages
 
-Intake → Repo Identification → Worktree Setup → Behaviour Translation (Gherkin) → Behaviour Verification → TDD Development (red/green/refactor) → Code Review (security + quality + spec compliance) → Rebase & Conflict Resolution → Delivery → Release Gate (human approval) → Release → Retrospective
+**Per-worker (one repo):** Intake → Worktree Setup (+ auto-detect) → Behaviour Translation (Gherkin) → Behaviour Verification → TDD Development (red/green/refactor) → Code Review (security + quality + spec compliance) → Rebase & Conflict Resolution → Delivery (push PR) → Retrospective
+
+**Controller-level:** Repo Identification (spawn workers) → Track worker completion → Release Gate (human approval, all repos) → Merge all PRs
 
 Key feedback loops: Verification↔Translation, Review↔TDD, CI↔TDD.
 
@@ -26,8 +28,8 @@ Key feedback loops: Verification↔Translation, Review↔TDD, CI↔TDD.
 
 | Process | Lifecycle | Role |
 |---------|-----------|------|
-| **Controller** | Always-on (2+ replicas), lightweight | Intake, dashboard API (FastAPI), webhooks, job spawning |
-| **Worker** | Ephemeral K8s Job (one per CR) | LangGraph executor, agent backends, worktree management |
+| **Controller** | Always-on (2+ replicas), lightweight | Intake, dashboard API (FastAPI), webhooks, job spawning, release coordination |
+| **Worker** | Ephemeral K8s Job (one per repo per CR) | LangGraph executor, agent backends, worktree management |
 | **Scanner** | CronJob (nightly + incremental) | Landscape knowledge building via LLM analysis |
 
 ### Infrastructure
@@ -46,8 +48,8 @@ Key feedback loops: Verification↔Translation, Review↔TDD, CI↔TDD.
 
 ### Key Patterns
 
-- **Checkpoint-and-terminate:** Workers checkpoint to PostgreSQL and terminate during CI/approval waits, freeing compute. New pod resumes from checkpoint.
-- **Fan-out/fan-in:** Multi-repo CRs run parallel agent instances (one per repo) within a single pod. All repos must complete a stage before any advances.
+- **Checkpoint-and-terminate:** Workers checkpoint to PostgreSQL and terminate during CI waits, freeing compute. New pod resumes from checkpoint.
+- **One worker per repo:** Multi-repo CRs spawn independent worker pods (one per repo). Each runs the full pipeline and pushes a PR. Controller coordinates the release gate.
 - **Config snapshots:** Running CRs use config frozen at intake. Runtime config changes only affect new CRs.
 - **Six-layer prompt injection defense:** Input screening → spec firewall → adversarial security review → deterministic diff scope analysis → runtime containment (egress lock) → optional human review.
 
@@ -60,7 +62,7 @@ Single installation serves multiple tenants on shared infrastructure. OIDC handl
 The roadmap in `adr/roadmap.md` §22 defines 8 phases:
 
 1. **Foundation (Wk 1-2):** Project skeleton (LangGraph + FastAPI), runtime config, PipelineState, WorktreeManager, agent backend interface, event bus, intervention manager, prompt templates
-2. **Core Stages (Wk 3-5):** All agent prompts, intake, fan-out/fan-in, Behaviour Translation/Verification, TDD, Code Review, feedback loops
+2. **Core Stages (Wk 3-5):** All agent prompts, intake, multi-repo worker spawning, Behaviour Translation/Verification, TDD, Code Review, feedback loops
 3. **Delivery + CI (Wk 6-7):** Delivery strategies, checkpoint-and-terminate, CI webhooks, release gate, retrospective agent
 4. **Control Room (Wk 8-9):** SSE events, dashboard, interventions, circuit breakers, settings UI
 5. **Auth & Multi-Tenancy (Wk 10-11):** OIDC, internal authorization, tenant management, audit trail, notifications
@@ -70,8 +72,9 @@ The roadmap in `adr/roadmap.md` §22 defines 8 phases:
 
 ## Key Design Decisions
 
-- **LangGraph + PostgreSQL checkpointing** — durable state survives pod failures; any worker can resume any CR
-- **One pod per CR, not per repo** — shared filesystem visibility, single checkpoint, simple fan-out/fan-in
+- **LangGraph + PostgreSQL checkpointing** — durable state survives pod failures; any worker can resume any repo's pipeline
+- **One pod per repo, not per CR** — true parallelism, simple workers, Controller coordinates release gate
+- **Auto-detect languages and test tooling** — workers detect from repo files (pyproject.toml, package.json, etc.); AGENTS.md overrides take precedence
 - **SSE over WebSocket** — event stream is unidirectional; interventions use REST; no sticky sessions needed
 - **OIDC for auth, pipeline DB for authorization** — no dependency on IdP admin for day-to-day role management
 - **Database-driven runtime config** — all settings editable via dashboard/API without redeployment

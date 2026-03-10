@@ -47,12 +47,12 @@ The dashboard writes intervention requests to Redis. Worker pods poll for interv
 
 ### 14.5 CI Result Handling (push_and_wait)
 
-For `push_and_wait` delivery, the worker pod terminates after pushing PRs and triggering CI — no resources are wasted while waiting. CI results arrive via two mechanisms:
+For `push_and_wait` delivery, each repo's worker pod terminates after pushing its PR and triggering CI — no resources are wasted while waiting. CI results arrive via two mechanisms:
 
-- **Webhook (primary):** External CI sends results to the Controller. Partial results accumulate in Redis (hash per CR, keyed by repo). When all expected repos have reported, the Controller spawns a new worker pod that resumes from the checkpoint.
-- **Polling (fallback):** If no webhook arrives within the configured timeout, the Controller spawns a lightweight worker to poll the CI system's API for status. This handles cases where webhooks are misconfigured or lost.
+- **Webhook (primary):** External CI sends results to the Controller per repo. When a repo's CI completes, the Controller can spawn a new worker for that repo to resume if needed (e.g. CI failure → loop back to TDD).
+- **Polling (fallback):** If no webhook arrives within the configured timeout, the Controller polls the CI system's API for status.
 
-The new worker pod recovers the worktree from the git remote branch and continues the pipeline from where it left off. If CI failed, it loops back to TDD Development with the failure logs as context.
+If CI passes, the repo's PR is ready for the release gate. If CI fails, the Controller spawns a new worker for that repo to loop back to TDD Development with the failure logs as context.
 
 ### 14.6 Circuit Breakers
 
@@ -72,20 +72,27 @@ Circuit breakers **pause** (not fail, not abort). The operator sees the failure 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  CR-142: Add password reset flow                          [RUNNING ●]  │
-│  Source: Jira PROJ-1234 │ Worker: hadron-cr-142-xxxxx │ Cost: $3.20  │
+│  Source: Jira PROJ-1234 │ Workers: 2/2 running │ Cost: $3.20          │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│  ✅ Intake ── ✅ Repo ID ── ✅ Worktrees ── ✅ Behaviour ── ● TDD Dev │
+│  ┌─ auth-service (worker hadron-cr-142-auth) ─────────────────────┐    │
+│  │  ✅ Intake ── ✅ Worktree ── ✅ Behaviour ── ● TDD Dev          │    │
+│  │  Code Writer (iter 2/5)                                    [●]  │    │
+│  │  ► Edited src/auth/reset.ts                                     │    │
+│  │  ► npm test → ✅ 14 ❌ 2                                       │    │
+│  │  ► Thinking: "Two tests..."                                     │    │
+│  │  [⏸ Pause]  [💬 Redirect]  [⏭ Skip Stage]  [🛑 Abort]         │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
 │                                                                         │
-│  ┌─ auth-service ─────────────────────┐  ┌─ api-gateway ────────────┐  │
-│  │  Code Writer (iter 2/5)       [●]  │  │  Code Writer (iter 1/5) [●] │
-│  │                                    │  │                            │ │
-│  │  ► Edited src/auth/reset.ts        │  │  ► Reading routes/auth.ts  │ │
-│  │  ► npm test → ✅ 14 ❌ 2          │  │  ► Adding /auth/reset route │ │
-│  │  ► Thinking: "Two tests..."        │  │  ► Referencing auth-service │ │
-│  └────────────────────────────────────┘  └────────────────────────────┘ │
+│  ┌─ api-gateway (worker hadron-cr-142-apigw) ─────────────────────┐    │
+│  │  ✅ Intake ── ✅ Worktree ── ✅ Behaviour ── ● TDD Dev          │    │
+│  │  Code Writer (iter 1/5)                                    [●]  │    │
+│  │  ► Reading routes/auth.ts                                       │    │
+│  │  ► Adding /auth/reset route                                     │    │
+│  │  [⏸ Pause]  [💬 Redirect]  [⏭ Skip Stage]  [🛑 Abort]         │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
 │                                                                         │
-│  [⏸ Pause]  [💬 Redirect]  [⏭ Skip Stage]  [🛑 Abort]  [👁 Follow]   │
+│  Release gate: waiting for 2 repos to push PRs (0/2 ready)            │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 

@@ -55,7 +55,7 @@ The agent decides which tests are "affected" based on its understanding of the c
 
 If the full suite surfaces pre-existing failures (tests that were already failing on `main`), the agent identifies them by diffing against `main`'s test results and excludes them from its pass/fail decision. The pipeline reports these pre-existing failures in the review summary but does not block on them.
 
-When multiple repos are affected, TDD runs **in parallel** — one agent instance per repo, all within the same worker pod (see §8.11).
+When multiple repos are affected, TDD runs **in parallel** — each repo has its own worker pod running independently (see §8.11).
 
 ### 8.7 Code Review
 
@@ -63,7 +63,7 @@ When multiple repos are affected, TDD runs **in parallel** — one agent instanc
 
 Three parallel reviewers: **Security** (injection, auth, input validation, secrets, crypto — runs in adversarial mode per §12.5, treating the CR description as untrusted input), **Quality** (correctness, architecture fit, error handling, performance, readability), **Spec Compliance** (code matches behaviour specs). Critical findings loop back to TDD Development with specific fix instructions.
 
-Review runs per repo, in parallel across repos. The Spec Compliance reviewer for each repo has access to the specs of all affected repos to catch cross-repo contract violations.
+Review runs per repo in each repo's own worker pod. The Spec Compliance reviewer has access to this repo's specs. Cross-repo contract validation happens at the release gate level, where the Controller can compare PRs across repos before the human approves.
 
 ### 8.8 Rebase & Merge Conflict Resolution
 
@@ -77,7 +77,7 @@ After resolution, the full test suite runs. If tests pass, the pipeline continue
 
 **Unresolvable conflicts:** If the agent cannot resolve confidently (e.g. both CRs restructured the same module in fundamentally different ways), the pipeline **pauses and notifies** the operator. The human can: resolve the conflict manually on the branch (via `git clone` or the dashboard), then resume the pipeline; redirect the agent with instructions ("keep the other CR's version of the auth middleware, adapt our changes around it"); or abort the CR entirely.
 
-This stage runs per-repo in parallel (same fan-out/fan-in as other stages). In practice, most rebases are clean — conflicts only occur when two CRs touch the same files in the same repo.
+Each repo's worker handles its own rebase independently. In practice, most rebases are clean — conflicts only occur when two CRs touch the same files in the same repo.
 
 ### 8.9 Delivery
 
@@ -155,89 +155,73 @@ This is strictly optional and off by default. Teams that trust the AI review pip
 
 ### 8.10 Release Gate, Release & Cleanup
 
-**Release Gate:** Interrupts pipeline and presents a release summary to the human. Requires the **Approver** role (see §3.3). The summary includes: original CR, behaviour specs, diff summary, test results, review findings, CI status, and cost. Like `push_and_wait`, the worker checkpoints and terminates while waiting for approval — a new pod resumes when the human approves.
+Workers push PRs and terminate after review passes. The release gate is a **Controller-level concern**, not a worker concern.
 
-**Atomic Merge Check (Stale Approval Protection):** After approval and before merging, the Release node performs a final freshness check:
+**Release Gate (Controller):** The Controller tracks all worker pods for a CR. When all workers have completed (each pushing a reviewed PR), the Controller presents a unified release summary to the human. The summary includes: original CR, per-repo behaviour specs, diff summaries, test results, review findings, CI status, and total cost across all repos. Requires the **Approver** role (see §3.3).
+
+**Atomic Merge Check (Stale Approval Protection):** After approval and before merging, the Controller performs a freshness check per repo:
 
 ```
 git fetch origin main
 git merge-base --is-ancestor origin/main HEAD
 ```
 
-If `main` has moved since the last successful rebase/test cycle, the approval is **stale** — someone else's code landed while the Approver was reviewing. The pipeline automatically loops back to the Rebase & Conflict Resolution stage (§8.8) for one final rebase + full test run, then returns to the Release node. The human does not need to re-approve unless the rebase introduced conflicts or test failures.
+If `main` has moved since the last successful rebase/test cycle for any repo, the approval is **stale**. The Controller spawns a new worker for the affected repo(s) to rebase + re-test. The human does not need to re-approve unless the rebase introduces conflicts or test failures.
 
-This prevents a subtle race condition: the rebase was clean at review time, but a concurrent CR merged to `main` between approval and release. Without this check, the pipeline could merge untested code combinations.
+**Release:** The Controller merges all PRs across all repos. Scripted — not AI. PRs are merged atomically where possible (all or none). If any merge fails (e.g. merge conflict from a concurrent change), the human is notified.
 
-**Release:** Executes the configured release action (merge PR, deploy command, etc.). Scripted — not AI.
-
-**Cleanup:** Reports `completed` to the source. Pod's emptyDir is automatically destroyed when the Job completes.
+**Cleanup:** Reports `completed` to the source. Worker pods have already been cleaned up after pushing PRs.
 
 ### 8.11 Multi-Repo Coordination
 
-When a CR affects multiple repos (e.g. `auth-service`, `api-gateway`, `email-service`), the pipeline runs agent instances **in parallel across repos** within the same worker pod. This is the interesting case — single-repo CRs are trivial.
+When a CR affects multiple repos (e.g. `auth-service`, `api-gateway`, `email-service`), the Controller spawns **one worker pod per repo**. Each worker runs the full pipeline independently — from behaviour translation through to pushing a reviewed PR — then terminates.
 
-**Parallel execution model:**
+**Execution model:**
 
 ```
 CR affects 3 repos:
 
-  Behaviour Translation:
-    CR Analyst (shared)  ──▶  Spec Writer [auth-service]     ── parallel
-                              Spec Writer [api-gateway]      ── parallel
-                              Spec Writer [email-service]    ── parallel
+  Controller spawns 3 workers:
 
-  Behaviour Verification:
-    Completeness [auth-service]    ── parallel
-    Completeness [api-gateway]     ── parallel
-    Completeness [email-service]   ── parallel
-    Consistency [cross-repo]       ── runs last, sees all specs
+  Worker A (auth-service):    translate → verify → TDD → review → rebase → push PR → done
+  Worker B (api-gateway):     translate → verify → TDD → review → rebase → push PR → done
+  Worker C (email-service):   translate → verify → TDD → review → rebase → push PR → done
 
-  TDD Development:
-    Test Writer + Code Writer [auth-service]     ── parallel
-    Test Writer + Code Writer [api-gateway]      ── parallel
-    Test Writer + Code Writer [email-service]    ── parallel
+  All workers run in parallel, fully independently.
 
-  Code Review:
-    3 reviewers × 3 repos = 9 parallel agent calls
+  Controller tracks progress:
+    auth-service:   PR #42 ready ✓
+    api-gateway:    PR #18 ready ✓
+    email-service:  worker still running...
 
-  Rebase & Conflict Resolution:
-    Rebase [auth-service]     ── parallel
-    Rebase [api-gateway]      ── parallel
-    Rebase [email-service]    ── parallel
-    (conflict agent invoked only for repos with conflicts)
-
-  Delivery:
-    Push PR [auth-service]     ── parallel
-    Push PR [api-gateway]      ── parallel
-    Push PR [email-service]    ── parallel
+  Once all 3 PRs are ready:
+    Controller presents unified release gate to human
+    Human approves → Controller merges all PRs
 ```
 
 **Key design choices:**
 
-- **All repos within one pod, one graph.** Not separate pipelines. This ensures a single checkpoint, a single control room view, and coordinated feedback loops. If review finds a cross-repo issue, both repos loop back to TDD together.
-- **Fan-out / fan-in at each stage.** The LangGraph subgraph for each stage fans out to per-repo agent calls and fans in to collect all results before the next stage begins. No repo advances to the next stage until all repos complete the current one.
-- **Shared context across repos.** Agents working on `api-gateway` can see what was generated for `auth-service` (same worktree, same pod). This is critical — if `auth-service` adds a `POST /auth/reset` endpoint, the `api-gateway` agent needs to see that to route to it.
-- **Cross-repo review.** The Consistency Checker and Spec Compliance reviewer see all repos' specs and code, not just their own.
+- **One pod per repo, not one pod per CR.** Each worker is simple — it handles exactly one repo. No fan-out/fan-in loops, no shared filesystem coordination. Workers scale naturally across cluster nodes.
+- **Workers are fully independent.** Each worker has its own LangGraph state, its own checkpoint, its own worktree. A failure in one repo's worker doesn't block or affect other repos' workers.
+- **Release gate is a Controller concern.** Workers push PRs and terminate. The Controller watches for all workers in a CR to complete, then presents the human with a unified "merge all" screen. This is the only synchronisation point.
+- **Cross-repo context via prompts, not filesystem.** The CR description and behaviour specs provide the shared context. If `api-gateway` needs to know about a new endpoint in `auth-service`, the CR's acceptance criteria should describe both sides. For tighter coupling, the Controller can inject cross-repo spec summaries into each worker's initial context.
 
-**What about repo dependencies during development?** If `api-gateway` needs to call a new endpoint in `auth-service`, the Code Writer for `api-gateway` can read the code that was just generated in the `auth-service` worktree — it's the same filesystem. The agent is instructed (via prompts) to reference sibling repos for API contracts rather than mocking what hasn't been built yet. Both repos are being developed simultaneously, with shared visibility.
+**What about cross-repo dependencies?** Most multi-repo CRs describe changes that are independently implementable per repo (e.g. "add a new endpoint in auth-service" and "call that endpoint from api-gateway"). Each worker gets the full CR description, which provides enough context for both sides. For contract validation, the Controller compares the generated specs and PR diffs across repos at the release gate — catching mismatches before merge.
 
-**Why one pod per CR, not one pod per repo?**
+**Why one pod per repo?**
 
-An alternative model — spawning a separate pod for each repo in a multi-repo CR — would give true node-level parallelism: 5 repos on 5 nodes instead of 1 large node. This was considered and rejected for v1 because the single-pod model is a correctness requirement, not just a cost optimization:
+| Concern | Pod per repo (current) | Single pod (alternative) |
+|---------|----------------------|--------------------------|
+| Parallelism | ✅ True node-level parallelism. N repos on N nodes. | ⚠️ Concurrent agents share one pod's resources. |
+| Worker simplicity | ✅ No fan-out/fan-in loops. One repo, one pipeline, one checkpoint. | ❌ Every node must loop over repos, coordinate results. |
+| Failure isolation | ✅ One repo's failure doesn't affect others. | ❌ Shared pod — one repo's OOM or stuck agent affects all. |
+| Resource efficiency | ✅ Each pod sized for its repo. No idle capacity. | ⚠️ Large pod may idle while waiting for LLM responses. |
+| Scaling | ✅ Cluster autoscaler adds nodes as needed. | ⚠️ Single large pod harder to schedule. |
+| Cross-repo visibility | ⚠️ No shared filesystem. Rely on CR description + specs. | ✅ Shared filesystem, direct file reads across repos. |
+| Checkpoint simplicity | ✅ One checkpoint per worker, standard LangGraph. | ✅ One checkpoint per CR, but more complex state. |
+| Release coordination | ⚠️ Controller must track N workers per CR. | ✅ Single pipeline, natural fan-in at release. |
 
-| Concern | Single pod (current) | Pod per repo (alternative) |
-|---------|---------------------|---------------------------|
-| Cross-repo visibility | ✅ Shared filesystem. `api-gateway` agent reads `auth-service` code directly. | ❌ Lost. Would need push-to-remote + pull between stages, adding latency and a coordination protocol. |
-| Checkpoint consistency | ✅ Single LangGraph state, single checkpoint. | ❌ Distributed state across N pods. Partial failures, stale checkpoints, consensus problems. |
-| Control room view | ✅ One CR = one pipeline = one dashboard card. | ⚠️ One CR = N sub-pipelines. More complex UI and intervention model. |
-| Cross-repo review | ✅ Consistency Checker sees all repos in one filesystem. | ❌ Would need to assemble context from multiple pods before review. |
-| Fan-in synchronisation | ✅ LangGraph fan-out/fan-in within one process. | ❌ Distributed barrier — all pods must finish a stage before any advances. Controller must orchestrate. |
-| Resource efficiency | ⚠️ One large pod may idle during LLM waits. | ✅ Smaller pods, better bin-packing on the cluster. |
-| Test parallelism | ⚠️ Test suites share pod CPU (mitigated by dynamic sizing §7.5). | ✅ Each test suite gets its own node's full resources. |
-
-The real bottleneck in pipeline wall-clock time is LLM API latency (~80–90% of elapsed time), not pod resources. Agents spend most of their time waiting for API responses. Splitting repos across pods doesn't make the LLM respond faster — it just spreads the waiting across more nodes. The exception is test execution, where concurrent heavy test suites do compete for CPU, but dynamic worker sizing (§7.5) addresses this by allocating larger pods for multi-repo CRs.
-
-**When would pod-per-repo become worth it?** If CRs routinely touch 10+ repos with heavy test suites (e.g. large monorepo-like environments where each "repo" is a major service with a 30-minute test suite), the test execution bottleneck would dominate and the coordination overhead might be justified. At that scale, the architecture would need: a distributed state protocol between pods, a cross-pod artifact sharing mechanism (likely via git remote as intermediary), and a Controller-level barrier synchroniser. This is a significant engineering investment best deferred until there's evidence the single-pod model is the bottleneck.
+Cross-repo visibility is traded for simplicity and scalability. In practice, multi-repo CRs describe both sides of the change in the CR text, and the Controller validates cross-repo consistency at the release gate.
 
 ### 8.12 Agent Retrospective (Post-CR Knowledge Distillation)
 

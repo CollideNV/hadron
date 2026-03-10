@@ -4,11 +4,18 @@ Feature: Pipeline Flow
   loops allow stages to retry before a circuit breaker pauses
   the pipeline.
 
-  Scenario: Execute full pipeline end-to-end
-    Given a CR has been triggered
-    When the pipeline runs without issues
-    Then it executes: intake, repo_id, worktree_setup, behaviour_translation, behaviour_verification, tdd, review, rebase, delivery, release_gate, release, retrospective
-    And the CRRun status transitions from "pending" to "running" to "completed"
+  Scenario: Execute full worker pipeline end-to-end
+    Given a worker has been spawned for a repo
+    When the worker pipeline runs without issues
+    Then it executes: intake, worktree_setup, behaviour_translation, behaviour_verification, tdd, review, rebase, delivery, retrospective
+    And the worker pushes a PR and terminates
+
+  Scenario: Multi-repo CR completes end-to-end
+    Given a CR has been triggered with 3 repo URLs
+    When all 3 workers complete without issues
+    Then the Controller detects all PRs are ready
+    And the release gate is presented to the human
+    And the CRRun status transitions from "pending" to "running" to "completed" after approval
 
   Scenario: Verification feedback loop
     Given behaviour verification rejects the specs
@@ -35,8 +42,9 @@ Feature: Pipeline Flow
     And an appropriate event is emitted
     And the error is recorded in the CRRun
 
-  Scenario: Fan-out across multiple repos
+  Scenario: Independent workers for multiple repos
     Given a CR affects multiple repositories
-    When a stage with per-repo agents executes
-    Then agent instances run in parallel for each repo
-    And all repos must complete before the pipeline advances
+    When the Controller spawns workers
+    Then one worker is created per repo
+    And each worker runs the full pipeline independently
+    And the release gate waits for all workers to push PRs

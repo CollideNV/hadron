@@ -8,11 +8,22 @@ Feature: Pipeline Intake
     And a connected PostgreSQL database
     And a connected Redis instance
 
-  Scenario: Trigger a new change request
-    When a user sends a POST to "/api/pipeline/trigger" with a title, description, source, and repo URL
+  Scenario: Trigger a new change request with multiple repos
+    When a user sends a POST to "/api/pipeline/trigger" with a title, description, source, and list of repo URLs
     Then a CRRun record is created with status "pending"
     And a unique cr_id is returned
-    And a worker process is spawned to execute the pipeline
+    And one worker process is spawned per repo URL
+
+  Scenario: Trigger a single-repo change request
+    When a user sends a POST to "/api/pipeline/trigger" with a title, description, source, and one repo URL
+    Then a CRRun record is created with status "pending"
+    And a unique cr_id is returned
+    And one worker process is spawned for that repo
+
+  Scenario: Language and test commands are auto-detected from repository
+    When a user sends a POST to "/api/pipeline/trigger"
+    Then the request body does not include language or test_command fields
+    And these are auto-detected by each worker from the repo's marker files
 
   Scenario: Parse raw CR into structured format
     Given a worker has started for a new CR

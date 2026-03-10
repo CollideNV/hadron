@@ -1,22 +1,52 @@
 Feature: Release Gate and Release
-  The release gate provides a point for human approval before
-  release. In the MVP it auto-approves. The release stage generates
-  a PR description but does not yet create an actual PR.
+  The release gate is a Controller-level concern. Workers push PRs
+  and terminate. The Controller waits for all repos in a CR to have
+  reviewed PRs, then presents a unified release gate to the human.
+
+  Scenario: Worker pushes PR and terminates
+    Given the review stage has passed and rebase is clean
+    When the worker completes delivery
+    Then it pushes the feature branch and opens a PR
+    And the worker terminates
+
+  Scenario: Controller tracks worker completion
+    Given a CR affects 3 repos
+    When each worker pushes its PR and terminates
+    Then the Controller tracks completion: 1/3, 2/3, 3/3
+
+  Scenario: Unified release gate when all repos ready
+    Given all workers for a CR have pushed their PRs
+    When the Controller detects all repos are ready
+    Then it presents a unified release summary to the human
+    And the summary includes per-repo specs, diffs, test results, review findings, and total cost
 
   Scenario: Auto-approve at release gate in MVP
-    Given delivery has completed successfully
-    When the release gate node executes
+    Given all workers for a CR have pushed their PRs
+    When the release gate executes in MVP mode
     Then it auto-approves the release
-    And the pipeline proceeds to the release stage
+    And the Controller merges all PRs
 
-  Scenario: Generate PR description
-    Given the release gate has approved
-    When the release node executes
-    Then it ensures the feature branch is pushed
-    And it generates a PR description from the CR, acceptance criteria, review findings, and pipeline stats
-    And the pipeline stats include dev loop count, review loop count, and total cost
+  Scenario: Human approves release
+    Given all workers for a CR have pushed their PRs
+    And the release gate is presented to the human
+    When the human approves
+    Then the Controller merges all PRs across all repos
 
-  Scenario: Record release results
-    When the release node completes
-    Then the release results are stored in the pipeline state
-    And the pipeline proceeds to the retrospective
+  Scenario: Partial completion blocks release gate
+    Given a CR affects 3 repos
+    And 2 workers have completed but 1 is still running
+    Then the release gate does not open
+    And the dashboard shows per-repo status
+
+  Scenario: Failed worker blocks release gate
+    Given a CR affects 3 repos
+    And 2 workers have completed but 1 has paused with a circuit breaker
+    Then the release gate does not open
+    And the human can act on the failed repo without affecting successful ones
+
+  Scenario: Stale approval triggers re-rebase
+    Given the human has approved the release
+    But main has moved since the last rebase for one repo
+    When the Controller performs the atomic merge check
+    Then it spawns a new worker for the stale repo to rebase and re-test
+    And the human does not need to re-approve unless tests fail

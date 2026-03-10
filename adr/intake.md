@@ -39,17 +39,15 @@ ci_waiting → ci_passed/ci_failed → awaiting_approval → completed/failed
 
 ### 6.1 Git Worktrees
 
-One branch per repo per CR (`ai/cr-{id}`). All stages commit to the same branch. Worktrees live in the pod's `/workspace` emptyDir volume — pod-local fast storage that dies with the pod.
+One branch per repo per CR (`ai/cr-{id}`). All stages commit to the same branch. Each worker pod handles exactly one repo. Worktrees live in the pod's `/workspace` emptyDir volume — pod-local fast storage that dies with the pod.
 
 ```
-/workspace/
-├── repos/                                 ← bare clones (fetched at pod start)
-│   ├── auth-service/.git/
-│   └── api-gateway/.git/
+/workspace/                                ← each worker pod has its own /workspace
+├── repos/                                 ← bare clone (fetched at pod start)
+│   └── auth-service/.git/
 └── runs/
-    └── cr-142/                            ← this pod handles exactly one CR
-        ├── auth-service/                  ← worktree, branch: ai/cr-142
-        └── api-gateway/                   ← worktree, branch: ai/cr-142
+    └── cr-142/                            ← this pod handles one repo for this CR
+        └── auth-service/                  ← worktree, branch: ai/cr-142
 ```
 
 ### 6.2 Git Authentication

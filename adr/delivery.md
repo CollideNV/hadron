@@ -196,16 +196,24 @@ What counts as "substantive" is configurable per source connector. For Jira: des
 
 ### 15.6 Partial Success (Multi-Repo)
 
-A multi-repo CR is **one unit of change**. If any repo fails, the CR has not succeeded — you cannot release half a feature. If `auth-service` passes review but `api-gateway` loops 3 times and triggers a circuit breaker, the entire CR is paused.
+A multi-repo CR is **one unit of change**. Each repo's worker runs independently and pushes its own PR. But the release gate only opens when **all repos** have completed — you cannot ship half a feature.
 
-The operator sees the per-repo status in the dashboard and gets the standard decision screen (§15.3), with the failure context showing which repo is stuck and why. The actions apply to the **whole CR**:
+If one repo's worker fails (circuit breaker, unresolvable conflict, etc.), the Controller marks that worker as paused. Other repos' workers continue independently — their work is not wasted. The Controller presents a per-repo status view:
+
+```
+CR-142: Add password reset flow
+  auth-service:   PR #42 ready ✓
+  api-gateway:    PAUSED — circuit breaker at TDD (review loop exceeded 3 iterations)
+  email-service:  PR #18 ready ✓
+```
+
+The operator can act on the failing repo without affecting successful ones:
 
 | Action | What happens |
 |--------|-------------|
-| **Redirect the failing repo** | Operator provides new instructions for the stuck repo's agent. Pipeline retries that repo. Successful repos wait. |
-| **Take over the failing repo** | Human works on the failing repo's branch directly. Marks it done manually. Pipeline resumes for all repos from the next stage. |
-| **Retry from stage (all repos)** | Operator picks a stage to restart from. All repos re-run from that stage. |
-| **Retry from scratch** | Fresh attempt, new branches for all repos. |
-| **Mark as failed** | Entire CR fails. Cleanup wizard for all repos' artifacts. |
+| **Redirect the failing repo** | Operator provides new instructions. Controller spawns a new worker for that repo. |
+| **Take over the failing repo** | Human works on the branch directly. Marks it done manually. |
+| **Retry the failing repo** | Fresh worker for that repo only. Other repos' PRs remain. |
+| **Mark CR as failed** | Entire CR fails. Cleanup wizard for all repos' artifacts. |
 
-The key constraint: **no repo advances to delivery until all repos have passed all stages.** The fan-out/fan-in model (§8.11) already enforces this — but it's worth stating explicitly that this applies to the failure case too. A CR either ships completely or not at all.
+The key constraint: **the release gate waits for all repos.** A CR either ships completely or not at all. But individual repo workers are independent — a failure in one doesn't block or roll back others.

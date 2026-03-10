@@ -29,15 +29,15 @@
 │  └────────────────────────────────────────────────────────────────────────────────────────┘   │
 │                                                                                               │
 │  ┌────────────────────────────────────────────────────────────────────────────────────────┐   │
-│  │  WORKER PODS (K8s Jobs, one per CR, ephemeral)                                         │   │
+│  │  WORKER PODS (K8s Jobs, one per repo per CR, ephemeral)                                │   │
 │  │                                                                                        │   │
-│  │  ┌─ hadron-cr-142 ──────────────────────┐  ┌─ hadron-cr-143 ──────────────────┐   │   │
-│  │  │  LangGraph Executor                     │  │  LangGraph Executor                │   │   │
-│  │  │  Agent Backends (Claude/OpenCode/Codex) │  │  (same structure)                  │   │   │
-│  │  │  /workspace (emptyDir volume)           │  │                                    │   │   │
-│  │  └─────────────────────────────────────────┘  └────────────────────────────────────┘   │   │
-│  │  ┌─ hadron-cr-144 ──────┐  ┌─ hadron-cr-145 ──────┐  ...more...                   │   │
-│  │  └────────────────────────┘  └────────────────────────┘                                │   │
+│  │  ┌─ hadron-cr-142-auth-svc ───────────┐  ┌─ hadron-cr-142-api-gw ────────────┐   │   │
+│  │  │  LangGraph Executor                   │  │  LangGraph Executor                │   │   │
+│  │  │  Agent Backends (Claude/OpenCode/Codex)│  │  (same structure)                  │   │   │
+│  │  │  /workspace (emptyDir volume)          │  │                                    │   │   │
+│  │  └────────────────────────────────────────┘  └────────────────────────────────────┘   │   │
+│  │  ┌─ hadron-cr-143-billing ──┐  ┌─ hadron-cr-144-frontend ──┐  ...more...          │   │
+│  │  └──────────────────────────┘  └────────────────────────────┘                         │   │
 │  └────────────────────────────────────────────────────────────────────────────────────────┘   │
 │                                                                                               │
 │  ┌────────────────────────────────────────────────────────────────────────────────────────┐   │
@@ -76,7 +76,7 @@
 | Process | Lifecycle | Scaling | Resources | Responsibilities |
 |---------|-----------|---------|-----------|-----------------|
 | **Controller** | Always running, 2+ replicas | Horizontal (replicas behind Service) | Lightweight: 500m CPU, 1GB RAM | Source connectors, job spawner, dashboard API, webhook handler, auth validation |
-| **Worker** | Ephemeral K8s Job, one per CR | Scales with incoming CRs (0 → N) | Heavy: 2–4 CPU, 8–16GB RAM | LangGraph executor, agent backends, worktree management, event emission |
+| **Worker** | Ephemeral K8s Job, one per repo per CR | Scales with incoming CRs × repos (0 → N) | Sized per repo: 1–4 CPU, 4–16GB RAM | LangGraph executor, agent backends, worktree management, event emission |
 | **Scanner** | CronJob (nightly) + incremental | Single instance | Medium: 1–2 CPU, 4–8GB RAM | Repo scanning, LLM analysis, dependency graph, knowledge store writes |
 | **Keycloak** | Always running, HA optional | 1–2 replicas | Medium: 1 CPU, 2GB RAM | OIDC provider, user/role management, JWT issuance |
 
@@ -85,27 +85,22 @@
 ```
  1. CR arrives (Jira webhook → Controller)
  2. Controller checks for duplicate (same external ID already in-flight)
- 3. Controller authenticates request, creates K8s Job (Worker pod)
- 4. Worker queries Knowledge Store for landscape context
- 5. Repo identification (Phase 1: explicit, Phase 2+: LLM + human confirmation)
- 6. Worker creates worktrees for all affected repos
- 7. Worker runs LangGraph pipeline with per-repo parallelism:
-    a. Each stage fans out to N agent instances (one per repo), fans in when all complete
-    b. Each agent call emits events → Redis Streams
-    c. Between agent calls, checks Redis for interventions
-    d. Each stage pushes commits to git remote
-    e. State checkpointed to PostgreSQL after each node
-    f. Running cost accumulated from token usage
- 8. After review passes: rebase onto latest main per repo
-    If conflicts → Merge Conflict Agent resolves (or pauses for human)
-    Re-run tests after resolution
- 9. If push_and_wait: Worker checkpoints → pod terminates (frees compute)
-    CI completes → webhook → Controller → new pod resumes from checkpoint
-10. Release gate: Worker checkpoints → pod terminates
-    Human approves → Controller → new pod resumes from checkpoint
-11. Worker completes → Job cleaned up
-12. Controller reports result + cost breakdown to source
-13. Repo identification feedback → Knowledge Store
+ 3. Controller authenticates request, identifies affected repos
+ 4. Controller creates one K8s Job per repo (Worker pod per repo)
+ 5. Each Worker independently:
+    a. Clones its repo, creates worktree, auto-detects languages/test tooling
+    b. Runs full LangGraph pipeline: translate → verify → TDD → review → rebase → push PR
+    c. Each agent call emits events → Redis Streams
+    d. Between agent calls, checks Redis for interventions
+    e. Each stage pushes commits to git remote
+    f. State checkpointed to PostgreSQL after each node
+    g. Running cost accumulated from token usage
+ 6. Worker pushes reviewed PR → pod terminates
+ 7. Controller tracks all workers for the CR:
+    - When all repos have pushed PRs → presents unified release gate
+    - Human approves → Controller merges all PRs
+ 8. Controller reports result + cost breakdown to source
+ 9. Repo identification feedback → Knowledge Store
 ```
 
 ### 19.4 Environment Parity
@@ -129,11 +124,11 @@ Same architecture everywhere — only backing services and resource limits chang
 
 ### 20.1 Scaling Model
 
-One worker pod per CR. The cluster scales by allowing more pods.
+One worker pod per repo per CR. The cluster scales by allowing more pods. A CR touching 3 repos spawns 3 worker pods.
 
 | Scale factor | Bottleneck | Solution |
 |-------------|-----------|---------|
-| Concurrent CRs | Worker pod count | Cluster autoscaler or KEDA (scale on pending Jobs) |
+| Concurrent CRs × repos | Worker pod count | Cluster autoscaler or KEDA (scale on pending Jobs) |
 | Pod startup time | Git clone, image pull | Pre-pulled images, shallow clones, image caching |
 | LLM API throughput | Token rate limits | Multiple API keys, request queuing, model tiering |
 | Redis throughput | Event volume at high concurrency | Redis Cluster for 50+ concurrent CRs |
