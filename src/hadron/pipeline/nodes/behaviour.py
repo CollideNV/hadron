@@ -16,6 +16,7 @@ from hadron.pipeline.nodes import (
     emit_cost_update, make_agent_event_emitter, make_nudge_poller,
     make_tool_call_emitter, store_conversation,
 )
+from hadron.pipeline.nodes.tdd import _gather_files
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +162,10 @@ async def behaviour_verification_node(state: PipelineState, config: RunnableConf
         worktree_path = repo.get("worktree_path", "")
 
         system_prompt = composer.compose_system_prompt("spec_verifier")
+
+        # Gather feature files so the verifier doesn't need to explore
+        feature_content = _gather_files(worktree_path, "features/**/*.feature")
+
         task_payload = f"""# Change Request
 
 **Title:** {structured_cr.get('title', '')}
@@ -169,20 +174,25 @@ async def behaviour_verification_node(state: PipelineState, config: RunnableConf
 **Acceptance Criteria:**
 {chr(10).join(f'- {c}' for c in structured_cr.get('acceptance_criteria', []))}
 
-Please read the .feature files in the repository and verify them against this CR.
+## Feature Specifications
+
+{feature_content if feature_content else "(No .feature files found)"}
+
+Verify the above specifications against the CR.
 """
         user_prompt = composer.compose_user_prompt(task_payload)
 
         verifier_model = configurable.get("model", "claude-sonnet-4-20250514")
-        explore_model = configurable.get("explore_model", "")
+        verifier_tools = ["read_file", "list_directory"]
 
+        # No explore/plan — CR + feature files are injected directly
         task = AgentTask(
             role="spec_verifier",
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             working_directory=worktree_path,
+            allowed_tools=verifier_tools,
             model=verifier_model,
-            explore_model=explore_model,
             on_tool_call=make_tool_call_emitter(event_bus, cr_id, "behaviour_verification", "spec_verifier", repo_name),
             on_event=make_agent_event_emitter(event_bus, cr_id, "behaviour_verification", "spec_verifier", repo_name),
             nudge_poll=make_nudge_poller(redis_client, cr_id, "spec_verifier") if redis_client else None,

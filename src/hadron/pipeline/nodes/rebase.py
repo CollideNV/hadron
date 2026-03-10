@@ -5,6 +5,7 @@ from __future__ import annotations
 from langgraph.types import RunnableConfig
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from hadron.agent.base import AgentTask
@@ -63,7 +64,6 @@ async def rebase_node(state: PipelineState, config: RunnableConfig) -> dict[str,
             conflict_files = await wm.get_conflict_files(worktree_path)
 
             resolver_model = configurable.get("model", "claude-sonnet-4-20250514")
-            explore_model = configurable.get("explore_model", "")
             resolver_tools = ["read_file", "write_file", "list_directory", "run_command"]
             if event_bus:
                 await event_bus.emit(PipelineEvent(
@@ -71,7 +71,15 @@ async def rebase_node(state: PipelineState, config: RunnableConfig) -> dict[str,
                     data={"role": "conflict_resolver", "repo": repo_name, "conflict_files": conflict_files, "model": resolver_model, "allowed_tools": resolver_tools},
                 ))
 
-            # Have the agent resolve conflicts
+            # Pre-read conflicting files so the agent doesn't need to explore
+            base = Path(worktree_path)
+            file_contents = ""
+            for cf in conflict_files:
+                cf_path = base / cf
+                if cf_path.is_file():
+                    content = cf_path.read_text(errors="replace")
+                    file_contents += f"### {cf}\n\n```\n{content}\n```\n\n"
+
             composer = PromptComposer()
             system_prompt = composer.compose_system_prompt("conflict_resolver")
             task_payload = f"""## Merge Conflict Resolution
@@ -80,17 +88,22 @@ The feature branch `ai/cr-{cr_id}` is being rebased onto `{default_branch}`.
 
 **Conflicting files:** {', '.join(conflict_files)}
 
-Please read each conflicting file, resolve the conflict markers, and write the resolved files.
+## Current File Contents (with conflict markers)
+
+{file_contents}
+
+Resolve the conflict markers in each file and write the resolved versions.
 """
             user_prompt = composer.compose_user_prompt(task_payload)
 
+            # No explore/plan — conflict files are injected directly
             task = AgentTask(
                 role="conflict_resolver",
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 working_directory=worktree_path,
+                allowed_tools=resolver_tools,
                 model=resolver_model,
-                explore_model=explore_model,
                 on_tool_call=make_tool_call_emitter(event_bus, cr_id, "rebase", "conflict_resolver", repo_name),
                 on_event=make_agent_event_emitter(event_bus, cr_id, "rebase", "conflict_resolver", repo_name),
                 nudge_poll=make_nudge_poller(redis_client, cr_id, "conflict_resolver") if redis_client else None,

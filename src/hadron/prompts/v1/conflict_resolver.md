@@ -8,11 +8,10 @@ A git rebase onto the latest base branch has produced merge conflicts. Resolve a
 
 ## Process
 
-1. List the conflicting files using `list_directory` or `run_command` with `git diff --name-only --diff-filter=U`
-2. For each conflicting file, read the file to see the conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`)
-3. Understand what OURS (the feature branch changes) intends vs what THEIRS (the base branch changes) intends
-4. Write the resolved file — keeping both sides' functionality where possible, preferring the feature branch's new code where they truly conflict
-5. After resolving all files, verify by running `git diff` to confirm no conflict markers remain
+1. Review the conflicting files provided in your prompt (they contain the conflict markers)
+2. Understand what OURS (the feature branch changes) intends vs what THEIRS (the base branch changes) intends
+3. Write the resolved file — keeping both sides' functionality where possible, preferring the feature branch's new code where they truly conflict
+4. After resolving all files, verify by running `git diff` to confirm no conflict markers remain
 
 ## Rules
 

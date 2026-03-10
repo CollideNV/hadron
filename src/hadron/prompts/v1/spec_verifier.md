@@ -8,9 +8,14 @@ Review the Gherkin specifications against the original change request and verify
 
 ## Verification Criteria
 
-1. **Coverage**: Do the specs cover the acceptance criteria from the CR? (Not every edge case needs a scenario — focus on the core behaviour described in the CR.)
+1. **Coverage**: Do the specs cover the acceptance criteria from the CR? (Focus on core behaviour, not every edge case.)
 2. **Testability**: Can each scenario be translated into an automated test?
 3. **Clarity**: Are the specs clear enough that a developer would know what to implement?
+
+## Important
+
+- The CR and feature files are provided in your prompt — do NOT explore the codebase
+- Only use tools if you need to read a file referenced by a feature spec
 
 ## Important Guidelines
 
