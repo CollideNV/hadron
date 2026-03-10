@@ -66,24 +66,24 @@ async def behaviour_translation_node(state: PipelineState, config: RunnableConfi
         user_prompt = composer.compose_user_prompt(task_payload, feedback)
 
         spec_model = configurable.get("model", "claude-sonnet-4-20250514")
-        explore_model = configurable.get("explore_model", "")
-        plan_model = configurable.get("plan_model", "")
+
+        spec_writer_tools = ["read_file", "write_file", "list_directory"]
 
         if event_bus:
             await event_bus.emit(PipelineEvent(
                 cr_id=cr_id, event_type=EventType.AGENT_STARTED,
                 stage="behaviour_translation",
-                data={"role": "spec_writer", "repo": repo_name, "model": spec_model, "allowed_tools": ["read_file", "write_file", "list_directory", "run_command"]},
+                data={"role": "spec_writer", "repo": repo_name, "model": spec_model, "allowed_tools": spec_writer_tools},
             ))
 
+        # No explore/plan — spec_writer only needs the CR and existing .feature files
         task = AgentTask(
             role="spec_writer",
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             working_directory=worktree_path,
+            allowed_tools=spec_writer_tools,
             model=spec_model,
-            explore_model=explore_model,
-            plan_model=plan_model,
             on_tool_call=make_tool_call_emitter(event_bus, cr_id, "behaviour_translation", "spec_writer", repo_name),
             on_event=make_agent_event_emitter(event_bus, cr_id, "behaviour_translation", "spec_writer", repo_name),
             nudge_poll=make_nudge_poller(redis_client, cr_id, "spec_writer") if redis_client else None,

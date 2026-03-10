@@ -19,11 +19,15 @@ Given the verified Gherkin specifications, write automated tests that will FAIL 
 ## Process
 
 1. Read the `.feature` files to understand required behaviour
-2. Read existing tests to understand patterns, frameworks, and conventions
-3. Read existing source code to understand the codebase structure
-4. Write test files following repository conventions
-5. Run the tests to confirm they fail (this is expected!)
-6. Commit the test files with message "test: add failing tests for CR (red phase)"
+2. Read existing test files to understand patterns, frameworks, and conventions
+3. Write test files following repository conventions
+4. Run the tests to confirm they fail (this is expected!)
+5. Commit the test files with message "test: add failing tests for CR (red phase)"
+
+## Important
+
+- Do NOT explore the full codebase — focus on `.feature` files and existing tests
+- Only read source files if a test needs to import or reference a specific module
 
 ## Output
 

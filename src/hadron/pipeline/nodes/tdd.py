@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from langgraph.types import RunnableConfig
 
+import glob as globmod
 import logging
+from pathlib import Path
 from typing import Any
 
 from hadron.agent.base import AgentTask
@@ -18,6 +20,27 @@ from hadron.pipeline.nodes import (
 from hadron.pipeline.testing import run_test_command
 
 logger = logging.getLogger(__name__)
+
+_MAX_CONTEXT_CHARS = 24_000  # ~6k tokens — keep injected context lean
+
+
+def _gather_files(worktree: str, pattern: str) -> str:
+    """Read files matching glob pattern and return formatted content."""
+    base = Path(worktree)
+    parts: list[str] = []
+    total = 0
+    for path in sorted(base.glob(pattern)):
+        if not path.is_file():
+            continue
+        content = path.read_text(errors="replace")
+        rel = path.relative_to(base)
+        entry = f"### {rel}\n\n```\n{content}\n```"
+        if total + len(entry) > _MAX_CONTEXT_CHARS:
+            parts.append(f"\n... ({pattern}: remaining files truncated)")
+            break
+        parts.append(entry)
+        total += len(entry)
+    return "\n\n".join(parts)
 
 
 async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, Any]:
@@ -74,10 +97,11 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
                 for f in rr["findings"]:
                     review_feedback += f"- [{f.get('severity', '')}] {f.get('message', '')} ({f.get('file', '')}:{f.get('line', 0)})\n"
 
+        # Gather feature files so the test_writer doesn't need to explore
+        feature_content = _gather_files(worktree_path, "features/**/*.feature")
+
         # === RED PHASE: Write failing tests ===
         test_model = configurable.get("model", "claude-sonnet-4-20250514")
-        explore_model = configurable.get("explore_model", "")
-        plan_model = configurable.get("plan_model", "")
         test_tools = ["read_file", "write_file", "list_directory", "run_command"]
 
         if event_bus:
@@ -90,16 +114,19 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
             ))
 
         test_system = composer.compose_system_prompt("test_writer", repo_context)
-        test_user = composer.compose_user_prompt(cr_text, review_feedback)
 
+        test_payload = cr_text
+        if feature_content:
+            test_payload += f"\n\n## Feature Specifications\n\n{feature_content}"
+        test_user = composer.compose_user_prompt(test_payload, review_feedback)
+
+        # No explore/plan — feature files are injected directly
         test_task = AgentTask(
             role="test_writer",
             system_prompt=test_system,
             user_prompt=test_user,
             working_directory=worktree_path,
             model=test_model,
-            explore_model=explore_model,
-            plan_model=plan_model,
             on_tool_call=make_tool_call_emitter(event_bus, cr_id, "tdd:test_writer", "test_writer", repo_name),
             on_event=make_agent_event_emitter(event_bus, cr_id, "tdd:test_writer", "test_writer", repo_name),
             nudge_poll=make_nudge_poller(redis_client, cr_id, "test_writer") if redis_client else None,
@@ -138,6 +165,9 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
         test_output = ""
         iteration = 0
 
+        # Gather test files so the code_writer knows exactly what to implement
+        test_content = _gather_files(worktree_path, "tests/**/test_*.py")
+
         code_model = configurable.get("model", "claude-sonnet-4-20250514")
         code_tools = ["read_file", "write_file", "list_directory", "run_command"]
 
@@ -156,19 +186,20 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
             code_system = composer.compose_system_prompt("code_writer", repo_context)
 
             code_payload = cr_text
+            if test_content:
+                code_payload += f"\n\n## Test Files (your implementation must make these pass)\n\n{test_content}"
             if iteration > 0 and test_output:
                 code_payload += f"\n\n## Test Failure Output (iteration {iteration})\n\n```\n{test_output[-3000:]}\n```\n\nFix the implementation to make the failing tests pass."
 
             code_user = composer.compose_user_prompt(code_payload, review_feedback)
 
+            # No explore/plan — test files are injected directly
             code_task = AgentTask(
                 role="code_writer",
                 system_prompt=code_system,
                 user_prompt=code_user,
                 working_directory=worktree_path,
                 model=code_model,
-                explore_model=explore_model,
-                plan_model=plan_model,
                 on_tool_call=make_tool_call_emitter(event_bus, cr_id, "tdd:code_writer", "code_writer", repo_name),
                 on_event=make_agent_event_emitter(event_bus, cr_id, "tdd:code_writer", "code_writer", repo_name),
                 nudge_poll=make_nudge_poller(redis_client, cr_id, "code_writer") if redis_client else None,

@@ -19,10 +19,9 @@ Given a structured change request and the repository context, write Gherkin `.fe
 
 ## Process
 
-1. Read the repository structure to understand existing code and conventions
-2. Read existing test files to understand the testing patterns used
-3. Write `.feature` files that cover the acceptance criteria — no more, no less
-4. Commit the feature files with message "feat: add behaviour specs for CR"
+1. Read any existing `features/**/*.feature` files to understand conventions and avoid duplication
+2. Write `.feature` files that cover the acceptance criteria — no more, no less
+3. Commit the feature files with message "feat: add behaviour specs for CR"
 
 ## Output
 
