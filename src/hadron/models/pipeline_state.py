@@ -23,15 +23,20 @@ class StructuredCR(TypedDict, total=False):
 
 
 class RepoContext(TypedDict, total=False):
-    """Per-repo context assembled during pipeline execution."""
+    """Per-repo context assembled during pipeline execution.
+
+    Each worker handles exactly one repo. Languages and test commands
+    are auto-detected from repo marker files (pyproject.toml, package.json,
+    Cargo.toml, go.mod, etc.) and can be overridden by AGENTS.md / CLAUDE.md.
+    """
 
     repo_url: str
     repo_name: str
     default_branch: str
     worktree_path: str
     agents_md: str  # contents of AGENTS.md / CLAUDE.md
-    test_command: str
-    language: str
+    languages: list[str]  # auto-detected or from AGENTS.md
+    test_commands: list[str]  # auto-detected or from AGENTS.md
 
 
 class BehaviourSpec(TypedDict, total=False):
@@ -93,8 +98,8 @@ class PipelineState(TypedDict, total=False):
     raw_cr_title: str
     structured_cr: StructuredCR
 
-    # --- Repo Context ---
-    affected_repos: list[RepoContext]
+    # --- Repo Context (one per worker) ---
+    repo: RepoContext
 
     # --- Behaviour ---
     behaviour_specs: list[BehaviourSpec]

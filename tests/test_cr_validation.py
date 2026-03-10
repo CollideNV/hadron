@@ -1,14 +1,40 @@
-"""Tests for RawChangeRequest.test_command validation."""
+"""Tests for CR validation and test_command validation."""
 
 from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
 
-from hadron.models.cr import RawChangeRequest
+from hadron.models.cr import RawChangeRequest, validate_test_command
 
 # Minimal valid fields for constructing a RawChangeRequest.
 _BASE = {"title": "Test CR", "description": "A change request"}
+
+
+class TestRawChangeRequest:
+    """RawChangeRequest model validation."""
+
+    def test_minimal_cr(self) -> None:
+        cr = RawChangeRequest(**_BASE)
+        assert cr.title == "Test CR"
+        assert cr.repo_urls == []
+
+    def test_single_repo_url(self) -> None:
+        cr = RawChangeRequest(**_BASE, repo_urls=["https://github.com/org/repo"])
+        assert cr.repo_urls == ["https://github.com/org/repo"]
+
+    def test_multiple_repo_urls(self) -> None:
+        cr = RawChangeRequest(
+            **_BASE,
+            repo_urls=["https://github.com/org/auth", "https://github.com/org/api"],
+        )
+        assert len(cr.repo_urls) == 2
+
+    def test_no_language_or_test_command_field(self) -> None:
+        """CR model should not have language or test_command — these are auto-detected."""
+        cr = RawChangeRequest(**_BASE)
+        assert not hasattr(cr, "language")
+        assert not hasattr(cr, "test_command")
 
 
 class TestAllowedCommands:
@@ -36,8 +62,7 @@ class TestAllowedCommands:
         "dotnet test",
     ])
     def test_allowed_base_command(self, cmd: str) -> None:
-        cr = RawChangeRequest(**_BASE, test_command=cmd)
-        assert cr.test_command == cmd
+        assert validate_test_command(cmd) == cmd
 
 
 class TestAllowedCommandsWithFlags:
@@ -53,8 +78,7 @@ class TestAllowedCommandsWithFlags:
         "python -m pytest -k test_foo",
     ])
     def test_allowed_with_flags(self, cmd: str) -> None:
-        cr = RawChangeRequest(**_BASE, test_command=cmd)
-        assert cr.test_command == cmd
+        assert validate_test_command(cmd) == cmd
 
 
 class TestShellInjectionBlocked:
@@ -72,8 +96,8 @@ class TestShellInjectionBlocked:
         "pytest\nwhoami",
     ])
     def test_metachar_blocked(self, cmd: str) -> None:
-        with pytest.raises(ValidationError, match="disallowed shell metacharacters"):
-            RawChangeRequest(**_BASE, test_command=cmd)
+        with pytest.raises(ValueError, match="disallowed shell metacharacters"):
+            validate_test_command(cmd)
 
 
 class TestUnknownCommandBlocked:
@@ -88,25 +112,24 @@ class TestUnknownCommandBlocked:
         "node malicious.js",
     ])
     def test_unknown_base_blocked(self, cmd: str) -> None:
-        with pytest.raises(ValidationError, match="test_command must start with one of"):
-            RawChangeRequest(**_BASE, test_command=cmd)
+        with pytest.raises(ValueError, match="test_command must start with one of"):
+            validate_test_command(cmd)
 
 
-class TestEmptyDefault:
-    """Empty string should default to pytest."""
+class TestEmptyRejected:
+    """Empty string should raise ValueError."""
 
-    def test_empty_string_defaults_to_pytest(self) -> None:
-        cr = RawChangeRequest(**_BASE, test_command="")
-        assert cr.test_command == "pytest"
+    def test_empty_string_raises(self) -> None:
+        with pytest.raises(ValueError, match="must not be empty"):
+            validate_test_command("")
 
-    def test_whitespace_defaults_to_pytest(self) -> None:
-        cr = RawChangeRequest(**_BASE, test_command="   ")
-        assert cr.test_command == "pytest"
+    def test_whitespace_raises(self) -> None:
+        with pytest.raises(ValueError, match="must not be empty"):
+            validate_test_command("   ")
 
 
 class TestWhitespaceStripped:
     """Leading/trailing whitespace should be stripped."""
 
     def test_leading_trailing_whitespace(self) -> None:
-        cr = RawChangeRequest(**_BASE, test_command="  pytest -x  ")
-        assert cr.test_command == "pytest -x"
+        assert validate_test_command("  pytest -x  ") == "pytest -x"

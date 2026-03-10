@@ -33,6 +33,30 @@ _ALLOWED_TEST_COMMANDS: list[str] = [
 ]
 
 
+def validate_test_command(cmd: str) -> str:
+    """Validate a single test command string.
+
+    Rejects shell metacharacters and unknown base commands.
+    Returns the cleaned command, or raises ValueError.
+    """
+    cmd = cmd.strip()
+    if not cmd:
+        raise ValueError("test_command must not be empty")
+
+    if _SHELL_METACHAR_RE.search(cmd):
+        raise ValueError(
+            "test_command contains disallowed shell metacharacters"
+        )
+
+    for allowed in sorted(_ALLOWED_TEST_COMMANDS, key=len, reverse=True):
+        if cmd == allowed or cmd.startswith(allowed + " "):
+            return cmd
+
+    raise ValueError(
+        f"test_command must start with one of: {', '.join(sorted(_ALLOWED_TEST_COMMANDS))}"
+    )
+
+
 class RawChangeRequest(BaseModel):
     """Incoming change request as received from any source connector."""
 
@@ -41,40 +65,11 @@ class RawChangeRequest(BaseModel):
     source: str = Field(default="api", pattern=r"^(api|jira|github|ado|slack)$")
     external_id: str | None = None
     external_url: str | None = None
-    repo_url: str | None = Field(
-        default=None,
-        description="Target repository URL. Required for MVP (single-repo).",
+    repo_urls: list[str] = Field(
+        default_factory=list,
+        description="Target repository URLs. One worker is spawned per repo.",
     )
     repo_default_branch: str = Field(default="main")
-    test_command: str = Field(
-        default="pytest",
-        description="Command to run the repo's test suite.",
-    )
-    language: str = Field(
-        default="python",
-        description="Primary language of the target repo.",
-    )
-
-    @field_validator("test_command", mode="before")
-    @classmethod
-    def validate_test_command(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            return "pytest"
-
-        if _SHELL_METACHAR_RE.search(v):
-            raise ValueError(
-                "test_command contains disallowed shell metacharacters"
-            )
-
-        # Check that the command starts with an allowed base command
-        for allowed in sorted(_ALLOWED_TEST_COMMANDS, key=len, reverse=True):
-            if v == allowed or v.startswith(allowed + " "):
-                return v
-
-        raise ValueError(
-            f"test_command must start with one of: {', '.join(sorted(_ALLOWED_TEST_COMMANDS))}"
-        )
 
 
 class StructuredChangeRequest(BaseModel):
