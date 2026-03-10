@@ -21,7 +21,7 @@ from hadron.agent.claude import ClaudeAgentBackend
 from hadron.config.bootstrap import load_bootstrap_config
 from hadron.config.defaults import get_config_snapshot
 from hadron.db.engine import create_engine, create_session_factory
-from hadron.db.models import CRRun
+from hadron.db.models import CRRun, RepoRun
 from hadron.events.bus import RedisEventBus
 from hadron.events.interventions import InterventionManager
 from hadron.models.events import EventType, PipelineEvent
@@ -40,7 +40,7 @@ OVERRIDE_NODE_MAP: dict[str, str] = {
 # Pipeline node execution order (used to pick the latest node from multiple overrides).
 PIPELINE_NODE_ORDER: list[str] = [
     "intake", "repo_id", "worktree_setup", "translation", "verification",
-    "tdd", "review", "rebase", "delivery", "release_gate", "release", "retrospective",
+    "tdd", "review", "rebase", "delivery", "release",
 ]
 
 
@@ -83,9 +83,17 @@ async def run_worker(cr_id: str, repo_url: str, repo_name: str = "", default_bra
                 logger.error("CR %s not found in database", cr_id)
                 return
 
-            # Update status to running
+            # Update RepoRun status to running
             await session.execute(
-                update(CRRun).where(CRRun.cr_id == cr_id).values(status="running")
+                update(RepoRun)
+                .where(RepoRun.cr_id == cr_id, RepoRun.repo_name == repo_name)
+                .values(status="running")
+            )
+            # Also mark CR as running if still pending
+            await session.execute(
+                update(CRRun)
+                .where(CRRun.cr_id == cr_id, CRRun.status == "pending")
+                .values(status="running")
             )
             await session.commit()
 
@@ -187,51 +195,60 @@ async def run_worker(cr_id: str, repo_url: str, repo_name: str = "", default_bra
             if checkpointer_cm:
                 await checkpointer_cm.__aexit__(None, None, None)
 
-        # Update CR run status
+        # Update RepoRun status
         final_status = final_state.get("status", "completed")
         final_cost = final_state.get("cost_usd", 0.0)
 
+        # Extract release info from final state
+        release_results = final_state.get("release_results", [])
+        pr_description = ""
+        if release_results:
+            pr_description = release_results[0].get("pr_description", "")
+
         async with session_factory() as session:
             await session.execute(
-                update(CRRun)
-                .where(CRRun.cr_id == cr_id)
+                update(RepoRun)
+                .where(RepoRun.cr_id == cr_id, RepoRun.repo_name == repo_name)
                 .values(
                     status=final_status,
                     cost_usd=final_cost,
+                    pr_description=pr_description,
+                    branch_name=f"ai/cr-{cr_id}",
                     error=final_state.get("error"),
                 )
             )
             await session.commit()
 
         # Emit terminal event so the frontend updates status
+        event_data = {"repo": repo_name, "cost_usd": final_cost}
         if final_status == "paused":
             await event_bus.emit(PipelineEvent(
                 cr_id=cr_id, event_type=EventType.PIPELINE_PAUSED, stage="worker",
-                data={"error": final_state.get("error", "")},
+                data={**event_data, "error": final_state.get("error", "")},
             ))
         elif final_status == "completed":
             await event_bus.emit(PipelineEvent(
                 cr_id=cr_id, event_type=EventType.PIPELINE_COMPLETED, stage="worker",
-                data={"cost_usd": final_cost},
+                data=event_data,
             ))
         elif final_status == "failed":
             await event_bus.emit(PipelineEvent(
                 cr_id=cr_id, event_type=EventType.PIPELINE_FAILED, stage="worker",
-                data={"error": final_state.get("error", "")},
+                data={**event_data, "error": final_state.get("error", "")},
             ))
 
-        logger.info("Worker completed for CR %s with status=%s cost=$%.4f", cr_id, final_status, final_cost)
+        logger.info("Worker completed for CR %s repo %s with status=%s cost=$%.4f", cr_id, repo_name, final_status, final_cost)
 
     except Exception as e:
-        logger.exception("Worker failed for CR %s", cr_id)
+        logger.exception("Worker failed for CR %s repo %s", cr_id, repo_name)
         await event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.PIPELINE_FAILED, stage="worker",
-            data={"error": str(e)},
+            data={"repo": repo_name, "error": str(e)},
         ))
         async with session_factory() as session:
             await session.execute(
-                update(CRRun)
-                .where(CRRun.cr_id == cr_id)
+                update(RepoRun)
+                .where(RepoRun.cr_id == cr_id, RepoRun.repo_name == repo_name)
                 .values(status="failed", error=str(e))
             )
             await session.commit()

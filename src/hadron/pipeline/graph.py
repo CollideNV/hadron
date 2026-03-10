@@ -16,9 +16,7 @@ from hadron.pipeline.nodes.delivery import delivery_node
 from hadron.pipeline.nodes.intake import intake_node
 from hadron.pipeline.nodes.rebase import rebase_node
 from hadron.pipeline.nodes.release import release_node
-from hadron.pipeline.nodes.release_gate import release_gate_node
 from hadron.pipeline.nodes.repo_id import repo_id_node
-from hadron.pipeline.nodes.retrospective import retrospective_node
 from hadron.pipeline.nodes.review import review_node
 from hadron.pipeline.nodes.tdd import tdd_node
 from hadron.pipeline.nodes.worktree_setup import worktree_setup_node
@@ -30,14 +28,17 @@ def _paused_node(state: PipelineState, config: RunnableConfig) -> dict:
 
 
 def build_pipeline_graph() -> StateGraph:
-    """Build the complete pipeline graph.
+    """Build the worker pipeline graph (one repo per worker).
 
     Graph structure follows adr/orchestration.md §5.3:
         Intake → Repo ID → Worktree Setup → Behaviour Translation → Behaviour Verification
             ↕ (verification loop)
         → TDD → Review
             ↕ (review loop)
-        → Rebase → Delivery → Release Gate → Release → Retrospective
+        → Rebase → Delivery → Release
+
+    Release gate (human approval) and retrospective are handled by the Controller
+    after all repo workers for a CR have completed.
     """
     graph = StateGraph(PipelineState)
 
@@ -51,9 +52,7 @@ def build_pipeline_graph() -> StateGraph:
     graph.add_node("review", review_node)
     graph.add_node("rebase", rebase_node)
     graph.add_node("delivery", delivery_node)
-    graph.add_node("release_gate", release_gate_node)
     graph.add_node("release", release_node)
-    graph.add_node("retrospective", retrospective_node)
     graph.add_node("paused", _paused_node)
 
     # Linear edges
@@ -86,10 +85,8 @@ def build_pipeline_graph() -> StateGraph:
         {"delivery": "delivery", "paused": "paused"},
     )
 
-    graph.add_edge("delivery", "release_gate")
-    graph.add_edge("release_gate", "release")
-    graph.add_edge("release", "retrospective")
-    graph.add_edge("retrospective", END)
+    graph.add_edge("delivery", "release")
+    graph.add_edge("release", END)
     graph.add_edge("paused", END)
 
     return graph

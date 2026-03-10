@@ -10,7 +10,7 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy import select, update
 
-from hadron.db.models import CRRun
+from hadron.db.models import CRRun, RepoRun
 from hadron.models.events import EventType, PipelineEvent
 
 logger = logging.getLogger(__name__)
@@ -50,12 +50,18 @@ async def list_pipelines(request: Request) -> list[dict]:
 
 @router.get("/pipeline/{cr_id}")
 async def get_pipeline_status(cr_id: str, request: Request) -> dict:
-    """Get the current status of a pipeline run."""
+    """Get the current status of a pipeline run, including per-repo worker status."""
     async with request.app.state.session_factory() as session:
         result = await session.execute(select(CRRun).where(CRRun.cr_id == cr_id))
         cr_run = result.scalar_one_or_none()
         if not cr_run:
             raise HTTPException(status_code=404, detail="CR not found")
+
+        repo_result = await session.execute(
+            select(RepoRun).where(RepoRun.cr_id == cr_id)
+        )
+        repo_runs = repo_result.scalars().all()
+
         return {
             "cr_id": cr_run.cr_id,
             "title": _extract_title(cr_run),
@@ -66,6 +72,18 @@ async def get_pipeline_status(cr_id: str, request: Request) -> dict:
             "error": cr_run.error,
             "created_at": cr_run.created_at.isoformat() if cr_run.created_at else None,
             "updated_at": cr_run.updated_at.isoformat() if cr_run.updated_at else None,
+            "repos": [
+                {
+                    "repo_name": rr.repo_name,
+                    "repo_url": rr.repo_url,
+                    "status": rr.status,
+                    "branch_name": rr.branch_name,
+                    "pr_url": rr.pr_url,
+                    "cost_usd": rr.cost_usd,
+                    "error": rr.error,
+                }
+                for rr in repo_runs
+            ],
         }
 
 
@@ -117,8 +135,20 @@ async def resume_pipeline(cr_id: str, body: ResumeRequest, request: Request) -> 
         )
         await session.commit()
 
-    # Spawn a new worker
-    await request.app.state.job_spawner.spawn(cr_id)
+    # Respawn workers for repos that are paused or failed
+    async with session_factory() as session:
+        repo_result = await session.execute(
+            select(RepoRun).where(
+                RepoRun.cr_id == cr_id,
+                RepoRun.status.in_(("paused", "failed")),
+            )
+        )
+        repos_to_resume = repo_result.scalars().all()
+
+    for rr in repos_to_resume:
+        await request.app.state.job_spawner.spawn(
+            cr_id, repo_url=rr.repo_url, repo_name=rr.repo_name,
+        )
 
     # Emit event so dashboard updates
     await request.app.state.event_bus.emit(PipelineEvent(
