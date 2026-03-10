@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Callable, Awaitable, Protocol
 
+from hadron.config.defaults import DEFAULT_MODEL
+
 
 # Callback type: (tool_name, tool_input, result_snippet) -> None
 OnToolCall = Callable[[str, dict[str, Any], str], Awaitable[None]]
@@ -24,7 +26,7 @@ class AgentTask:
     allowed_tools: list[str] = field(default_factory=lambda: [
         "read_file", "write_file", "list_directory", "run_command"
     ])
-    model: str = "claude-sonnet-4-20250514"
+    model: str = DEFAULT_MODEL
     max_tokens: int = 16384
     max_tool_rounds: int = 50
     on_tool_call: OnToolCall | None = None

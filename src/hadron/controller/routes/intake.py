@@ -6,7 +6,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, Request
 
-from hadron.config.defaults import get_config_snapshot
+from hadron.config.defaults import BRANCH_PREFIX, get_config_snapshot
 from hadron.controller.job_spawner import SubprocessJobSpawner
 from hadron.db.models import CRRun, RepoRun
 from hadron.models.cr import RawChangeRequest
@@ -54,7 +54,7 @@ async def trigger_pipeline(cr: RawChangeRequest, request: Request) -> dict:
             repo_url=url,
             repo_name=repo_name,
             status="pending",
-            branch_name=f"ai/cr-{cr_id}",
+            branch_name=f"{BRANCH_PREFIX}{cr_id}",
         ))
 
     async with session_factory() as session:

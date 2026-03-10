@@ -8,32 +8,24 @@ import json
 import logging
 from typing import Any
 
-from hadron.agent.base import AgentTask
 from hadron.agent.prompt import PromptComposer
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
-from hadron.pipeline.nodes import (
-    emit_cost_update, make_agent_event_emitter, make_nudge_poller,
-    make_tool_call_emitter, store_conversation,
-)
-from hadron.pipeline.nodes.tdd import _gather_files
+from hadron.pipeline.nodes import NodeContext, gather_files, run_agent
 
 logger = logging.getLogger(__name__)
 
 
 async def behaviour_translation_node(state: PipelineState, config: RunnableConfig) -> dict[str, Any]:
     """Spec Writer agent writes Gherkin .feature files for each repo."""
-    configurable = config.get("configurable", {})
-    event_bus = configurable.get("event_bus")
-    agent_backend = configurable.get("agent_backend")
+    ctx = NodeContext.from_config(config)
     cr_id = state["cr_id"]
 
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
+    if ctx.event_bus:
+        await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="behaviour_translation"
         ))
 
-    redis_client = configurable.get("redis")
     composer = PromptComposer()
     structured_cr = state.get("structured_cr", {})
 
@@ -65,36 +57,20 @@ async def behaviour_translation_node(state: PipelineState, config: RunnableConfi
 """
     user_prompt = composer.compose_user_prompt(task_payload, feedback)
 
-    spec_model = configurable.get("model", "claude-sonnet-4-20250514")
-
-    spec_writer_tools = ["read_file", "write_file", "list_directory"]
-
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
-            cr_id=cr_id, event_type=EventType.AGENT_STARTED,
-            stage="behaviour_translation",
-            data={"role": "spec_writer", "repo": repo_name, "model": spec_model, "allowed_tools": spec_writer_tools},
-        ))
-
-    # No explore/plan — spec_writer only needs the CR and existing .feature files
-    task = AgentTask(
+    agent_run = await run_agent(
+        ctx,
         role="spec_writer",
         system_prompt=system_prompt,
         user_prompt=user_prompt,
+        cr_id=cr_id,
+        stage="behaviour_translation",
+        repo_name=repo_name,
         working_directory=worktree_path,
-        allowed_tools=spec_writer_tools,
-        model=spec_model,
-        on_tool_call=make_tool_call_emitter(event_bus, cr_id, "behaviour_translation", "spec_writer", repo_name),
-        on_event=make_agent_event_emitter(event_bus, cr_id, "behaviour_translation", "spec_writer", repo_name),
-        nudge_poll=make_nudge_poller(redis_client, cr_id, "spec_writer") if redis_client else None,
+        allowed_tools=["read_file", "write_file", "list_directory"],
+        explore_model="",  # No explore/plan — spec_writer only needs the CR
+        plan_model="",
     )
-    result = await agent_backend.execute(task)
-    await emit_cost_update(event_bus, cr_id, "behaviour_translation", result)
-
-    # Store conversation
-    sw_conv_key = ""
-    if redis_client and result.conversation:
-        sw_conv_key = await store_conversation(redis_client, cr_id, "spec_writer", repo_name, result.conversation)
+    result = agent_run.result
 
     specs_list = [{
         "repo_name": repo_name,
@@ -104,24 +80,8 @@ async def behaviour_translation_node(state: PipelineState, config: RunnableConfi
         "verification_iteration": state.get("verification_loop_count", 0),
     }]
 
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
-            cr_id=cr_id, event_type=EventType.AGENT_COMPLETED,
-            stage="behaviour_translation",
-            data={
-                "role": "spec_writer", "repo": repo_name,
-                "output": result.output[:2000],
-                "input_tokens": result.input_tokens,
-                "output_tokens": result.output_tokens,
-                "cost_usd": result.cost_usd,
-                "tool_calls_count": len(result.tool_calls),
-                "round_count": result.round_count,
-                "conversation_key": sw_conv_key,
-            },
-        ))
-
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
+    if ctx.event_bus:
+        await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="behaviour_translation",
         ))
 
@@ -137,17 +97,14 @@ async def behaviour_translation_node(state: PipelineState, config: RunnableConfi
 
 async def behaviour_verification_node(state: PipelineState, config: RunnableConfig) -> dict[str, Any]:
     """Verifier agent checks completeness and consistency of specs."""
-    configurable = config.get("configurable", {})
-    event_bus = configurable.get("event_bus")
-    agent_backend = configurable.get("agent_backend")
+    ctx = NodeContext.from_config(config)
     cr_id = state["cr_id"]
 
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
+    if ctx.event_bus:
+        await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="behaviour_verification"
         ))
 
-    redis_client = configurable.get("redis")
     composer = PromptComposer()
     structured_cr = state.get("structured_cr", {})
 
@@ -158,7 +115,7 @@ async def behaviour_verification_node(state: PipelineState, config: RunnableConf
     system_prompt = composer.compose_system_prompt("spec_verifier")
 
     # Gather feature files so the verifier doesn't need to explore
-    feature_content = _gather_files(worktree_path, "features/**/*.feature")
+    feature_content = gather_files(worktree_path, "features/**/*.feature")
 
     task_payload = f"""# Change Request
 
@@ -176,31 +133,20 @@ Verify the above specifications against the CR.
 """
     user_prompt = composer.compose_user_prompt(task_payload)
 
-    verifier_model = configurable.get("model", "claude-sonnet-4-20250514")
-    verifier_tools = ["read_file", "list_directory"]
-
-    # No explore/plan — CR + feature files are injected directly
-    task = AgentTask(
+    agent_run = await run_agent(
+        ctx,
         role="spec_verifier",
         system_prompt=system_prompt,
         user_prompt=user_prompt,
+        cr_id=cr_id,
+        stage="behaviour_verification",
+        repo_name=repo_name,
         working_directory=worktree_path,
-        allowed_tools=verifier_tools,
-        model=verifier_model,
-        on_tool_call=make_tool_call_emitter(event_bus, cr_id, "behaviour_verification", "spec_verifier", repo_name),
-        on_event=make_agent_event_emitter(event_bus, cr_id, "behaviour_verification", "spec_verifier", repo_name),
-        nudge_poll=make_nudge_poller(redis_client, cr_id, "spec_verifier") if redis_client else None,
+        allowed_tools=["read_file", "list_directory"],
+        explore_model="",  # No explore/plan — CR + feature files are injected directly
+        plan_model="",
     )
-
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
-            cr_id=cr_id, event_type=EventType.AGENT_STARTED,
-            stage="behaviour_verification",
-            data={"role": "spec_verifier", "repo": repo_name, "model": verifier_model, "allowed_tools": task.allowed_tools},
-        ))
-
-    result = await agent_backend.execute(task)
-    await emit_cost_update(event_bus, cr_id, "behaviour_verification", result)
+    result = agent_run.result
 
     # Parse verification result — try multiple extraction strategies
     verification = None
@@ -222,27 +168,6 @@ Verify the above specifications against the CR.
     if verification is None:
         logger.error("Could not parse verifier output for %s: %s", repo_name, text[:500])
         verification = {"verified": False, "feedback": f"Verifier output was not valid JSON: {text[:200]}", "missing_scenarios": [], "issues": ["Output parsing failed"]}
-
-    # Store conversation
-    sv_conv_key = ""
-    if redis_client and result.conversation:
-        sv_conv_key = await store_conversation(redis_client, cr_id, "spec_verifier", repo_name, result.conversation)
-
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
-            cr_id=cr_id, event_type=EventType.AGENT_COMPLETED,
-            stage="behaviour_verification",
-            data={
-                "role": "spec_verifier", "repo": repo_name,
-                "output": result.output[:2000],
-                "input_tokens": result.input_tokens,
-                "output_tokens": result.output_tokens,
-                "cost_usd": result.cost_usd,
-                "tool_calls_count": len(result.tool_calls),
-                "round_count": result.round_count,
-                "conversation_key": sv_conv_key,
-            },
-        ))
 
     verified = verification.get("verified", True)
     feedback = verification.get("feedback", "")
@@ -266,8 +191,8 @@ Verify the above specifications against the CR.
         "verification_iteration": state.get("verification_loop_count", 0) + 1,
     }]
 
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
+    if ctx.event_bus:
+        await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED,
             stage=f"behaviour_verification:{repo_name}",
             data={
@@ -280,8 +205,8 @@ Verify the above specifications against the CR.
             },
         ))
 
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
+    if ctx.event_bus:
+        await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="behaviour_verification",
             data={
                 "all_verified": verified,

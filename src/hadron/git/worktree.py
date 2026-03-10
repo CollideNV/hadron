@@ -25,6 +25,12 @@ def _git_env() -> dict[str, str]:
     return env
 
 
+def _sanitize_git_output(text: str) -> str:
+    """Strip credentials from git output (URLs may contain embedded tokens)."""
+    import re
+    return re.sub(r"://[^@\s]+@", "://***@", text)
+
+
 async def _run_git(
     *args: str,
     cwd: str | Path | None = None,
@@ -42,8 +48,10 @@ async def _run_git(
     )
     stdout, stderr = await proc.communicate()
     if check and proc.returncode != 0:
+        # Sanitize stderr to avoid leaking credentials embedded in URLs
+        safe_stderr = _sanitize_git_output(stderr.decode().strip())
         raise RuntimeError(
-            f"git {' '.join(args)} failed (rc={proc.returncode}): {stderr.decode().strip()}"
+            f"git {' '.join(args)} failed (rc={proc.returncode}): {safe_stderr}"
         )
     return stdout.decode().strip()
 
@@ -61,14 +69,24 @@ class WorktreeManager:
         self.repos_dir = self.workspace / "repos"
         self.runs_dir = self.workspace / "runs"
 
+    @staticmethod
+    def _sanitize_name(name: str) -> str:
+        """Sanitize a name to prevent path traversal."""
+        # Strip any path separators and parent-directory references
+        sanitized = name.replace("/", "_").replace("\\", "_").replace("..", "_")
+        if not sanitized or sanitized.startswith("."):
+            raise ValueError(f"Invalid name after sanitization: {name!r}")
+        return sanitized
+
     def _bare_path(self, repo_name: str) -> Path:
-        return self.repos_dir / repo_name
+        return self.repos_dir / self._sanitize_name(repo_name)
 
     def _worktree_path(self, cr_id: str, repo_name: str) -> Path:
-        return self.runs_dir / f"cr-{cr_id}" / repo_name
+        return self.runs_dir / f"cr-{self._sanitize_name(cr_id)}" / self._sanitize_name(repo_name)
 
     def _branch_name(self, cr_id: str) -> str:
-        return f"ai/cr-{cr_id}"
+        from hadron.config.defaults import BRANCH_PREFIX
+        return f"{BRANCH_PREFIX}{cr_id}"
 
     async def clone_bare(self, repo_url: str, repo_name: str) -> Path:
         """Clone a repository as a bare clone. Skips if already cloned."""

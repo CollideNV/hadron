@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from hadron.config.defaults import DEFAULT_WORKSPACE_DIR
+
 
 class BootstrapConfig(BaseModel):
     """Bootstrap configuration loaded from environment variables.
@@ -28,7 +30,7 @@ class BootstrapConfig(BaseModel):
         description="Anthropic API key for Claude agent backend.",
     )
     workspace_dir: str = Field(
-        default="/tmp/hadron-workspace",
+        default=DEFAULT_WORKSPACE_DIR,
         description="Root directory for git clones and worktrees.",
     )
     controller_host: str = Field(default="0.0.0.0")

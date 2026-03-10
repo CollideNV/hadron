@@ -12,6 +12,7 @@ import argparse
 import asyncio
 import json
 import logging
+import re
 import sys
 
 import redis.asyncio as aioredis
@@ -19,7 +20,7 @@ from sqlalchemy import select, update
 
 from hadron.agent.claude import ClaudeAgentBackend
 from hadron.config.bootstrap import load_bootstrap_config
-from hadron.config.defaults import get_config_snapshot
+from hadron.config.defaults import BRANCH_PREFIX, DEFAULT_MODEL, get_config_snapshot
 from hadron.db.engine import create_engine, create_session_factory
 from hadron.db.models import CRRun, RepoRun
 from hadron.events.bus import RedisEventBus
@@ -62,7 +63,9 @@ async def run_worker(cr_id: str, repo_url: str, repo_name: str = "", default_bra
     if not repo_name:
         repo_name = repo_url.rstrip("/").split("/")[-1]
 
-    logger.info("Worker starting for CR %s, repo %s (%s)", cr_id, repo_name, repo_url)
+    # Strip credentials from repo_url for logging (tokens may be embedded in HTTPS URLs)
+    safe_url = re.sub(r"://[^@]+@", "://***@", repo_url)
+    logger.info("Worker starting for CR %s, repo %s (%s)", cr_id, repo_name, safe_url)
 
     # Connect to infrastructure
     engine = create_engine(cfg.postgres_url)
@@ -152,7 +155,7 @@ async def run_worker(cr_id: str, repo_url: str, repo_name: str = "", default_bra
                     "intervention_manager": intervention_mgr,
                     "agent_backend": agent_backend,
                     "workspace_dir": cfg.workspace_dir,
-                    "model": pipeline_cfg.get("default_model", "claude-sonnet-4-20250514"),
+                    "model": pipeline_cfg.get("default_model", DEFAULT_MODEL),
                     "explore_model": pipeline_cfg.get("explore_model", ""),
                     "plan_model": pipeline_cfg.get("plan_model", ""),
                     "redis": redis_client,
@@ -213,7 +216,7 @@ async def run_worker(cr_id: str, repo_url: str, repo_name: str = "", default_bra
                     status=final_status,
                     cost_usd=final_cost,
                     pr_description=pr_description,
-                    branch_name=f"ai/cr-{cr_id}",
+                    branch_name=f"{BRANCH_PREFIX}{cr_id}",
                     error=final_state.get("error"),
                 )
             )

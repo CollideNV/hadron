@@ -10,9 +10,70 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncIterator
 
+import re
+
 import anthropic
 
 from hadron.agent.base import AgentEvent, AgentResult, AgentTask
+
+# Allowlist of command prefixes an agent is permitted to run.
+# Anything not matching is rejected before reaching the shell.
+_AGENT_COMMAND_ALLOWLIST: list[re.Pattern[str]] = [
+    # Test runners
+    re.compile(r"^pytest(\s|$)"),
+    re.compile(r"^python3?\s+-m\s+pytest(\s|$)"),
+    re.compile(r"^npm\s+(test|run\s+test)(\s|$)"),
+    re.compile(r"^npx\s+(jest|vitest|mocha)(\s|$)"),
+    re.compile(r"^cargo\s+test(\s|$)"),
+    re.compile(r"^go\s+test(\s|$)"),
+    re.compile(r"^mvn\s+(test|verify)(\s|$)"),
+    re.compile(r"^gradle\s+test(\s|$)"),
+    re.compile(r"^bundle\s+exec\s+rspec(\s|$)"),
+    re.compile(r"^mix\s+test(\s|$)"),
+    re.compile(r"^phpunit(\s|$)"),
+    re.compile(r"^dotnet\s+test(\s|$)"),
+    re.compile(r"^make\s+(test|check|lint)(\s|$)"),
+    # Linters and formatters
+    re.compile(r"^(ruff|flake8|mypy|pylint|black|isort)(\s|$)"),
+    re.compile(r"^npx\s+(eslint|prettier|tsc)(\s|$)"),
+    re.compile(r"^cargo\s+(clippy|fmt)(\s|$)"),
+    re.compile(r"^go\s+(vet|fmt)(\s|$)"),
+    # Build tools (read-only inspection)
+    re.compile(r"^(pip|pip3)\s+list(\s|$)"),
+    re.compile(r"^cat\s+"),
+    re.compile(r"^head\s+"),
+    re.compile(r"^tail\s+"),
+    re.compile(r"^wc\s+"),
+    re.compile(r"^find\s+\.\s+"),
+    re.compile(r"^grep\s+"),
+    re.compile(r"^ls(\s|$)"),
+    re.compile(r"^tree(\s|$)"),
+    re.compile(r"^echo(\s|$)"),
+    re.compile(r"^pwd$"),
+    re.compile(r"^which\s+"),
+    re.compile(r"^diff\s+"),
+    re.compile(r"^sleep\s+"),
+]
+
+# Shell metacharacters that indicate chaining/piping — always rejected.
+_DANGEROUS_SHELL_CHARS = frozenset(";`$\n")
+_DANGEROUS_SHELL_PATTERNS = ("&&", "||", "$(", ">", "<")
+
+
+def _validate_agent_command(cmd: str) -> bool:
+    """Check whether a command from an agent is allowed.
+
+    Blocks shell metacharacters and unknown command prefixes.
+    Pipe (|) is allowed for simple output filtering (e.g. grep).
+    """
+    # Reject obviously dangerous patterns
+    if any(c in cmd for c in _DANGEROUS_SHELL_CHARS):
+        return False
+    for pat in _DANGEROUS_SHELL_PATTERNS:
+        if pat in cmd:
+            return False
+    # Check against allowlist
+    return any(p.match(cmd) for p in _AGENT_COMMAND_ALLOWLIST)
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +175,8 @@ def _make_tools(allowed: list[str], working_dir: str | None) -> list[dict]:
 def _safe_resolve(working_dir: str, user_path: str) -> Path:
     """Resolve a user-provided path and ensure it stays within working_dir.
 
-    Raises ValueError if the resolved path escapes the working directory.
+    Raises ValueError if the resolved path escapes the working directory,
+    or if any component of the path is a symlink pointing outside the root.
     """
     root = Path(working_dir).resolve()
     resolved = (root / user_path).resolve()
@@ -122,6 +184,18 @@ def _safe_resolve(working_dir: str, user_path: str) -> Path:
         raise ValueError(
             f"Path escapes working directory: {user_path}"
         )
+    # Walk each ancestor to detect symlinks that point outside the root.
+    # This prevents an agent from creating a symlink inside the worktree
+    # that targets a file outside it (symlink traversal attack).
+    current = root
+    for part in resolved.relative_to(root).parts:
+        current = current / part
+        if current.is_symlink():
+            link_target = current.resolve()
+            if not link_target.is_relative_to(root):
+                raise ValueError(
+                    f"Symlink escapes working directory: {user_path} -> {link_target}"
+                )
     return resolved
 
 
@@ -157,8 +231,11 @@ async def _execute_tool(
             return "\n".join(lines) if lines else "(empty directory)"
 
         elif name == "run_command":
+            cmd = input_data["command"]
+            if not _validate_agent_command(cmd):
+                return f"Error: Command rejected by safety filter: {cmd!r}"
             proc = await asyncio.create_subprocess_shell(
-                input_data["command"],
+                cmd,
                 cwd=working_dir,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,

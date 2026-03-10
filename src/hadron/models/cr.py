@@ -71,6 +71,17 @@ class RawChangeRequest(BaseModel):
     )
     repo_default_branch: str = Field(default="main")
 
+    @field_validator("repo_urls")
+    @classmethod
+    def validate_repo_urls(cls, v: list[str]) -> list[str]:
+        """Ensure all repo URLs use HTTPS scheme. Rejects file://, ssh://, git:// etc."""
+        for url in v:
+            if not url.startswith("https://"):
+                raise ValueError(
+                    f"Only HTTPS repository URLs are allowed, got: {url!r}"
+                )
+        return v
+
 
 class StructuredChangeRequest(BaseModel):
     """Parsed and normalised change request — output of Intake agent."""

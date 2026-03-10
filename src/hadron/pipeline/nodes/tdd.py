@@ -4,43 +4,17 @@ from __future__ import annotations
 
 from langgraph.types import RunnableConfig
 
-import glob as globmod
 import logging
-from pathlib import Path
 from typing import Any
 
-from hadron.agent.base import AgentTask
 from hadron.agent.prompt import PromptComposer
+from hadron.git.worktree import WorktreeManager
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
-from hadron.pipeline.nodes import (
-    emit_cost_update, make_agent_event_emitter, make_nudge_poller,
-    make_tool_call_emitter, store_conversation,
-)
+from hadron.pipeline.nodes import NodeContext, gather_files, run_agent
 from hadron.pipeline.testing import run_test_command
 
 logger = logging.getLogger(__name__)
-
-_MAX_CONTEXT_CHARS = 24_000  # ~6k tokens — keep injected context lean
-
-
-def _gather_files(worktree: str, pattern: str) -> str:
-    """Read files matching glob pattern and return formatted content."""
-    base = Path(worktree)
-    parts: list[str] = []
-    total = 0
-    for path in sorted(base.glob(pattern)):
-        if not path.is_file():
-            continue
-        content = path.read_text(errors="replace")
-        rel = path.relative_to(base)
-        entry = f"### {rel}\n\n```\n{content}\n```"
-        if total + len(entry) > _MAX_CONTEXT_CHARS:
-            parts.append(f"\n... ({pattern}: remaining files truncated)")
-            break
-        parts.append(entry)
-        total += len(entry)
-    return "\n\n".join(parts)
 
 
 async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, Any]:
@@ -48,19 +22,16 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
 
     Loops internally up to max_tdd_iterations if tests fail after implementation.
     """
-    configurable = config.get("configurable", {})
-    event_bus = configurable.get("event_bus")
-    agent_backend = configurable.get("agent_backend")
+    ctx = NodeContext.from_config(config)
     cr_id = state["cr_id"]
     pipeline_config = state.get("config_snapshot", {}).get("pipeline", {})
     max_iterations = pipeline_config.get("max_tdd_iterations", 5)
 
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
+    if ctx.event_bus:
+        await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="tdd"
         ))
 
-    redis_client = configurable.get("redis")
     composer = PromptComposer()
     structured_cr = state.get("structured_cr", {})
     total_cost = 0.0
@@ -97,65 +68,38 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
                 review_feedback += f"- [{f.get('severity', '')}] {f.get('message', '')} ({f.get('file', '')}:{f.get('line', 0)})\n"
 
     # Gather feature files so the test_writer doesn't need to explore
-    feature_content = _gather_files(worktree_path, "features/**/*.feature")
+    feature_content = gather_files(worktree_path, "features/**/*.feature")
 
     # === RED PHASE: Write failing tests ===
-    test_model = configurable.get("model", "claude-sonnet-4-20250514")
-    test_tools = ["read_file", "write_file", "list_directory", "run_command"]
-
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
+    if ctx.event_bus:
+        await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="tdd:test_writer",
-        ))
-        await event_bus.emit(PipelineEvent(
-            cr_id=cr_id, event_type=EventType.AGENT_STARTED, stage="tdd:test_writer",
-            data={"role": "test_writer", "repo": repo_name, "model": test_model, "allowed_tools": test_tools},
         ))
 
     test_system = composer.compose_system_prompt("test_writer", repo_context)
-
     test_payload = cr_text
     if feature_content:
         test_payload += f"\n\n## Feature Specifications\n\n{feature_content}"
     test_user = composer.compose_user_prompt(test_payload, review_feedback)
 
-    # No explore/plan — feature files are injected directly
-    test_task = AgentTask(
+    test_run = await run_agent(
+        ctx,
         role="test_writer",
         system_prompt=test_system,
         user_prompt=test_user,
+        cr_id=cr_id,
+        stage="tdd:test_writer",
+        repo_name=repo_name,
         working_directory=worktree_path,
-        model=test_model,
-        on_tool_call=make_tool_call_emitter(event_bus, cr_id, "tdd:test_writer", "test_writer", repo_name),
-        on_event=make_agent_event_emitter(event_bus, cr_id, "tdd:test_writer", "test_writer", repo_name),
-        nudge_poll=make_nudge_poller(redis_client, cr_id, "test_writer") if redis_client else None,
+        explore_model="",  # No explore/plan — feature files are injected directly
+        plan_model="",
     )
-    test_result = await agent_backend.execute(test_task)
-    await emit_cost_update(event_bus, cr_id, "tdd:test_writer", test_result, total_cost)
-    total_cost += test_result.cost_usd
-    total_input += test_result.input_tokens
-    total_output += test_result.output_tokens
+    total_cost += test_run.result.cost_usd
+    total_input += test_run.result.input_tokens
+    total_output += test_run.result.output_tokens
 
-    # Store conversation
-    tw_conv_key = ""
-    if redis_client and test_result.conversation:
-        tw_conv_key = await store_conversation(redis_client, cr_id, "test_writer", repo_name, test_result.conversation)
-
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
-            cr_id=cr_id, event_type=EventType.AGENT_COMPLETED, stage="tdd:test_writer",
-            data={
-                "role": "test_writer", "repo": repo_name,
-                "output": test_result.output[:2000],
-                "input_tokens": test_result.input_tokens,
-                "output_tokens": test_result.output_tokens,
-                "cost_usd": test_result.cost_usd,
-                "tool_calls_count": len(test_result.tool_calls),
-                "round_count": test_result.round_count,
-                "conversation_key": tw_conv_key,
-            },
-        ))
-        await event_bus.emit(PipelineEvent(
+    if ctx.event_bus:
+        await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="tdd:test_writer",
         ))
 
@@ -165,23 +109,14 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
     iteration = 0
 
     # Gather test files so the code_writer knows exactly what to implement
-    test_content = _gather_files(worktree_path, "tests/**/test_*.py")
+    test_content = gather_files(worktree_path, "tests/**/test_*.py")
 
-    code_model = configurable.get("model", "claude-sonnet-4-20250514")
-    code_tools = ["read_file", "write_file", "list_directory", "run_command"]
-
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
+    if ctx.event_bus:
+        await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="tdd:code_writer",
         ))
 
     for iteration in range(max_iterations):
-        if event_bus:
-            await event_bus.emit(PipelineEvent(
-                cr_id=cr_id, event_type=EventType.AGENT_STARTED, stage="tdd:code_writer",
-                data={"role": "code_writer", "repo": repo_name, "iteration": iteration, "model": code_model, "allowed_tools": code_tools},
-            ))
-
         code_system = composer.compose_system_prompt("code_writer", repo_context)
 
         code_payload = cr_text
@@ -192,50 +127,30 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
 
         code_user = composer.compose_user_prompt(code_payload, review_feedback)
 
-        # No explore/plan — test files are injected directly
-        code_task = AgentTask(
+        code_run = await run_agent(
+            ctx,
             role="code_writer",
             system_prompt=code_system,
             user_prompt=code_user,
+            cr_id=cr_id,
+            stage="tdd:code_writer",
+            repo_name=repo_name,
             working_directory=worktree_path,
-            model=code_model,
-            on_tool_call=make_tool_call_emitter(event_bus, cr_id, "tdd:code_writer", "code_writer", repo_name),
-            on_event=make_agent_event_emitter(event_bus, cr_id, "tdd:code_writer", "code_writer", repo_name),
-            nudge_poll=make_nudge_poller(redis_client, cr_id, "code_writer") if redis_client else None,
+            prior_cost=total_cost,
+            explore_model="",  # No explore/plan — test files are injected directly
+            plan_model="",
         )
-        code_result = await agent_backend.execute(code_task)
-        await emit_cost_update(event_bus, cr_id, "tdd:code_writer", code_result, total_cost)
-        total_cost += code_result.cost_usd
-        total_input += code_result.input_tokens
-        total_output += code_result.output_tokens
-
-        # Store conversation
-        cw_conv_key = ""
-        if redis_client and code_result.conversation:
-            cw_conv_key = await store_conversation(redis_client, cr_id, "code_writer", repo_name, code_result.conversation)
-
-        if event_bus:
-            await event_bus.emit(PipelineEvent(
-                cr_id=cr_id, event_type=EventType.AGENT_COMPLETED, stage="tdd:code_writer",
-                data={
-                    "role": "code_writer", "repo": repo_name, "iteration": iteration,
-                    "output": code_result.output[:2000],
-                    "input_tokens": code_result.input_tokens,
-                    "output_tokens": code_result.output_tokens,
-                    "cost_usd": code_result.cost_usd,
-                    "tool_calls_count": len(code_result.tool_calls),
-                    "round_count": code_result.round_count,
-                    "conversation_key": cw_conv_key,
-                },
-            ))
+        total_cost += code_run.result.cost_usd
+        total_input += code_run.result.input_tokens
+        total_output += code_run.result.output_tokens
 
         # Run tests
         tests_passing, test_output = await run_test_command(
             worktree_path, test_command, cr_id,
         )
 
-        if event_bus:
-            await event_bus.emit(PipelineEvent(
+        if ctx.event_bus:
+            await ctx.event_bus.emit(PipelineEvent(
                 cr_id=cr_id, event_type=EventType.TEST_RUN, stage="tdd:code_writer",
                 data={
                     "repo": repo_name,
@@ -251,15 +166,14 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
         else:
             logger.info("Tests failing for %s at iteration %d, retrying...", repo_name, iteration)
 
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
+    if ctx.event_bus:
+        await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="tdd:code_writer",
             data={"tests_passing": tests_passing, "iterations": iteration + 1},
         ))
 
     # Commit the work
-    from hadron.git.worktree import WorktreeManager
-    wm = WorktreeManager(configurable.get("workspace_dir", "/tmp/hadron-workspace"))
+    wm = WorktreeManager(ctx.workspace_dir)
     await wm.commit_and_push(
         worktree_path,
         f"feat: TDD implementation for {cr_id} ({'green' if tests_passing else 'red'})",
@@ -274,8 +188,8 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
         "dev_iteration": iteration + 1,
     }
 
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
+    if ctx.event_bus:
+        await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="tdd",
             data={"all_passing": tests_passing},
         ))

@@ -133,3 +133,35 @@ class TestWhitespaceStripped:
 
     def test_leading_trailing_whitespace(self) -> None:
         assert validate_test_command("  pytest -x  ") == "pytest -x"
+
+
+class TestRepoUrlValidation:
+    """Repo URLs must use HTTPS scheme."""
+
+    def test_https_url_accepted(self) -> None:
+        cr = RawChangeRequest(**_BASE, repo_urls=["https://github.com/org/repo"])
+        assert cr.repo_urls == ["https://github.com/org/repo"]
+
+    def test_file_url_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="HTTPS"):
+            RawChangeRequest(**_BASE, repo_urls=["file:///etc/passwd"])
+
+    def test_ssh_url_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="HTTPS"):
+            RawChangeRequest(**_BASE, repo_urls=["ssh://git@github.com/org/repo"])
+
+    def test_git_url_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="HTTPS"):
+            RawChangeRequest(**_BASE, repo_urls=["git://github.com/org/repo"])
+
+    def test_http_url_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="HTTPS"):
+            RawChangeRequest(**_BASE, repo_urls=["http://github.com/org/repo"])
+
+    def test_mixed_urls_rejected(self) -> None:
+        """If any URL is non-HTTPS, the entire list is rejected."""
+        with pytest.raises(ValidationError, match="HTTPS"):
+            RawChangeRequest(**_BASE, repo_urls=[
+                "https://github.com/org/repo",
+                "file:///etc/passwd",
+            ])

@@ -4,12 +4,59 @@ from __future__ import annotations
 
 import json
 import time
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Awaitable
 
 import redis.asyncio as aioredis
 
 from hadron.agent.base import AgentResult, AgentTask, OnAgentEvent, OnToolCall
 from hadron.models.events import EventType, PipelineEvent
+from hadron.pipeline.nodes.context import NodeContext
+
+# Re-export NodeContext so nodes can do: from hadron.pipeline.nodes import NodeContext
+__all__ = [
+    "NodeContext",
+    "AgentRunResult",
+    "run_agent",
+    "gather_files",
+    "make_tool_call_emitter",
+    "make_agent_event_emitter",
+    "make_nudge_poller",
+    "store_conversation",
+    "emit_cost_update",
+]
+
+
+# ---------------------------------------------------------------------------
+# Shared file gathering utility (moved from tdd.py)
+# ---------------------------------------------------------------------------
+
+MAX_CONTEXT_CHARS = 24_000  # ~6k tokens — keep injected context lean
+
+
+def gather_files(worktree: str, pattern: str) -> str:
+    """Read files matching glob pattern and return formatted content."""
+    base = Path(worktree)
+    parts: list[str] = []
+    total = 0
+    for path in sorted(base.glob(pattern)):
+        if not path.is_file():
+            continue
+        content = path.read_text(errors="replace")
+        rel = path.relative_to(base)
+        entry = f"### {rel}\n\n```\n{content}\n```"
+        if total + len(entry) > MAX_CONTEXT_CHARS:
+            parts.append(f"\n... ({pattern}: remaining files truncated)")
+            break
+        parts.append(entry)
+        total += len(entry)
+    return "\n\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Event callback factories
+# ---------------------------------------------------------------------------
 
 
 def make_tool_call_emitter(
@@ -148,3 +195,97 @@ async def emit_cost_update(
                 "output_tokens": result.output_tokens,
             },
         ))
+
+
+# ---------------------------------------------------------------------------
+# run_agent — unified agent execution with events + cost + conversation
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class AgentRunResult:
+    """Result from run_agent, wrapping AgentResult with conversation key."""
+
+    result: AgentResult
+    conversation_key: str = ""
+
+
+async def run_agent(
+    ctx: NodeContext,
+    *,
+    role: str,
+    system_prompt: str,
+    user_prompt: str,
+    cr_id: str,
+    stage: str,
+    repo_name: str = "",
+    working_directory: str = "",
+    allowed_tools: list[str] | None = None,
+    model: str | None = None,
+    explore_model: str | None = None,
+    plan_model: str | None = None,
+    prior_cost: float = 0.0,
+) -> AgentRunResult:
+    """Run an agent with full event emission, cost tracking, and conversation storage.
+
+    This replaces the repeated ceremony of:
+        1. Build AgentTask with callbacks
+        2. Emit AGENT_STARTED
+        3. Execute agent
+        4. Emit COST_UPDATE
+        5. Store conversation
+        6. Emit AGENT_COMPLETED
+    """
+    effective_model = model or ctx.model
+    effective_explore = explore_model if explore_model is not None else ctx.explore_model
+    effective_plan = plan_model if plan_model is not None else ctx.plan_model
+
+    if allowed_tools is None:
+        allowed_tools = ["read_file", "write_file", "list_directory", "run_command"]
+
+    task = AgentTask(
+        role=role,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        working_directory=working_directory,
+        allowed_tools=allowed_tools,
+        model=effective_model,
+        explore_model=effective_explore,
+        plan_model=effective_plan,
+        on_tool_call=make_tool_call_emitter(ctx.event_bus, cr_id, stage, role, repo_name),
+        on_event=make_agent_event_emitter(ctx.event_bus, cr_id, stage, role, repo_name),
+        nudge_poll=make_nudge_poller(ctx.redis, cr_id, role) if ctx.redis else None,
+    )
+
+    if ctx.event_bus:
+        await ctx.event_bus.emit(PipelineEvent(
+            cr_id=cr_id, event_type=EventType.AGENT_STARTED, stage=stage,
+            data={
+                "role": role, "repo": repo_name,
+                "model": effective_model, "allowed_tools": allowed_tools,
+            },
+        ))
+
+    result = await ctx.agent_backend.execute(task)
+    await emit_cost_update(ctx.event_bus, cr_id, stage, result, prior_cost)
+
+    conv_key = ""
+    if ctx.redis and result.conversation:
+        conv_key = await store_conversation(ctx.redis, cr_id, role, repo_name, result.conversation)
+
+    if ctx.event_bus:
+        await ctx.event_bus.emit(PipelineEvent(
+            cr_id=cr_id, event_type=EventType.AGENT_COMPLETED, stage=stage,
+            data={
+                "role": role, "repo": repo_name,
+                "output": result.output[:2000],
+                "input_tokens": result.input_tokens,
+                "output_tokens": result.output_tokens,
+                "cost_usd": result.cost_usd,
+                "tool_calls_count": len(result.tool_calls),
+                "round_count": result.round_count,
+                "conversation_key": conv_key,
+            },
+        ))
+
+    return AgentRunResult(result=result, conversation_key=conv_key)

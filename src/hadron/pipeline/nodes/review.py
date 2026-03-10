@@ -19,19 +19,13 @@ from typing import Any
 
 from langgraph.types import RunnableConfig
 
-from hadron.agent.base import AgentResult, AgentTask
+from hadron.agent.base import AgentResult
 from hadron.agent.prompt import PromptComposer
 from hadron.git.worktree import WorktreeManager
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.diff_scope import ScopeFlag, analyse_diff_scope
-from hadron.pipeline.nodes import (
-    emit_cost_update,
-    make_agent_event_emitter,
-    make_nudge_poller,
-    make_tool_call_emitter,
-    store_conversation,
-)
+from hadron.pipeline.nodes import NodeContext, emit_cost_update, run_agent
 
 logger = logging.getLogger(__name__)
 
@@ -47,12 +41,7 @@ def _build_security_payload(
     behaviour_specs: list[dict[str, Any]],
     repo_name: str,
 ) -> str:
-    """Build the task payload for the Security Reviewer (adr/security.md §12.5).
-
-    The CR description is explicitly marked as untrusted external input.
-    Diff scope flags are included as a dedicated section.
-    """
-    # Behaviour specs for this repo
+    """Build the task payload for the Security Reviewer (adr/security.md §12.5)."""
     repo_specs = [s for s in behaviour_specs if s.get("repo_name") == repo_name]
     spec_text = ""
     for spec in repo_specs:
@@ -114,19 +103,13 @@ def _build_spec_compliance_payload(
     behaviour_specs: list[dict[str, Any]],
     repo_name: str,
 ) -> str:
-    """Build the task payload for the Spec Compliance Reviewer.
-
-    Includes specs for this repo plus summaries from other repos for
-    cross-repo awareness (adr/stages.md §8.7).
-    """
-    # This repo's specs (full)
+    """Build the task payload for the Spec Compliance Reviewer."""
     repo_specs = [s for s in behaviour_specs if s.get("repo_name") == repo_name]
     this_repo_text = ""
     for spec in repo_specs:
         for fname, content in spec.get("feature_files", {}).items():
             this_repo_text += f"\n### {fname}\n```gherkin\n{content}\n```\n"
 
-    # Other repos' specs (summaries only, for cross-repo awareness)
     other_specs = [s for s in behaviour_specs if s.get("repo_name") != repo_name]
     other_text = ""
     for spec in other_specs:
@@ -161,52 +144,42 @@ def _build_spec_compliance_payload(
 async def _run_single_reviewer(
     role: str,
     task_payload: str,
-    worktree_path: str,
-    repo_name: str,
-    composer: PromptComposer,
-    configurable: dict[str, Any],
+    ctx: NodeContext,
     cr_id: str,
-    event_bus: Any,
-    agent_backend: Any,
-    redis_client: Any,
+    repo_name: str,
+    worktree_path: str,
 ) -> dict[str, Any]:
-    """Run a single reviewer agent and return parsed results + cost info.
-
-    Encapsulates per-reviewer ceremony: task creation, execution, JSON parsing,
-    event emission, and conversation storage.
-    """
+    """Run a single reviewer agent and return parsed results + cost info."""
     sub_stage = f"review:{role}"
+
+    # Reviewers are explore-only: they read files and output JSON.
+    explore_model = ctx.explore_model
+    model = explore_model or ctx.model
+
+    composer = PromptComposer()
     system_prompt = composer.compose_system_prompt(role)
     user_prompt = composer.compose_user_prompt(task_payload)
 
-    # Reviewers are explore-only: they read files and output JSON.
-    # Both explore and act phases use the explore model (cheap, read-only).
-    explore_model = configurable.get("explore_model", "")
-    model = explore_model or configurable.get("model", "claude-sonnet-4-20250514")
-    tools = ["read_file", "list_directory"]
-
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
+    if ctx.event_bus:
+        await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage=sub_stage,
         ))
-        await event_bus.emit(PipelineEvent(
-            cr_id=cr_id, event_type=EventType.AGENT_STARTED, stage=sub_stage,
-            data={"role": role, "repo": repo_name, "model": model, "allowed_tools": tools},
-        ))
 
-    task = AgentTask(
+    agent_run = await run_agent(
+        ctx,
         role=role,
         system_prompt=system_prompt,
         user_prompt=user_prompt,
+        cr_id=cr_id,
+        stage=sub_stage,
+        repo_name=repo_name,
         working_directory=worktree_path,
-        allowed_tools=tools,
+        allowed_tools=["read_file", "list_directory"],
         model=model,
-        explore_model=explore_model,
-        on_tool_call=make_tool_call_emitter(event_bus, cr_id, sub_stage, role, repo_name),
-        on_event=make_agent_event_emitter(event_bus, cr_id, sub_stage, role, repo_name),
-        nudge_poll=make_nudge_poller(redis_client, cr_id, role) if redis_client else None,
+        explore_model="",  # No three-phase for reviewers
+        plan_model="",
     )
-    result: AgentResult = await agent_backend.execute(task)
+    result = agent_run.result
 
     # Parse JSON from agent output
     try:
@@ -217,33 +190,15 @@ async def _run_single_reviewer(
             text = text.split("```")[1].split("```")[0]
         review = json.loads(text.strip())
     except (json.JSONDecodeError, IndexError):
-        review = {"review_passed": True, "findings": [], "summary": result.output[:500]}
+        # SAFETY: If we can't parse the reviewer's output, assume the review FAILED.
+        review = {"review_passed": False, "findings": [{"severity": "major", "reviewer": role, "message": "Could not parse reviewer output as JSON — treating as failed review"}], "summary": result.output[:500]}
 
     # Tag findings with reviewer name if not already present
     for finding in review.get("findings", []):
         finding.setdefault("reviewer", role)
 
-    # Store conversation
-    conv_key = ""
-    if redis_client and result.conversation:
-        conv_key = await store_conversation(redis_client, cr_id, role, repo_name, result.conversation)
-
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
-            cr_id=cr_id, event_type=EventType.AGENT_COMPLETED, stage=sub_stage,
-            data={
-                "role": role, "repo": repo_name,
-                "passed": review.get("review_passed", True),
-                "output": result.output[:2000],
-                "input_tokens": result.input_tokens,
-                "output_tokens": result.output_tokens,
-                "cost_usd": result.cost_usd,
-                "tool_calls_count": len(result.tool_calls),
-                "round_count": result.round_count,
-                "conversation_key": conv_key,
-            },
-        ))
-        await event_bus.emit(PipelineEvent(
+    if ctx.event_bus:
+        await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage=sub_stage,
         ))
 
@@ -256,43 +211,27 @@ async def _run_single_reviewer(
 
 
 async def review_node(state: PipelineState, config: RunnableConfig) -> dict[str, Any]:
-    """Three parallel reviewers examine the diff for each repo.
-
-    Per adr/stages.md §8.7 / adr/security.md §12.5 / §12.6:
-    - Security Reviewer (adversarial trust model, Layer 3 defense)
-    - Quality Reviewer (correctness, architecture, performance)
-    - Spec Compliance Reviewer (code matches behaviour specs)
-
-    A deterministic diff scope analyser runs as a pre-pass to flag sensitive
-    file modifications for the Security Reviewer.
-    """
-    configurable = config.get("configurable", {})
-    event_bus = configurable.get("event_bus")
-    agent_backend = configurable.get("agent_backend")
-    workspace_dir = configurable.get("workspace_dir", "/tmp/hadron-workspace")
+    """Three parallel reviewers examine the diff for each repo."""
+    ctx = NodeContext.from_config(config)
     cr_id = state["cr_id"]
 
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
+    if ctx.event_bus:
+        await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="review",
         ))
 
-    composer = PromptComposer()
     structured_cr = state.get("structured_cr", {})
     behaviour_specs = state.get("behaviour_specs", [])
-    redis_client = configurable.get("redis")
     total_cost = 0.0
     total_input = 0
     total_output = 0
 
-    wm = WorktreeManager(workspace_dir)
+    wm = WorktreeManager(ctx.workspace_dir)
 
     repo = state.get("repo", {})
     repo_name = repo.get("repo_name", "")
     worktree_path = repo.get("worktree_path", "")
     default_branch = repo.get("default_branch", "main")
-    languages = repo.get("languages", [])
-    test_commands = repo.get("test_commands", [])
 
     # 1. Get diff
     diff = await wm.get_diff(worktree_path, default_branch)
@@ -309,29 +248,17 @@ async def review_node(state: PipelineState, config: RunnableConfig) -> dict[str,
         diff, structured_cr, default_branch, behaviour_specs, repo_name,
     )
 
-    reviewer_args = {
-        "worktree_path": worktree_path,
-        "repo_name": repo_name,
-        "composer": composer,
-        "configurable": configurable,
-        "cr_id": cr_id,
-        "event_bus": event_bus,
-        "agent_backend": agent_backend,
-        "redis_client": redis_client,
-    }
-
     # 4. Run all 3 reviewers in parallel
     security_result, quality_result, spec_result = await asyncio.gather(
-        _run_single_reviewer(role="security_reviewer", task_payload=security_payload, **reviewer_args),
-        _run_single_reviewer(role="quality_reviewer", task_payload=quality_payload, **reviewer_args),
-        _run_single_reviewer(role="spec_compliance_reviewer", task_payload=spec_payload, **reviewer_args),
+        _run_single_reviewer("security_reviewer", security_payload, ctx, cr_id, repo_name, worktree_path),
+        _run_single_reviewer("quality_reviewer", quality_payload, ctx, cr_id, repo_name, worktree_path),
+        _run_single_reviewer("spec_compliance_reviewer", spec_payload, ctx, cr_id, repo_name, worktree_path),
     )
 
     # 5. Merge findings and costs
     all_findings: list[dict[str, Any]] = []
-    reviewer_results = zip(_REVIEWER_ROLES, (security_result, quality_result, spec_result))
-    for role, r in reviewer_results:
-        await emit_cost_update(event_bus, cr_id, f"review:{role}", AgentResult(
+    for role, r in zip(_REVIEWER_ROLES, (security_result, quality_result, spec_result)):
+        await emit_cost_update(ctx.event_bus, cr_id, f"review:{role}", AgentResult(
             output="",
             cost_usd=r["cost_usd"],
             input_tokens=r["input_tokens"],
@@ -343,9 +270,9 @@ async def review_node(state: PipelineState, config: RunnableConfig) -> dict[str,
         all_findings.extend(r["review"].get("findings", []))
 
     # 6. Emit individual findings
-    if event_bus:
+    if ctx.event_bus:
         for finding in all_findings:
-            await event_bus.emit(PipelineEvent(
+            await ctx.event_bus.emit(PipelineEvent(
                 cr_id=cr_id, event_type=EventType.REVIEW_FINDING, stage="review",
                 data={"repo": repo_name, **finding},
             ))
@@ -354,7 +281,6 @@ async def review_node(state: PipelineState, config: RunnableConfig) -> dict[str,
     blocking_findings = [f for f in all_findings if f.get("severity") in ("critical", "major")]
     passed = len(blocking_findings) == 0
 
-    # Single-entry list for backward compatibility
     review_results = [{
         "repo_name": repo_name,
         "findings": all_findings,
@@ -362,8 +288,8 @@ async def review_node(state: PipelineState, config: RunnableConfig) -> dict[str,
         "review_iteration": state.get("review_loop_count", 0) + 1,
     }]
 
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
+    if ctx.event_bus:
+        await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="review",
             data={"all_passed": passed},
         ))

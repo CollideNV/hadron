@@ -7,26 +7,26 @@ from langgraph.types import RunnableConfig
 import logging
 from typing import Any
 
+from hadron.config.defaults import BRANCH_PREFIX
 from hadron.git.worktree import WorktreeManager
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
+from hadron.pipeline.nodes import NodeContext
 
 logger = logging.getLogger(__name__)
 
 
 async def release_node(state: PipelineState, config: RunnableConfig) -> dict[str, Any]:
     """Ensure branch is pushed and generate PR description summary."""
-    configurable = config.get("configurable", {})
-    event_bus = configurable.get("event_bus")
-    workspace_dir = configurable.get("workspace_dir", "/tmp/hadron-workspace")
+    ctx = NodeContext.from_config(config)
     cr_id = state["cr_id"]
 
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
+    if ctx.event_bus:
+        await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="release"
         ))
 
-    wm = WorktreeManager(workspace_dir)
+    wm = WorktreeManager(ctx.workspace_dir)
     structured_cr = state.get("structured_cr", {})
 
     repo = state.get("repo", {})
@@ -68,12 +68,12 @@ async def release_node(state: PipelineState, config: RunnableConfig) -> dict[str
 
     release_results = [{
         "repo_name": repo_name,
-        "branch": f"ai/cr-{cr_id}",
+        "branch": f"{BRANCH_PREFIX}{cr_id}",
         "pr_description": pr_body,
     }]
 
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
+    if ctx.event_bus:
+        await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="release",
             data={"repos": [r["repo_name"] for r in release_results]},
         ))

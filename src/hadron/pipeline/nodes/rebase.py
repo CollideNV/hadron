@@ -10,12 +10,13 @@ from typing import Any
 
 from hadron.agent.base import AgentTask
 from hadron.agent.prompt import PromptComposer
+from hadron.config.defaults import BRANCH_PREFIX
 from hadron.git.worktree import WorktreeManager
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import (
-    emit_cost_update, make_agent_event_emitter, make_nudge_poller,
-    make_tool_call_emitter, store_conversation,
+    NodeContext, emit_cost_update, make_agent_event_emitter,
+    make_nudge_poller, make_tool_call_emitter, run_agent, store_conversation,
 )
 from hadron.pipeline.testing import run_test_command
 
@@ -24,19 +25,15 @@ logger = logging.getLogger(__name__)
 
 async def rebase_node(state: PipelineState, config: RunnableConfig) -> dict[str, Any]:
     """Fetch latest main and rebase. If conflicts, use an agent to resolve them."""
-    configurable = config.get("configurable", {})
-    event_bus = configurable.get("event_bus")
-    agent_backend = configurable.get("agent_backend")
-    workspace_dir = configurable.get("workspace_dir", "/tmp/hadron-workspace")
+    ctx = NodeContext.from_config(config)
     cr_id = state["cr_id"]
 
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
+    if ctx.event_bus:
+        await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="rebase"
         ))
 
-    wm = WorktreeManager(workspace_dir)
-    redis_client = configurable.get("redis")
+    wm = WorktreeManager(ctx.workspace_dir)
     rebase_clean = True
     had_conflicts = False
     total_cost = 0.0
@@ -53,23 +50,13 @@ async def rebase_node(state: PipelineState, config: RunnableConfig) -> dict[str,
         clean = await wm.rebase_keep_conflicts(worktree_path, default_branch)
     except Exception as e:
         logger.warning("Rebase fetch/start failed for %s (CR %s): %s", repo_name, cr_id, e)
-        # If we can't even start the rebase (e.g. network issue), mark clean and skip
         clean = True
 
     if not clean:
         logger.info("Rebase conflicts detected in %s — invoking conflict resolver agent", repo_name)
         had_conflicts = True
 
-        # Get conflict details
         conflict_files = await wm.get_conflict_files(worktree_path)
-
-        resolver_model = configurable.get("model", "claude-sonnet-4-20250514")
-        resolver_tools = ["read_file", "write_file", "list_directory", "run_command"]
-        if event_bus:
-            await event_bus.emit(PipelineEvent(
-                cr_id=cr_id, event_type=EventType.AGENT_STARTED, stage="rebase",
-                data={"role": "conflict_resolver", "repo": repo_name, "conflict_files": conflict_files, "model": resolver_model, "allowed_tools": resolver_tools},
-            ))
 
         # Pre-read conflicting files so the agent doesn't need to explore
         base = Path(worktree_path)
@@ -84,7 +71,7 @@ async def rebase_node(state: PipelineState, config: RunnableConfig) -> dict[str,
         system_prompt = composer.compose_system_prompt("conflict_resolver")
         task_payload = f"""## Merge Conflict Resolution
 
-The feature branch `ai/cr-{cr_id}` is being rebased onto `{default_branch}`.
+The feature branch `{BRANCH_PREFIX}{cr_id}` is being rebased onto `{default_branch}`.
 
 **Conflicting files:** {', '.join(conflict_files)}
 
@@ -96,67 +83,54 @@ Resolve the conflict markers in each file and write the resolved versions.
 """
         user_prompt = composer.compose_user_prompt(task_payload)
 
-        # No explore/plan — conflict files are injected directly
-        task = AgentTask(
+        agent_run = await run_agent(
+            ctx,
             role="conflict_resolver",
             system_prompt=system_prompt,
             user_prompt=user_prompt,
+            cr_id=cr_id,
+            stage="rebase",
+            repo_name=repo_name,
             working_directory=worktree_path,
-            allowed_tools=resolver_tools,
-            model=resolver_model,
-            on_tool_call=make_tool_call_emitter(event_bus, cr_id, "rebase", "conflict_resolver", repo_name),
-            on_event=make_agent_event_emitter(event_bus, cr_id, "rebase", "conflict_resolver", repo_name),
-            nudge_poll=make_nudge_poller(redis_client, cr_id, "conflict_resolver") if redis_client else None,
+            prior_cost=total_cost,
+            explore_model="",  # No explore/plan — conflict files are injected directly
+            plan_model="",
         )
-        result = await agent_backend.execute(task)
-        await emit_cost_update(event_bus, cr_id, "rebase", result, total_cost)
-        total_cost += result.cost_usd
-        total_input += result.input_tokens
-        total_output += result.output_tokens
-
-        # Store conversation
-        cr_conv_key = ""
-        if redis_client and result.conversation:
-            cr_conv_key = await store_conversation(redis_client, cr_id, "conflict_resolver", repo_name, result.conversation)
+        total_cost += agent_run.result.cost_usd
+        total_input += agent_run.result.input_tokens
+        total_output += agent_run.result.output_tokens
 
         # Try to continue the rebase
         rebase_continued = await wm.continue_rebase(worktree_path)
 
-        if event_bus:
-            await event_bus.emit(PipelineEvent(
-                cr_id=cr_id, event_type=EventType.AGENT_COMPLETED, stage="rebase",
-                data={
-                    "role": "conflict_resolver", "repo": repo_name,
-                    "resolved": rebase_continued,
-                    "output": result.output[:2000],
-                    "input_tokens": result.input_tokens,
-                    "output_tokens": result.output_tokens,
-                    "cost_usd": result.cost_usd,
-                    "tool_calls_count": len(result.tool_calls),
-                    "round_count": result.round_count,
-                    "conversation_key": cr_conv_key,
-                },
-            ))
-
         if rebase_continued:
             logger.info("Conflicts resolved successfully for %s", repo_name)
         else:
-            # Rebase --continue may trigger more conflicts on subsequent commits
-            # Try up to 3 more times (multi-commit rebases)
+            # Rebase --continue may trigger more conflicts on subsequent commits.
+            # Try up to 3 more times (multi-commit rebases).
             for attempt in range(3):
                 remaining_conflicts = await wm.get_conflict_files(worktree_path)
                 if not remaining_conflicts:
                     break
                 logger.info("Additional conflicts after continue (attempt %d): %s", attempt + 1, remaining_conflicts)
 
-                task.user_prompt = composer.compose_user_prompt(
-                    f"More conflicts after rebase --continue. Files: {', '.join(remaining_conflicts)}. Resolve them."
+                retry_payload = f"More conflicts after rebase --continue. Files: {', '.join(remaining_conflicts)}. Resolve them."
+                retry_run = await run_agent(
+                    ctx,
+                    role="conflict_resolver",
+                    system_prompt=system_prompt,
+                    user_prompt=composer.compose_user_prompt(retry_payload),
+                    cr_id=cr_id,
+                    stage="rebase",
+                    repo_name=repo_name,
+                    working_directory=worktree_path,
+                    prior_cost=total_cost,
+                    explore_model="",
+                    plan_model="",
                 )
-                result = await agent_backend.execute(task)
-                await emit_cost_update(event_bus, cr_id, "rebase", result, total_cost)
-                total_cost += result.cost_usd
-                total_input += result.input_tokens
-                total_output += result.output_tokens
+                total_cost += retry_run.result.cost_usd
+                total_input += retry_run.result.input_tokens
+                total_output += retry_run.result.output_tokens
 
                 rebase_continued = await wm.continue_rebase(worktree_path)
                 if rebase_continued:
@@ -166,7 +140,6 @@ Resolve the conflict markers in each file and write the resolved versions.
                 logger.error("Could not fully resolve rebase conflicts for %s — aborting", repo_name)
                 await wm.abort_rebase(worktree_path)
                 rebase_clean = False
-    # else: clean rebase, no conflicts
 
     # Run full test suite to verify
     test_command = repo.get("test_commands", ["pytest"])[0]
@@ -175,8 +148,8 @@ Resolve the conflict markers in each file and write the resolved versions.
     if not passed:
         logger.warning("Post-rebase tests failed for %s: %s", repo_name, output[-500:])
 
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
+    if ctx.event_bus:
+        await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="rebase",
             data={
                 "clean": rebase_clean,

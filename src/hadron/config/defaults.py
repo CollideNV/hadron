@@ -6,6 +6,13 @@ For MVP, they're frozen here and snapshotted into PipelineState at intake.
 
 from __future__ import annotations
 
+# Canonical constants — import these instead of hardcoding strings.
+DEFAULT_MODEL = "claude-sonnet-4-20250514"
+DEFAULT_EXPLORE_MODEL = "claude-haiku-4-5-20251001"
+DEFAULT_PLAN_MODEL = "claude-opus-4-20250514"
+DEFAULT_WORKSPACE_DIR = "/tmp/hadron-workspace"
+BRANCH_PREFIX = "ai/cr-"
+
 PIPELINE_DEFAULTS: dict = {
     # Circuit breakers
     "max_verification_loops": 3,
@@ -13,9 +20,9 @@ PIPELINE_DEFAULTS: dict = {
     "max_tdd_iterations": 5,
     "max_cost_usd": 10.0,
     # Agent models (three-phase execution)
-    "default_model": "claude-sonnet-4-20250514",
-    "explore_model": "claude-haiku-4-5-20251001",
-    "plan_model": "claude-opus-4-20250514",
+    "default_model": DEFAULT_MODEL,
+    "explore_model": DEFAULT_EXPLORE_MODEL,
+    "plan_model": DEFAULT_PLAN_MODEL,
     # Delivery
     "delivery_strategy": "self_contained",
     # Timeouts (seconds)

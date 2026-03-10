@@ -136,7 +136,7 @@ async def resume_pipeline(cr_id: str, body: ResumeRequest, request: Request) -> 
         await session.commit()
 
     # Respawn workers for repos that are paused or failed
-    async with session_factory() as session:
+    async with request.app.state.session_factory() as session:
         repo_result = await session.execute(
             select(RepoRun).where(
                 RepoRun.cr_id == cr_id,
