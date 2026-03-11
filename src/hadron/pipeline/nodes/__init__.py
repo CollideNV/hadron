@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import time
@@ -13,6 +14,7 @@ import redis.asyncio as aioredis
 
 from hadron.agent.base import AgentResult, AgentTask, OnAgentEvent, OnToolCall
 from hadron.models.events import EventType, PipelineEvent
+from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes.context import NodeContext
 
 # Re-export NodeContext so nodes can do: from hadron.pipeline.nodes import NodeContext
@@ -21,6 +23,7 @@ __all__ = [
     "RepoInfo",
     "AgentRunResult",
     "extract_json",
+    "pipeline_node",
     "run_agent",
     "gather_files",
     "make_tool_call_emitter",
@@ -31,6 +34,64 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Decorator — eliminates boilerplate shared by every pipeline node
+# ---------------------------------------------------------------------------
+
+
+def pipeline_node(stage: str) -> Callable:
+    """Decorator that handles common pipeline node ceremony.
+
+    Wraps a node function to automatically:
+      1. Extract ``NodeContext`` and ``cr_id`` from LangGraph's state/config.
+      2. Emit a ``STAGE_ENTERED`` event.
+      3. Catch unhandled exceptions → log, emit error event, return *paused*.
+
+    The decorated function's signature changes from
+    ``(state, config) -> dict`` to ``(state, ctx, cr_id) -> dict``,
+    while the outer LangGraph-facing signature stays ``(state, config)``.
+    """
+
+    def decorator(
+        fn: Callable[..., Awaitable[dict[str, Any]]],
+    ) -> Callable[..., Awaitable[dict[str, Any]]]:
+        @functools.wraps(fn)
+        async def wrapper(
+            state: PipelineState, config: Any,
+        ) -> dict[str, Any]:
+            ctx = NodeContext.from_config(config)
+            cr_id = state["cr_id"]
+
+            await ctx.event_bus.emit(PipelineEvent(
+                cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage=stage,
+            ))
+
+            try:
+                return await fn(state, ctx, cr_id)
+            except Exception as exc:
+                logger.exception(
+                    "%s node crashed (CR %s): %s", stage, cr_id, exc,
+                )
+                await ctx.event_bus.emit(PipelineEvent(
+                    cr_id=cr_id,
+                    event_type=EventType.STAGE_COMPLETED,
+                    stage=stage,
+                    data={"error": str(exc)},
+                ))
+                return {
+                    "current_stage": stage,
+                    "status": "paused",
+                    "error": f"{stage} node failed: {exc}",
+                    "stage_history": [
+                        {"stage": stage, "status": "error", "error": str(exc)},
+                    ],
+                }
+
+        return wrapper
+
+    return decorator
 
 
 @dataclass

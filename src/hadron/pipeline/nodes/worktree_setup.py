@@ -7,8 +7,6 @@ languages and test commands from marker files.
 
 from __future__ import annotations
 
-from langgraph.types import RunnableConfig
-
 import logging
 from typing import Any
 
@@ -17,20 +15,14 @@ from hadron.git.url import extract_repo_name
 from hadron.git.worktree import WorktreeManager
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
-from hadron.pipeline.nodes import NodeContext
+from hadron.pipeline.nodes import NodeContext, pipeline_node
 
 logger = logging.getLogger(__name__)
 
 
-async def worktree_setup_node(state: PipelineState, config: RunnableConfig) -> dict[str, Any]:
+@pipeline_node("worktree_setup")
+async def worktree_setup_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[str, Any]:
     """Clone repo and set up worktree for the CR."""
-    ctx = NodeContext.from_config(config)
-    cr_id = state["cr_id"]
-
-    await ctx.event_bus.emit(PipelineEvent(
-            cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="worktree_setup"
-        ))
-
     wm = WorktreeManager(ctx.workspace_dir)
     repo = state.get("repo", {})
     repo_url = repo["repo_url"]
@@ -67,13 +59,13 @@ async def worktree_setup_node(state: PipelineState, config: RunnableConfig) -> d
     }
 
     await ctx.event_bus.emit(PipelineEvent(
-            cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="worktree_setup",
-            data={
-                "worktree_path": str(worktree_path),
-                "languages": languages,
-                "test_commands": test_commands,
-            },
-        ))
+        cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="worktree_setup",
+        data={
+            "worktree_path": str(worktree_path),
+            "languages": languages,
+            "test_commands": test_commands,
+        },
+    ))
 
     return {
         "repo": updated_repo,
