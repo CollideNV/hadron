@@ -153,14 +153,7 @@ async def resume_pipeline(
         override_key = f"hadron:cr:{cr_id}:resume_overrides"
         await redis.set(override_key, json.dumps(body.state_overrides), ex=3600)
 
-    # Update DB status to running
-    async with session_factory() as session:
-        await session.execute(
-            update(CRRun).where(CRRun.cr_id == cr_id).values(status="running", error=None)
-        )
-        await session.commit()
-
-    # Respawn workers for repos that are paused or failed
+    # Find repos to resume BEFORE updating status
     async with session_factory() as session:
         repo_result = await session.execute(
             select(RepoRun).where(
@@ -169,6 +162,19 @@ async def resume_pipeline(
             )
         )
         repos_to_resume = repo_result.scalars().all()
+
+    # Now update DB status to running
+    async with session_factory() as session:
+        await session.execute(
+            update(CRRun).where(CRRun.cr_id == cr_id).values(status="running", error=None)
+        )
+        if repos_to_resume:
+            await session.execute(
+                update(RepoRun)
+                .where(RepoRun.cr_id == cr_id, RepoRun.status.in_(("paused", "failed")))
+                .values(status="running", error=None)
+            )
+        await session.commit()
 
     for rr in repos_to_resume:
         await spawner.spawn(
@@ -233,12 +239,28 @@ async def get_conversation(
 async def get_worker_logs(
     cr_id: str,
     redis: Any = Depends(get_redis),
+    session_factory: Any = Depends(get_session_factory),
 ) -> PlainTextResponse:
-    """Retrieve worker logs for a CR."""
-    key = f"hadron:cr:{cr_id}:worker_log"
-    data = await redis.get(key)
-    if data is None:
+    """Retrieve worker logs for a CR (merges all repo worker logs)."""
+    # Collect logs from all repo workers for this CR
+    async with session_factory() as session:
+        result = await session.execute(
+            select(RepoRun.repo_name).where(RepoRun.cr_id == cr_id)
+        )
+        repo_names = [r[0] for r in result.all()]
+
+    parts: list[str] = []
+    for repo_name in repo_names:
+        key = f"hadron:cr:{cr_id}:{repo_name}:worker_log"
+        data = await redis.get(key)
+        if data:
+            text = data.decode(errors="replace") if isinstance(data, bytes) else data
+            if repo_names and len(repo_names) > 1:
+                parts.append(f"=== {repo_name} ===\n{text}")
+            else:
+                parts.append(text)
+
+    if not parts:
         return PlainTextResponse("No logs available for this CR.", status_code=200)
 
-    text = data.decode(errors="replace") if isinstance(data, bytes) else data
-    return PlainTextResponse(text)
+    return PlainTextResponse("\n".join(parts))

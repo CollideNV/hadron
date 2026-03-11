@@ -31,8 +31,28 @@ export default function CRDetailPage() {
 
   if (!crId) return null;
 
+  // Re-fetch CR status periodically to catch stale stream state
+  // (e.g. worker crashed without emitting a terminal event)
+  useEffect(() => {
+    if (!crId) return;
+    if (stream.status !== "running") return;
+    const interval = setInterval(() => {
+      getPipelineStatus(crId).then(setCrRun).catch(() => {});
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [crId, stream.status]);
+
+  // Trust the API status when stream says "running" but DB says terminal
+  const apiStatus = crRun?.status;
+  const isStreamStale =
+    stream.status === "running" &&
+    (apiStatus === "paused" || apiStatus === "failed" || apiStatus === "completed");
   const displayStatus =
-    stream.status === "connecting" ? crRun?.status || "pending" : stream.status;
+    stream.status === "connecting"
+      ? apiStatus || "pending"
+      : isStreamStale
+        ? apiStatus!
+        : stream.status;
   const title = crRun?.title || "Loading...";
 
   // Filter events by selected stage

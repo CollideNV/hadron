@@ -161,6 +161,16 @@ async def _persist_result(
                 error=final_state.get("error"),
             )
         )
+        # Sync CRRun status so resume/UI reflects the actual state
+        await session.execute(
+            update(CRRun)
+            .where(CRRun.cr_id == cr_id)
+            .values(
+                status=final_status,
+                cost_usd=final_cost,
+                error=final_state.get("error"),
+            )
+        )
         await session.commit()
 
     event_data = {"repo": repo_name, "cost_usd": final_cost}
@@ -200,12 +210,47 @@ async def _persist_failure(
             .where(RepoRun.cr_id == cr_id, RepoRun.repo_name == repo_name)
             .values(status="failed", error=str(error))
         )
+        await session.execute(
+            update(CRRun)
+            .where(CRRun.cr_id == cr_id)
+            .values(status="failed", error=str(error))
+        )
         await session.commit()
 
 
 # ---------------------------------------------------------------------------
 # Pipeline execution
 # ---------------------------------------------------------------------------
+
+# Maps stage_history stage names to graph node names
+_STAGE_TO_NODE: dict[str, str] = {
+    "intake": "intake",
+    "repo_id": "repo_id",
+    "worktree_setup": "worktree_setup",
+    "behaviour_translation": "translation",
+    "behaviour_verification": "verification",
+    "tdd": "tdd",
+    "review": "review",
+    "rebase": "rebase",
+    "delivery": "delivery",
+    "release": "release",
+}
+
+
+def _find_resume_node(state_values: dict[str, Any]) -> str:
+    """Find the last real pipeline node before 'paused' from stage_history.
+
+    This is needed because 'paused' → END is terminal in the graph, so
+    aupdate_state(as_node='paused') makes the graph think it's done.
+    Instead we resume from the last real node so the conditional edge re-evaluates.
+    """
+    stage_history = state_values.get("stage_history", [])
+    for entry in reversed(stage_history):
+        stage = entry.get("stage", "")
+        if stage != "paused" and stage in _STAGE_TO_NODE:
+            return _STAGE_TO_NODE[stage]
+    # Fallback: restart from translation (safe default for feedback loops)
+    return "translation"
 
 
 async def _execute_pipeline(
@@ -274,11 +319,17 @@ async def _execute_pipeline(
 
         if has_checkpoint and state_overrides:
             resume_node = pick_resume_node(state_overrides)
+            state_overrides.setdefault("status", "running")
             logger.info("Resuming CR %s from node '%s' with overrides", cr_id, resume_node)
             await compiled.aupdate_state(runnable_config, state_overrides, as_node=resume_node)
             return await compiled.ainvoke(None, config=runnable_config)
         elif has_checkpoint:
-            logger.info("Resuming CR %s from existing checkpoint", cr_id)
+            # Find the last real node before "paused" to resume from its outgoing edge
+            resume_from = _find_resume_node(saved.values)
+            logger.info("Resuming CR %s from node '%s'", cr_id, resume_from)
+            await compiled.aupdate_state(
+                runnable_config, {"status": "running", "error": None}, as_node=resume_from,
+            )
             return await compiled.ainvoke(None, config=runnable_config)
         else:
             if state_overrides:

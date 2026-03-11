@@ -48,24 +48,30 @@ class SubprocessJobSpawner:
         asyncio.create_task(self._log_output(worker_key, proc))
 
     async def _log_output(self, worker_key: str, proc: asyncio.subprocess.Process) -> None:
-        """Log worker output in background and store in Redis."""
+        """Stream worker output line-by-line to logs and Redis."""
+        redis_key = f"hadron:cr:{worker_key}:worker_log"
         try:
-            stdout, _ = await proc.communicate()
-            full_output = ""
-            if stdout:
-                full_output = stdout.decode(errors="replace")
-                for line in full_output.splitlines():
-                    logger.info("[worker:%s] %s", worker_key, line)
-            logger.info("Worker %s exited with code %s", worker_key, proc.returncode)
-
-            # Store in Redis for log retrieval (24h TTL)
-            if self._redis and full_output:
+            assert proc.stdout is not None
+            # Clear any stale log from a previous run
+            if self._redis:
                 try:
-                    await self._redis.set(
-                        f"hadron:cr:{worker_key}:worker_log", full_output, ex=86400,
-                    )
-                except Exception as e:
-                    logger.warning("Failed to store worker log in Redis for %s: %s", worker_key, e)
+                    await self._redis.delete(redis_key)
+                except Exception:
+                    pass
+
+            async for raw_line in proc.stdout:
+                line = raw_line.decode(errors="replace").rstrip("\n")
+                logger.info("[worker:%s] %s", worker_key, line)
+                # Append each line to Redis so the UI can poll incrementally
+                if self._redis:
+                    try:
+                        await self._redis.append(redis_key, line + "\n")
+                        await self._redis.expire(redis_key, 86400)
+                    except Exception:
+                        pass
+
+            await proc.wait()
+            logger.info("Worker %s exited with code %s", worker_key, proc.returncode)
         except Exception as e:
             logger.error("Error logging worker output for %s: %s", worker_key, e)
         finally:

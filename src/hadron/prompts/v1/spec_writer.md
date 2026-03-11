@@ -23,6 +23,12 @@ Given a structured change request and the repository context, write Gherkin `.fe
 2. Write `.feature` files that cover the acceptance criteria — no more, no less
 3. Commit the feature files with message "feat: add behaviour specs for CR"
 
+## Important
+
+- Do NOT read source code files (.py, .ts, .tsx, .js, etc.) — you are writing behaviour specs from the CR, not from implementation details
+- Only read `.feature` files and directory listings to understand existing conventions
+- The CR description and acceptance criteria contain everything you need
+
 ## Output
 
 After writing the files, provide a summary of what specs you wrote and why.
