@@ -36,11 +36,13 @@ Feature: Agent Execution
     And the tool returns a timeout error
     And no zombie process is left behind
 
-  Scenario: Rate limit retry with backoff
+  Scenario: Rate limit retry with server-guided backoff
     Given the Claude API returns a rate limit error
-    When the agent backend retries
-    Then it waits with exponential backoff starting at 60 seconds
-    And it retries up to 5 times before failing
+    When the response includes a Retry-After header
+    Then the agent waits for the server-specified duration (clamped to 2s–120s)
+    When the response has no Retry-After header
+    Then it falls back to exponential backoff starting at 10 seconds
+    And it retries up to 8 times before failing
     And the retry count and total wait time are recorded in the result
 
   Scenario: Throttle tracking across phases
