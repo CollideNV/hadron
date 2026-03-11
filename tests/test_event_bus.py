@@ -41,6 +41,10 @@ class _FakeRedis:
         entries = self._streams.get(key, [])
         if min == "0" or min == "-":
             return entries[:]
+        # Support exclusive lower bound with "(" prefix (Redis syntax)
+        if min.startswith("("):
+            threshold = min[1:]
+            return [(mid, f) for mid, f in entries if mid > threshold]
         return [(mid, f) for mid, f in entries if mid > min]
 
     async def xread(
@@ -106,8 +110,8 @@ def bus() -> RedisEventBus:
 class TestReplay:
     @pytest.mark.asyncio
     async def test_empty_stream_returns_empty_and_zero(self, bus: RedisEventBus) -> None:
-        events, last_id = await bus.replay("cr-none")
-        assert events == []
+        pairs, last_id = await bus.replay("cr-none")
+        assert pairs == []
         assert last_id == "0"
 
     @pytest.mark.asyncio
@@ -115,10 +119,10 @@ class TestReplay:
         await bus.emit(_make_event(stage="intake"))
         await bus.emit(_make_event(stage="tdd"))
 
-        events, last_id = await bus.replay("cr-1")
-        assert len(events) == 2
-        assert events[0].stage == "intake"
-        assert events[1].stage == "tdd"
+        pairs, last_id = await bus.replay("cr-1")
+        assert len(pairs) == 2
+        assert pairs[0][0].stage == "intake"
+        assert pairs[1][0].stage == "tdd"
         assert last_id == "0-2"  # second message
 
     @pytest.mark.asyncio
@@ -126,8 +130,8 @@ class TestReplay:
         for i in range(5):
             await bus.emit(_make_event(stage=f"stage-{i}"))
 
-        events, last_id = await bus.replay("cr-1")
-        assert len(events) == 5
+        pairs, last_id = await bus.replay("cr-1")
+        assert len(pairs) == 5
         assert last_id == "0-5"
 
 
@@ -151,7 +155,7 @@ class TestSubscribeFromCursor:
 
         # Subscribe from the replay cursor — should get event "c" immediately
         collected = []
-        async for event in bus.subscribe("cr-1", last_id=last_id):
+        async for event, _sid in bus.subscribe("cr-1", last_id=last_id):
             collected.append(event)
             if len(collected) >= 1:
                 break
@@ -167,8 +171,8 @@ class TestSubscribeFromCursor:
         await bus.emit(_make_event(stage="2"))
 
         # Phase 2: replay (client connects)
-        replayed, cursor = await bus.replay("cr-1")
-        assert len(replayed) == 2
+        replayed_pairs, cursor = await bus.replay("cr-1")
+        assert len(replayed_pairs) == 2
 
         # Phase 3: events emitted during/after replay
         await bus.emit(_make_event(stage="3"))
@@ -176,13 +180,13 @@ class TestSubscribeFromCursor:
 
         # Phase 4: subscribe from cursor
         live: list[PipelineEvent] = []
-        async for event in bus.subscribe("cr-1", last_id=cursor):
+        async for event, _sid in bus.subscribe("cr-1", last_id=cursor):
             live.append(event)
             if len(live) >= 2:
                 break
 
         # All events accounted for
-        all_stages = [e.stage for e in replayed] + [e.stage for e in live]
+        all_stages = [e.stage for e, _sid in replayed_pairs] + [e.stage for e in live]
         assert all_stages == ["1", "2", "3", "4"]
 
     @pytest.mark.asyncio
@@ -201,7 +205,7 @@ class TestSubscribeFromCursor:
         collected: list[PipelineEvent] = []
 
         async def _consume() -> None:
-            async for event in bus.subscribe("cr-1", last_id="$"):
+            async for event, _sid in bus.subscribe("cr-1", last_id="$"):
                 collected.append(event)
                 if len(collected) >= 1:
                     break

@@ -11,8 +11,12 @@ def after_verification(state: PipelineState) -> str:
     Returns:
         "translation" — specs rejected, loop back (within circuit breaker)
         "tdd" — specs verified, proceed
-        "paused" — circuit breaker tripped
+        "paused" — circuit breaker tripped or node errored
     """
+    # Stop immediately if the node errored (e.g. API failure)
+    if state.get("status") == "paused":
+        return "paused"
+
     if state.get("behaviour_verified"):
         return "tdd"
 
@@ -33,8 +37,12 @@ def after_review(state: PipelineState) -> str:
     Returns:
         "rebase" — review passed, proceed
         "tdd" — review failed, loop back (within circuit breaker)
-        "paused" — circuit breaker tripped
+        "paused" — circuit breaker tripped or node errored
     """
+    # Stop immediately if the node errored (e.g. API failure)
+    if state.get("status") == "paused":
+        return "paused"
+
     if state.get("review_passed"):
         return "rebase"
 

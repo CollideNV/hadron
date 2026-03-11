@@ -56,6 +56,8 @@ export const EVENT_TYPES = [
   "agent_tool_call",
   "agent_output",
   "agent_nudge",
+  "phase_started",
+  "phase_completed",
   "test_run",
   "review_finding",
   "intervention_set",

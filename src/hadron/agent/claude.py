@@ -113,7 +113,7 @@ class ClaudeAgentBackend:
 
     def __init__(self, api_key: str | None = None) -> None:
         self._client = anthropic.AsyncAnthropic(
-            api_key=api_key or os.environ.get("ANTHROPIC_API_KEY", ""),
+            api_key=api_key or os.environ.get("HADRON_ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY", ""),
         )
         self._prompts = PhasePromptBuilder()
 

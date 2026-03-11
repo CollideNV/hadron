@@ -13,6 +13,10 @@ import asyncio
 import json
 import logging
 import re
+
+from dotenv import load_dotenv
+
+load_dotenv()  # read .env before anything else
 import sys
 from dataclasses import dataclass
 from typing import Any

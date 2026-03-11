@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Callable, Awaitable
 
 import redis.asyncio as aioredis
+from langgraph.types import RunnableConfig
 
 from hadron.agent.base import AgentCallbacks, AgentResult, AgentTask, OnAgentEvent, OnToolCall, PhaseConfig
 from hadron.config.limits import MAX_CONTEXT_CHARS
@@ -59,9 +60,8 @@ def pipeline_node(stage: str) -> Callable:
     def decorator(
         fn: Callable[..., Awaitable[dict[str, Any]]],
     ) -> Callable[..., Awaitable[dict[str, Any]]]:
-        @functools.wraps(fn)
         async def wrapper(
-            state: PipelineState, config: Any,
+            state: PipelineState, config: RunnableConfig,
         ) -> dict[str, Any]:
             ctx = NodeContext.from_config(config)
             cr_id = state["cr_id"]
@@ -91,6 +91,14 @@ def pipeline_node(stage: str) -> Callable:
                     ],
                 }
 
+        # Copy metadata but NOT __wrapped__/__annotations__ — LangGraph uses
+        # inspect.signature() which follows __wrapped__, and the inner fn has
+        # a different (state, ctx, cr_id) signature that confuses LangGraph's
+        # config injection.
+        wrapper.__name__ = fn.__name__
+        wrapper.__qualname__ = fn.__qualname__
+        wrapper.__doc__ = fn.__doc__
+        wrapper.__module__ = fn.__module__
         return wrapper
 
     return decorator

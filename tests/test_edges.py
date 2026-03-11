@@ -57,6 +57,10 @@ class TestAfterVerification:
         }
         assert after_verification(state) == "translation"
 
+    def test_paused_status_stops_loop(self) -> None:
+        state = {"status": "paused", "behaviour_verified": False, "verification_loop_count": 0}
+        assert after_verification(state) == "paused"
+
 
 # ---------------------------------------------------------------------------
 # after_review
@@ -103,6 +107,10 @@ class TestAfterReview:
             },
         }
         assert after_review(state) == "tdd"
+
+    def test_paused_status_stops_loop(self) -> None:
+        state = {"status": "paused", "review_passed": False, "review_loop_count": 0}
+        assert after_review(state) == "paused"
 
 
 # ---------------------------------------------------------------------------

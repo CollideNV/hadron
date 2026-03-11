@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import logging
 import os
+
+from dotenv import load_dotenv
+
+load_dotenv()  # read .env before anything else
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator
