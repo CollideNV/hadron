@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Request
+from sqlalchemy import text
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["health"])
 
@@ -19,18 +24,16 @@ async def readyz(request: Request) -> dict:
 
     try:
         async with request.app.state.session_factory() as session:
-            await session.execute(
-                __import__("sqlalchemy").text("SELECT 1")
-            )
+            await session.execute(text("SELECT 1"))
             checks["postgres"] = True
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Postgres readiness check failed: %s", e)
 
     try:
         await request.app.state.redis.ping()
         checks["redis"] = True
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Redis readiness check failed: %s", e)
 
     ready = all(checks.values())
     return {"status": "ready" if ready else "not_ready", "checks": checks}

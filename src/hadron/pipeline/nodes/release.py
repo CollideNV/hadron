@@ -16,6 +16,10 @@ from hadron.pipeline.nodes import NodeContext
 logger = logging.getLogger(__name__)
 
 
+def _join_criteria(criteria: list[str]) -> str:
+    return "\n".join(f"- {c}" for c in criteria)
+
+
 async def release_node(state: PipelineState, config: RunnableConfig) -> dict[str, Any]:
     """Ensure branch is pushed and generate PR description summary."""
     ctx = NodeContext.from_config(config)
@@ -35,8 +39,8 @@ async def release_node(state: PipelineState, config: RunnableConfig) -> dict[str
     # Ensure branch is pushed
     try:
         await wm.commit_and_push(worktree_path, f"chore: release push for {cr_id}")
-    except RuntimeError:
-        pass  # May have nothing new to push
+    except RuntimeError as e:
+        logger.debug("Release push for %s: %s", repo_name, e)
 
     # Generate PR description
     pr_body = f"""## AI-Generated: {structured_cr.get('title', cr_id)}
@@ -45,7 +49,7 @@ async def release_node(state: PipelineState, config: RunnableConfig) -> dict[str
 {structured_cr.get('description', 'N/A')}
 
 ### Acceptance Criteria
-{chr(10).join(f'- {c}' for c in structured_cr.get('acceptance_criteria', []))}
+{_join_criteria(structured_cr.get('acceptance_criteria', []))}
 
 ### Pipeline Summary
 - **CR ID:** {cr_id}

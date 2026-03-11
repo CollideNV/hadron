@@ -264,7 +264,8 @@ async def _execute_pipeline(
             try:
                 saved = await compiled.aget_state(runnable_config)
                 has_checkpoint = saved.values is not None and len(saved.values) > 0
-            except Exception:
+            except Exception as e:
+                logger.debug("Failed to check for existing checkpoint: %s", e)
                 has_checkpoint = False
 
         if has_checkpoint and state_overrides:

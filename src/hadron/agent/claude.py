@@ -6,11 +6,10 @@ import asyncio
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncIterator
-
-import re
 
 import anthropic
 
@@ -119,6 +118,11 @@ _DEFAULT_COST = (3.00, 15.00)
 # Rate limit retry settings
 _RATE_LIMIT_MAX_RETRIES = 5
 _RATE_LIMIT_BASE_WAIT = 60  # seconds
+
+# Truncation limits for tool results and command output
+_MAX_COMMAND_OUTPUT_CHARS = 50_000
+_MAX_TOOL_RESULT_EVENT_CHARS = 10_000
+_MAX_TOOL_RESULT_CALLBACK_CHARS = 5_000
 
 
 def _compute_model_cost(model: str, input_tokens: int, output_tokens: int) -> float:
@@ -258,8 +262,8 @@ async def _execute_tool(
                 await proc.wait()
                 return "Error: Command timed out after 120s (process killed)"
             output = stdout.decode(errors="replace")
-            if len(output) > 50_000:
-                output = output[:50_000] + "\n... (truncated)"
+            if len(output) > _MAX_COMMAND_OUTPUT_CHARS:
+                output = output[:_MAX_COMMAND_OUTPUT_CHARS] + "\n... (truncated)"
             return f"Exit code: {proc.returncode}\n{output}"
 
         else:
@@ -592,7 +596,7 @@ class ClaudeAgentBackend:
                     await on_event("output", {"text": final_text, "round": round_num})
 
             # If no tool calls, we're done
-            if not tool_uses or response.stop_reason == "end_turn" and not tool_uses:
+            if not tool_uses or response.stop_reason == "end_turn":
                 break
 
             # Execute tools and build the response
@@ -612,11 +616,11 @@ class ClaudeAgentBackend:
 
                 if on_event:
                     await on_event("tool_result", {
-                        "tool": tu.name, "result": result_text[:10_000], "round": round_num,
+                        "tool": tu.name, "result": result_text[:_MAX_TOOL_RESULT_EVENT_CHARS], "round": round_num,
                     })
 
                 if on_tool_call and not on_event:
-                    await on_tool_call(tu.name, tu.input, result_text[:5000])
+                    await on_tool_call(tu.name, tu.input, result_text[:_MAX_TOOL_RESULT_CALLBACK_CHARS])
 
                 tool_results.append({
                     "type": "tool_result",
@@ -754,7 +758,7 @@ class ClaudeAgentBackend:
                         data={"name": block.name, "input": block.input},
                     )
 
-            if not tool_uses or response.stop_reason == "end_turn" and not tool_uses:
+            if not tool_uses or response.stop_reason == "end_turn":
                 break
 
             messages.append({"role": "assistant", "content": response.content})
@@ -770,7 +774,7 @@ class ClaudeAgentBackend:
                 })
                 yield AgentEvent(
                     event_type="tool_result",
-                    data={"name": tu.name, "result": result_text[:5000]},
+                    data={"name": tu.name, "result": result_text[:_MAX_TOOL_RESULT_CALLBACK_CHARS]},
                 )
             messages.append({"role": "user", "content": tool_results})
 
