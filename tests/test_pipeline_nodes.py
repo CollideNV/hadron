@@ -1201,7 +1201,8 @@ class TestNodeContext:
 
         ctx = NodeContext.from_config({"configurable": {}})
 
-        assert ctx.event_bus is None
+        from hadron.events.bus import NoOpEventBus
+        assert isinstance(ctx.event_bus, NoOpEventBus)
         assert ctx.agent_backend is None
         assert ctx.redis is None
         assert ctx.model == "claude-sonnet-4-20250514"
@@ -1211,7 +1212,8 @@ class TestNodeContext:
         from hadron.pipeline.nodes.context import NodeContext
 
         ctx = NodeContext.from_config({})
-        assert ctx.event_bus is None
+        from hadron.events.bus import NoOpEventBus
+        assert isinstance(ctx.event_bus, NoOpEventBus)
         assert ctx.model == "claude-sonnet-4-20250514"
 
 

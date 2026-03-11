@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from langgraph.types import RunnableConfig
 
-import json
 import logging
 from typing import Any
 
 from hadron.agent.prompt import PromptComposer
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
-from hadron.pipeline.nodes import NodeContext, run_agent
+from hadron.pipeline.nodes import NodeContext, extract_json, run_agent
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +20,9 @@ async def intake_node(state: PipelineState, config: RunnableConfig) -> dict[str,
     ctx = NodeContext.from_config(config)
     cr_id = state["cr_id"]
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
-            cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="intake"
-        ))
+    await ctx.event_bus.emit(PipelineEvent(
+        cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="intake"
+    ))
 
     composer = PromptComposer()
     system_prompt = composer.compose_system_prompt("intake_parser")
@@ -44,15 +42,8 @@ async def intake_node(state: PipelineState, config: RunnableConfig) -> dict[str,
     result = agent_run.result
 
     # Parse JSON from agent output
-    try:
-        text = result.output
-        if "```json" in text:
-            text = text.split("```json")[1].split("```")[0]
-        elif "```" in text:
-            text = text.split("```")[1].split("```")[0]
-        structured = json.loads(text.strip())
-    except (json.JSONDecodeError, IndexError):
-        logger.error("Failed to parse intake output as JSON: %s", result.output[:200])
+    structured = extract_json(result.output, context="intake")
+    if structured is None:
         # Per design principle: "pipeline never silently fails".
         # Return a paused status so the human gets a decision screen
         # instead of proceeding with degraded data.
@@ -75,11 +66,10 @@ async def intake_node(state: PipelineState, config: RunnableConfig) -> dict[str,
             "stage_history": [{"stage": "intake", "status": "paused"}],
         }
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
-            cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="intake",
-            data={"structured_cr": structured},
-        ))
+    await ctx.event_bus.emit(PipelineEvent(
+        cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="intake",
+        data={"structured_cr": structured},
+    ))
 
     return {
         "structured_cr": structured,

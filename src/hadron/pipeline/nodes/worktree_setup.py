@@ -26,8 +26,7 @@ async def worktree_setup_node(state: PipelineState, config: RunnableConfig) -> d
     ctx = NodeContext.from_config(config)
     cr_id = state["cr_id"]
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
+    await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="worktree_setup"
         ))
 
@@ -66,8 +65,7 @@ async def worktree_setup_node(state: PipelineState, config: RunnableConfig) -> d
         "test_commands": test_commands,
     }
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
+    await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="worktree_setup",
             data={
                 "worktree_path": str(worktree_path),

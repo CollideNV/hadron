@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from langgraph.types import RunnableConfig
 
-import json
 import logging
 from typing import Any
 
 from hadron.agent.prompt import PromptComposer
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
-from hadron.pipeline.nodes import NodeContext, gather_files, run_agent
+from hadron.pipeline.nodes import NodeContext, extract_json, gather_files, run_agent
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +20,7 @@ async def behaviour_translation_node(state: PipelineState, config: RunnableConfi
     ctx = NodeContext.from_config(config)
     cr_id = state["cr_id"]
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
+    await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="behaviour_translation"
         ))
 
@@ -80,8 +78,7 @@ async def behaviour_translation_node(state: PipelineState, config: RunnableConfi
         "verification_iteration": state.get("verification_loop_count", 0),
     }]
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
+    await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="behaviour_translation",
         ))
 
@@ -100,8 +97,7 @@ async def behaviour_verification_node(state: PipelineState, config: RunnableConf
     ctx = NodeContext.from_config(config)
     cr_id = state["cr_id"]
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
+    await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="behaviour_verification"
         ))
 
@@ -149,25 +145,9 @@ Verify the above specifications against the CR.
     result = agent_run.result
 
     # Parse verification result — try multiple extraction strategies
-    verification = None
-    text = result.output
-    for extract in [
-        lambda t: t.split("```json")[1].split("```")[0] if "```json" in t else None,
-        lambda t: t.split("```")[1].split("```")[0] if "```" in t else None,
-        lambda t: t[t.index("{"):t.rindex("}") + 1] if "{" in t else None,
-        lambda t: t,
-    ]:
-        try:
-            candidate = extract(text)
-            if candidate:
-                verification = json.loads(candidate.strip())
-                break
-        except (json.JSONDecodeError, IndexError, ValueError):
-            continue
-
+    verification = extract_json(result.output, context=f"spec_verifier:{repo_name}")
     if verification is None:
-        logger.error("Could not parse verifier output for %s: %s", repo_name, text[:500])
-        verification = {"verified": False, "feedback": f"Verifier output was not valid JSON: {text[:200]}", "missing_scenarios": [], "issues": ["Output parsing failed"]}
+        verification = {"verified": False, "feedback": f"Verifier output was not valid JSON: {result.output[:200]}", "missing_scenarios": [], "issues": ["Output parsing failed"]}
 
     verified = verification.get("verified", True)
     feedback = verification.get("feedback", "")
@@ -191,8 +171,7 @@ Verify the above specifications against the CR.
         "verification_iteration": state.get("verification_loop_count", 0) + 1,
     }]
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
+    await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED,
             stage=f"behaviour_verification:{repo_name}",
             data={
@@ -205,8 +184,7 @@ Verify the above specifications against the CR.
             },
         ))
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
+    await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="behaviour_verification",
             data={
                 "all_verified": verified,

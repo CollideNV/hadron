@@ -21,8 +21,7 @@ async def release_node(state: PipelineState, config: RunnableConfig) -> dict[str
     ctx = NodeContext.from_config(config)
     cr_id = state["cr_id"]
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
+    await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="release"
         ))
 
@@ -72,8 +71,7 @@ async def release_node(state: PipelineState, config: RunnableConfig) -> dict[str
         "pr_description": pr_body,
     }]
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
+    await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="release",
             data={"repos": [r["repo_name"] for r in release_results]},
         ))

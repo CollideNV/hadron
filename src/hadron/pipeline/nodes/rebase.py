@@ -28,8 +28,7 @@ async def rebase_node(state: PipelineState, config: RunnableConfig) -> dict[str,
     ctx = NodeContext.from_config(config)
     cr_id = state["cr_id"]
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
+    await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="rebase"
         ))
 
@@ -148,8 +147,7 @@ Resolve the conflict markers in each file and write the resolved versions.
     if not passed:
         logger.warning("Post-rebase tests failed for %s: %s", repo_name, output[-500:])
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
+    await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="rebase",
             data={
                 "clean": rebase_clean,

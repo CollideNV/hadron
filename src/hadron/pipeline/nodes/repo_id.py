@@ -23,8 +23,7 @@ async def repo_id_node(state: PipelineState, config: RunnableConfig) -> dict[str
     ctx = NodeContext.from_config(config)
     cr_id = state["cr_id"]
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
+    await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="repo_id"
         ))
 
@@ -48,8 +47,7 @@ async def repo_id_node(state: PipelineState, config: RunnableConfig) -> dict[str
             "stage_history": [{"stage": "repo_id", "status": "failed"}],
         }
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
+    await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="repo_id",
             data={"repo": repo_name},
         ))

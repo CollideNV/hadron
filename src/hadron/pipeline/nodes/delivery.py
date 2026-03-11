@@ -21,8 +21,7 @@ async def delivery_node(state: PipelineState, config: RunnableConfig) -> dict[st
     ctx = NodeContext.from_config(config)
     cr_id = state["cr_id"]
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
+    await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="delivery"
         ))
 
@@ -57,8 +56,7 @@ async def delivery_node(state: PipelineState, config: RunnableConfig) -> dict[st
 
     all_delivered = tests_passing and branch_pushed
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
+    await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="delivery",
             data={"all_delivered": all_delivered},
         ))

@@ -20,6 +20,24 @@ class EventBus(Protocol):
     async def replay(self, cr_id: str, from_id: str = "0") -> tuple[list[PipelineEvent], str]: ...
 
 
+class NoOpEventBus:
+    """Null-object event bus that silently discards all events.
+
+    Used when no Redis connection is available (e.g. in tests or degraded mode).
+    Eliminates the need for ``if event_bus:`` null checks throughout the pipeline.
+    """
+
+    async def emit(self, event: PipelineEvent) -> None:
+        pass
+
+    async def subscribe(self, cr_id: str, last_id: str = "0") -> AsyncIterator[PipelineEvent]:
+        return
+        yield  # pragma: no cover — makes this a proper async generator
+
+    async def replay(self, cr_id: str, from_id: str = "0") -> tuple[list[PipelineEvent], str]:
+        return [], "0"
+
+
 def _stream_key(cr_id: str) -> str:
     return f"hadron:cr:{cr_id}:events"
 

@@ -27,8 +27,7 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
     pipeline_config = state.get("config_snapshot", {}).get("pipeline", {})
     max_iterations = pipeline_config.get("max_tdd_iterations", 5)
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
+    await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="tdd"
         ))
 
@@ -71,8 +70,7 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
     feature_content = gather_files(worktree_path, "features/**/*.feature")
 
     # === RED PHASE: Write failing tests ===
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
+    await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="tdd:test_writer",
         ))
 
@@ -98,8 +96,7 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
     total_input += test_run.result.input_tokens
     total_output += test_run.result.output_tokens
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
+    await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="tdd:test_writer",
         ))
 
@@ -111,8 +108,7 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
     # Gather test files so the code_writer knows exactly what to implement
     test_content = gather_files(worktree_path, "tests/**/test_*.py")
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
+    await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="tdd:code_writer",
         ))
 
@@ -149,8 +145,7 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
             worktree_path, test_command, cr_id,
         )
 
-        if ctx.event_bus:
-            await ctx.event_bus.emit(PipelineEvent(
+        await ctx.event_bus.emit(PipelineEvent(
                 cr_id=cr_id, event_type=EventType.TEST_RUN, stage="tdd:code_writer",
                 data={
                     "repo": repo_name,
@@ -166,8 +161,7 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
         else:
             logger.info("Tests failing for %s at iteration %d, retrying...", repo_name, iteration)
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
+    await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="tdd:code_writer",
             data={"tests_passing": tests_passing, "iterations": iteration + 1},
         ))
@@ -188,8 +182,7 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
         "dev_iteration": iteration + 1,
     }
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
+    await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="tdd",
             data={"all_passing": tests_passing},
         ))

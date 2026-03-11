@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +19,7 @@ from hadron.pipeline.nodes.context import NodeContext
 __all__ = [
     "NodeContext",
     "AgentRunResult",
+    "extract_json",
     "run_agent",
     "gather_files",
     "make_tool_call_emitter",
@@ -26,6 +28,42 @@ __all__ = [
     "store_conversation",
     "emit_cost_update",
 ]
+
+_log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Shared JSON extraction from LLM output
+# ---------------------------------------------------------------------------
+
+
+def extract_json(text: str, *, context: str = "") -> dict[str, Any] | None:
+    """Extract a JSON object from LLM text output.
+
+    Tries multiple strategies in order:
+      1. ```json ... ``` fenced block
+      2. ``` ... ``` generic fenced block
+      3. First ``{`` to last ``}`` substring
+      4. Raw text as-is
+
+    Returns the parsed dict, or None if all strategies fail.
+    Logs the failure with *context* for debugging.
+    """
+    strategies: list[tuple[str, Any]] = [
+        ("json-fence", lambda t: t.split("```json")[1].split("```")[0] if "```json" in t else None),
+        ("generic-fence", lambda t: t.split("```")[1].split("```")[0] if "```" in t else None),
+        ("brace-scan", lambda t: t[t.index("{"):t.rindex("}") + 1] if "{" in t else None),
+        ("raw", lambda t: t),
+    ]
+    for name, extract in strategies:
+        try:
+            candidate = extract(text)
+            if candidate:
+                return json.loads(candidate.strip())
+        except (json.JSONDecodeError, IndexError, ValueError):
+            continue
+    _log.error("Failed to extract JSON from LLM output (%s): %.500s", context, text)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -67,8 +105,7 @@ def make_tool_call_emitter(
     async def _on_tool_call(
         tool_name: str, tool_input: dict[str, Any], result_snippet: str,
     ) -> None:
-        if event_bus:
-            await event_bus.emit(PipelineEvent(
+        await event_bus.emit(PipelineEvent(
                 cr_id=cr_id,
                 event_type=EventType.AGENT_TOOL_CALL,
                 stage=stage,
@@ -90,8 +127,6 @@ def make_agent_event_emitter(
     """Create an on_event callback that emits rich agent events."""
 
     async def _on_event(event_type: str, data: dict[str, Any]) -> None:
-        if not event_bus:
-            return
         if event_type == "output":
             await event_bus.emit(PipelineEvent(
                 cr_id=cr_id,
@@ -183,18 +218,17 @@ async def emit_cost_update(
     event_bus: Any, cr_id: str, stage: str, result: AgentResult, prior_cost: float = 0.0,
 ) -> None:
     """Emit a COST_UPDATE event after an agent execution."""
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
-            cr_id=cr_id,
-            event_type=EventType.COST_UPDATE,
-            stage=stage,
-            data={
-                "delta_usd": result.cost_usd,
-                "total_cost_usd": prior_cost + result.cost_usd,
-                "input_tokens": result.input_tokens,
-                "output_tokens": result.output_tokens,
-            },
-        ))
+    await event_bus.emit(PipelineEvent(
+        cr_id=cr_id,
+        event_type=EventType.COST_UPDATE,
+        stage=stage,
+        data={
+            "delta_usd": result.cost_usd,
+            "total_cost_usd": prior_cost + result.cost_usd,
+            "input_tokens": result.input_tokens,
+            "output_tokens": result.output_tokens,
+        },
+    ))
 
 
 # ---------------------------------------------------------------------------
@@ -257,8 +291,7 @@ async def run_agent(
         nudge_poll=make_nudge_poller(ctx.redis, cr_id, role) if ctx.redis else None,
     )
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
+    await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.AGENT_STARTED, stage=stage,
             data={
                 "role": role, "repo": repo_name,
@@ -273,8 +306,7 @@ async def run_agent(
     if ctx.redis and result.conversation:
         conv_key = await store_conversation(ctx.redis, cr_id, role, repo_name, result.conversation)
 
-    if ctx.event_bus:
-        await ctx.event_bus.emit(PipelineEvent(
+    await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.AGENT_COMPLETED, stage=stage,
             data={
                 "role": role, "repo": repo_name,
