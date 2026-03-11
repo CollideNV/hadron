@@ -1,0 +1,15 @@
+{
+  "name": "hadron-root",
+  "private": true,
+  "scripts": {
+    "db:up": "docker compose up -d postgres redis",
+    "db:migrate": "bash -c 'source .venv/bin/activate && alembic upgrade head'",
+    "dev:backend": "bash -c 'source .venv/bin/activate && uvicorn --factory hadron.controller.app:create_app --reload'",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev": "npm run db:up && npm run db:migrate && concurrently -n backend,frontend -c blue,green \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "test": "bash -c 'source .venv/bin/activate && pytest tests/'"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

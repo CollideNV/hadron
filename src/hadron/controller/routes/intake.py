@@ -34,6 +34,8 @@ async def trigger_pipeline(cr: RawChangeRequest, request: Request) -> dict:
 
     cr_id = f"CR-{uuid.uuid4().hex[:8]}"
     config_snapshot = get_config_snapshot()
+    if cr.agent_model:
+        config_snapshot["pipeline"]["default_model"] = cr.agent_model
     default_branch = cr.repo_default_branch
 
     # Create CR run + RepoRun records in a single transaction

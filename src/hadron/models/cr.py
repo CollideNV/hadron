@@ -57,6 +57,9 @@ def validate_test_command(cmd: str) -> str:
     )
 
 
+_KNOWN_MODEL_PREFIXES = ("claude-", "gemini-")
+
+
 class RawChangeRequest(BaseModel):
     """Incoming change request as received from any source connector."""
 
@@ -70,6 +73,22 @@ class RawChangeRequest(BaseModel):
         description="Target repository URLs. One worker is spawned per repo.",
     )
     repo_default_branch: str = Field(default="main")
+    agent_model: str | None = Field(
+        default=None,
+        description="Override the default agent model (e.g. 'gemini-2.5-flash'). "
+                    "Must start with 'claude-' or 'gemini-'. None uses the system default.",
+    )
+
+    @field_validator("agent_model")
+    @classmethod
+    def validate_agent_model(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if not any(v.startswith(prefix) for prefix in _KNOWN_MODEL_PREFIXES):
+            raise ValueError(
+                f"agent_model must start with one of: {', '.join(_KNOWN_MODEL_PREFIXES)}"
+            )
+        return v
 
     @field_validator("repo_urls")
     @classmethod

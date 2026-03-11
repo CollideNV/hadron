@@ -16,6 +16,7 @@ export default function CRForm({ onSubmit, submitting }: CRFormProps) {
   const [branch, setBranch] = useState("main");
   const [testCommand, setTestCommand] = useState("pytest");
   const [language, setLanguage] = useState("python");
+  const [agentModel, setAgentModel] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,6 +27,7 @@ export default function CRForm({ onSubmit, submitting }: CRFormProps) {
       repo_default_branch: branch,
       test_command: testCommand,
       language,
+      agent_model: agentModel || undefined,
     });
   };
 
@@ -111,6 +113,42 @@ export default function CRForm({ onSubmit, submitting }: CRFormProps) {
             <option value="rust">Rust</option>
           </select>
         </div>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-text-muted mb-1.5">
+          Agent Model{" "}
+          <span className="text-text-dim">
+            (optional — uses system default if blank)
+          </span>
+        </label>
+        <select
+          value={agentModel}
+          onChange={(e) => setAgentModel(e.target.value)}
+          className={inputClass}
+        >
+          <option value="">System default</option>
+          <optgroup label="Claude">
+            <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
+            <option value="claude-opus-4-20250514">Claude Opus 4</option>
+            <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+          </optgroup>
+          <optgroup label="Gemini 2.5 (stable)">
+            <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+            <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</option>
+          </optgroup>
+          <optgroup label="Gemini 3 (preview)">
+            <option value="gemini-3-flash-preview">
+              Gemini 3 Flash Preview
+            </option>
+            <option value="gemini-3.1-pro-preview">
+              Gemini 3.1 Pro Preview
+            </option>
+            <option value="gemini-3.1-flash-lite-preview">
+              Gemini 3.1 Flash-Lite Preview
+            </option>
+          </optgroup>
+        </select>
       </div>
       <button
         type="submit"

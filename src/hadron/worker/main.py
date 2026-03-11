@@ -20,7 +20,8 @@ from typing import Any
 import redis.asyncio as aioredis
 from sqlalchemy import select, update
 
-from hadron.agent.claude import ClaudeAgentBackend
+from hadron.agent.base import AgentBackend
+from hadron.agent.factory import get_backend
 from hadron.config.bootstrap import load_bootstrap_config
 from hadron.config.defaults import BRANCH_PREFIX, DEFAULT_MODEL, get_config_snapshot
 from hadron.db.engine import create_engine, create_session_factory
@@ -49,7 +50,7 @@ class WorkerInfra:
     redis_client: aioredis.Redis
     event_bus: RedisEventBus
     intervention_mgr: InterventionManager
-    agent_backend: ClaudeAgentBackend
+    agent_backend: AgentBackend
 
     async def close(self) -> None:
         await self.redis_client.aclose()
@@ -67,7 +68,11 @@ def _connect(cfg: Any) -> WorkerInfra:
         redis_client=redis_client,
         event_bus=RedisEventBus(redis_client),
         intervention_mgr=InterventionManager(redis_client),
-        agent_backend=ClaudeAgentBackend(cfg.anthropic_api_key),
+        agent_backend=get_backend(
+            DEFAULT_MODEL,
+            anthropic_api_key=cfg.anthropic_api_key,
+            google_api_key=cfg.google_api_key,
+        ),
     )
 
 
@@ -309,6 +314,16 @@ async def run_worker(cr_id: str, repo_url: str, repo_name: str = "", default_bra
 
         initial_state = _build_initial_state(cr_run, cr_id, repo_url, repo_name, default_branch)
         config_snapshot = cr_run.config_snapshot_json or get_config_snapshot()
+
+        # Re-create backend if the CR's config snapshot specifies a different model
+        # family (e.g. gemini-* vs the default claude-*).
+        pipeline_model = config_snapshot.get("pipeline", {}).get("default_model", DEFAULT_MODEL)
+        if pipeline_model != DEFAULT_MODEL:
+            infra.agent_backend = get_backend(
+                pipeline_model,
+                anthropic_api_key=cfg.anthropic_api_key,
+                google_api_key=cfg.google_api_key,
+            )
 
         final_state = await _execute_pipeline(
             infra, cfg, cr_id, repo_name, initial_state, config_snapshot,
