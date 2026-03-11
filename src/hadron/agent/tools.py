@@ -9,24 +9,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import re
 from pathlib import Path
 from typing import Any
 
-from hadron.security.allowlists import (
-    AGENT_COMMAND_ALLOWLIST,
-    DANGEROUS_SHELL_CHARS,
-    DANGEROUS_SHELL_PATTERNS,
-    FIND_DANGEROUS_FLAGS,
-)
+from hadron.config.limits import MAX_COMMAND_OUTPUT_CHARS, MAX_READ_FILE_CHARS
+from hadron.security.validators import validate_agent_command
 
 logger = logging.getLogger(__name__)
-
-# Truncation limit for command output
-_MAX_COMMAND_OUTPUT_CHARS = 50_000
-
-# Large-file read truncation
-_MAX_READ_FILE_CHARS = 100_000
 
 # Env var prefixes / keys stripped from agent subprocess environments.
 _SCRUB_PREFIXES = ("HADRON_", "ANTHROPIC_", "OPENAI_", "GITHUB_", "AZURE_", "AWS_")
@@ -133,34 +122,6 @@ def safe_resolve(working_dir: str, user_path: str) -> Path:
 
 
 # ------------------------------------------------------------------
-# Command validation
-# ------------------------------------------------------------------
-
-
-def validate_agent_command(cmd: str) -> bool:
-    """Check whether a command from an agent is allowed.
-
-    Blocks shell metacharacters and unknown command prefixes.
-    Additional restrictions apply to commands like ``find`` that have
-    dangerous flags (``-exec``, ``-delete``).
-    """
-    # Reject obviously dangerous patterns
-    if any(c in cmd for c in DANGEROUS_SHELL_CHARS):
-        return False
-    for pat in DANGEROUS_SHELL_PATTERNS:
-        if pat in cmd:
-            return False
-    # Check against allowlist
-    if not any(p.match(cmd) for p in AGENT_COMMAND_ALLOWLIST):
-        return False
-    # Extra guard: reject dangerous find flags even if prefix matches
-    if cmd.startswith("find "):
-        if any(flag in cmd for flag in FIND_DANGEROUS_FLAGS):
-            return False
-    return True
-
-
-# ------------------------------------------------------------------
 # Environment scrubbing
 # ------------------------------------------------------------------
 
@@ -192,8 +153,8 @@ async def execute_tool(
             if not path.is_file():
                 return f"Error: File not found: {input_data['path']}"
             content = path.read_text()
-            if len(content) > _MAX_READ_FILE_CHARS:
-                return content[:_MAX_READ_FILE_CHARS] + "\n... (truncated)"
+            if len(content) > MAX_READ_FILE_CHARS:
+                return content[:MAX_READ_FILE_CHARS] + "\n... (truncated)"
             return content
 
         elif name == "write_file":
@@ -231,13 +192,13 @@ async def execute_tool(
                 await proc.wait()
                 return "Error: Command timed out after 120s (process killed)"
             output = stdout.decode(errors="replace")
-            if len(output) > _MAX_COMMAND_OUTPUT_CHARS:
-                output = output[:_MAX_COMMAND_OUTPUT_CHARS] + "\n... (truncated)"
+            if len(output) > MAX_COMMAND_OUTPUT_CHARS:
+                output = output[:MAX_COMMAND_OUTPUT_CHARS] + "\n... (truncated)"
             return f"Exit code: {proc.returncode}\n{output}"
 
         else:
             return f"Error: Unknown tool: {name}"
     except ValueError as e:
         return f"Error: {e}"
-    except Exception as e:
+    except OSError as e:
         return f"Error executing {name}: {e}"

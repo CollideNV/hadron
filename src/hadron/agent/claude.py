@@ -2,22 +2,21 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Callable, TypeVar
+from typing import Any, AsyncIterator, Callable
 
 import anthropic
 
-from hadron.agent.base import AgentEvent, AgentResult, AgentTask
+from hadron.agent.base import AgentEvent, AgentResult, AgentTask, OnAgentEvent, OnToolCall
 from hadron.agent.phases import PhasePromptBuilder
+from hadron.agent.rate_limiter import call_with_retry
 from hadron.agent.tools import execute_tool, make_tools
+from hadron.config.limits import MAX_TOOL_RESULT_CALLBACK_CHARS, MAX_TOOL_RESULT_EVENT_CHARS
 
 logger = logging.getLogger(__name__)
-
-_T = TypeVar("_T")
 
 # Per-model cost per million tokens: (input, output)
 _MODEL_COSTS: dict[str, tuple[float, float]] = {
@@ -27,14 +26,6 @@ _MODEL_COSTS: dict[str, tuple[float, float]] = {
 }
 # Fallback for unknown models (use Sonnet pricing)
 _DEFAULT_COST = (3.00, 15.00)
-
-# Rate limit retry settings
-_RATE_LIMIT_MAX_RETRIES = 5
-_RATE_LIMIT_BASE_WAIT = 60  # seconds
-
-# Truncation limits for tool result events and callbacks
-_MAX_TOOL_RESULT_EVENT_CHARS = 10_000
-_MAX_TOOL_RESULT_CALLBACK_CHARS = 5_000
 
 
 def _compute_model_cost(model: str, input_tokens: int, output_tokens: int) -> float:
@@ -74,6 +65,23 @@ def _serialize_messages(msgs: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 @dataclass
+class ToolLoopConfig:
+    """Configuration for a single tool-use loop invocation."""
+
+    model: str
+    system_prompt: str
+    user_prompt: str
+    tools: list[dict]
+    working_dir: str
+    max_rounds: int
+    max_tokens: int
+    on_event: OnAgentEvent | None = None
+    on_tool_call: OnToolCall | None = None
+    nudge_poll: Callable[[], Any] | None = None
+    phase: str = ""
+
+
+@dataclass
 class _PhaseResult:
     """Internal result from a single phase."""
 
@@ -98,40 +106,6 @@ class ClaudeAgentBackend:
             api_key=api_key or os.environ.get("ANTHROPIC_API_KEY", ""),
         )
         self._prompts = PhasePromptBuilder()
-
-    async def _call_with_retry(
-        self,
-        api_call: Callable[[], Any],
-        label: str,
-        on_retry: Callable[[int], Any] | None = None,
-    ) -> _T:
-        """Call *api_call* with exponential back-off on rate-limit errors.
-
-        Args:
-            api_call: Async callable (no args) that makes the Anthropic API call.
-            label: Human-readable label for log messages (e.g. "explore", "plan").
-            on_retry: Optional async callback invoked with the wait-seconds on each
-                retry, allowing callers to emit events / yield before sleeping.
-
-        Returns:
-            The value returned by *api_call*.
-        """
-        for attempt in range(_RATE_LIMIT_MAX_RETRIES):
-            try:
-                return await api_call()
-            except anthropic.RateLimitError as e:
-                if attempt == _RATE_LIMIT_MAX_RETRIES - 1:
-                    raise
-                wait = _RATE_LIMIT_BASE_WAIT * (attempt + 1)
-                logger.warning(
-                    "Rate limited [%s] (attempt %d/%d), waiting %ds: %s",
-                    label, attempt + 1, _RATE_LIMIT_MAX_RETRIES, wait, e,
-                )
-                if on_retry:
-                    await on_retry(wait)
-                await asyncio.sleep(wait)
-        # Unreachable — the final attempt either returns or re-raises.
-        raise AssertionError("unreachable")  # pragma: no cover
 
     async def execute(self, task: AgentTask) -> AgentResult:
         """Run the agent's tool-use loop to completion.
@@ -159,7 +133,7 @@ class ClaudeAgentBackend:
                     "phase": "explore", "model": task.explore_model,
                 })
 
-            explore_result = await self._run_tool_loop(
+            explore_result = await self._run_tool_loop(ToolLoopConfig(
                 model=task.explore_model,
                 system_prompt=self._prompts.build_explore_system(task),
                 user_prompt=task.user_prompt,
@@ -169,7 +143,7 @@ class ClaudeAgentBackend:
                 max_tokens=task.max_tokens,
                 on_event=task.on_event,
                 phase="explore",
-            )
+            ))
             exploration_summary = explore_result.output
             total_input += explore_result.input_tokens
             total_output += explore_result.output_tokens
@@ -234,7 +208,7 @@ class ClaudeAgentBackend:
             })
 
         act_user_prompt = self._prompts.build_act_user(task, exploration_summary, plan_text)
-        act_result = await self._run_tool_loop(
+        act_result = await self._run_tool_loop(ToolLoopConfig(
             model=task.model,
             system_prompt=task.system_prompt,
             user_prompt=act_user_prompt,
@@ -246,7 +220,7 @@ class ClaudeAgentBackend:
             on_tool_call=task.on_tool_call,
             nudge_poll=task.nudge_poll,
             phase="act",
-        )
+        ))
         total_input += act_result.input_tokens
         total_output += act_result.output_tokens
         total_cost += act_result.cost_usd
@@ -277,47 +251,33 @@ class ClaudeAgentBackend:
     # Core API call helpers
     # ------------------------------------------------------------------
 
-    async def _run_tool_loop(
-        self,
-        *,
-        model: str,
-        system_prompt: str,
-        user_prompt: str,
-        tools: list[dict],
-        working_dir: str,
-        max_rounds: int,
-        max_tokens: int,
-        on_event: Any = None,
-        on_tool_call: Any = None,
-        nudge_poll: Any = None,
-        phase: str = "",
-    ) -> _PhaseResult:
+    async def _run_tool_loop(self, cfg: ToolLoopConfig) -> _PhaseResult:
         """Run the tool-use loop for a single phase. Core reusable engine."""
-        messages: list[dict[str, Any]] = [{"role": "user", "content": user_prompt}]
+        messages: list[dict[str, Any]] = [{"role": "user", "content": cfg.user_prompt}]
         total_input = 0
         total_output = 0
         all_tool_calls: list[dict[str, Any]] = []
         final_text = ""
         round_num = 0
 
-        for round_num in range(max_rounds):
+        for round_num in range(cfg.max_rounds):
             # API call with rate-limit retry
             async def _on_retry(wait: int) -> None:
-                if on_event:
-                    await on_event("output", {
-                        "text": f"[Rate limited ({phase}) — waiting {wait}s before retrying...]",
+                if cfg.on_event:
+                    await cfg.on_event("output", {
+                        "text": f"[Rate limited ({cfg.phase}) — waiting {wait}s before retrying...]",
                         "round": round_num,
                     })
 
-            response = await self._call_with_retry(
+            response = await call_with_retry(
                 lambda: self._client.messages.create(
-                    model=model,
-                    max_tokens=max_tokens,
-                    system=system_prompt,
-                    tools=tools,
+                    model=cfg.model,
+                    max_tokens=cfg.max_tokens,
+                    system=cfg.system_prompt,
+                    tools=cfg.tools,
                     messages=messages,
                 ),
-                label=phase,
+                label=cfg.phase,
                 on_retry=_on_retry,
             )
 
@@ -335,8 +295,8 @@ class ClaudeAgentBackend:
 
             if text_parts:
                 final_text = "\n".join(text_parts)
-                if on_event:
-                    await on_event("output", {"text": final_text, "round": round_num})
+                if cfg.on_event:
+                    await cfg.on_event("output", {"text": final_text, "round": round_num})
 
             # If no tool calls, we're done
             if not tool_uses or response.stop_reason == "end_turn":
@@ -347,23 +307,23 @@ class ClaudeAgentBackend:
 
             tool_results = []
             for tu in tool_uses:
-                logger.info("[%s] Tool call: %s(%s)", phase, tu.name, json.dumps(tu.input)[:200])
+                logger.info("[%s] Tool call: %s(%s)", cfg.phase, tu.name, json.dumps(tu.input)[:200])
                 all_tool_calls.append({"name": tu.name, "input": tu.input})
 
-                if on_event:
-                    await on_event("tool_call", {
+                if cfg.on_event:
+                    await cfg.on_event("tool_call", {
                         "tool": tu.name, "input": tu.input, "round": round_num,
                     })
 
-                result_text = await execute_tool(tu.name, tu.input, working_dir)
+                result_text = await execute_tool(tu.name, tu.input, cfg.working_dir)
 
-                if on_event:
-                    await on_event("tool_result", {
-                        "tool": tu.name, "result": result_text[:_MAX_TOOL_RESULT_EVENT_CHARS], "round": round_num,
+                if cfg.on_event:
+                    await cfg.on_event("tool_result", {
+                        "tool": tu.name, "result": result_text[:MAX_TOOL_RESULT_EVENT_CHARS], "round": round_num,
                     })
 
-                if on_tool_call and not on_event:
-                    await on_tool_call(tu.name, tu.input, result_text[:_MAX_TOOL_RESULT_CALLBACK_CHARS])
+                if cfg.on_tool_call and not cfg.on_event:
+                    await cfg.on_tool_call(tu.name, tu.input, result_text[:MAX_TOOL_RESULT_CALLBACK_CHARS])
 
                 tool_results.append({
                     "type": "tool_result",
@@ -377,14 +337,14 @@ class ClaudeAgentBackend:
                 break
 
             # Check for nudge between rounds
-            if nudge_poll:
-                nudge = await nudge_poll()
+            if cfg.nudge_poll:
+                nudge = await cfg.nudge_poll()
                 if nudge:
-                    if on_event:
-                        await on_event("nudge", {"text": nudge})
+                    if cfg.on_event:
+                        await cfg.on_event("nudge", {"text": nudge})
                     messages.append({"role": "user", "content": nudge})
 
-        cost = _compute_model_cost(model, total_input, total_output)
+        cost = _compute_model_cost(cfg.model, total_input, total_output)
 
         return _PhaseResult(
             output=final_text,
@@ -420,7 +380,7 @@ class ClaudeAgentBackend:
                     pass
                 return await stream.get_final_message()
 
-        response = await self._call_with_retry(_plan_api_call, label="plan")
+        response = await call_with_retry(_plan_api_call, label="plan")
 
         text = ""
         for block in response.content:
@@ -460,7 +420,7 @@ class ClaudeAgentBackend:
                     data={"text": f"[Rate limited — waiting {wait}s before retrying...]"},
                 ))
 
-            response = await self._call_with_retry(
+            response = await call_with_retry(
                 lambda: self._client.messages.create(
                     model=task.model,
                     max_tokens=task.max_tokens,
@@ -503,7 +463,7 @@ class ClaudeAgentBackend:
                 })
                 yield AgentEvent(
                     event_type="tool_result",
-                    data={"name": tu.name, "result": result_text[:_MAX_TOOL_RESULT_CALLBACK_CHARS]},
+                    data={"name": tu.name, "result": result_text[:MAX_TOOL_RESULT_CALLBACK_CHARS]},
                 )
             messages.append({"role": "user", "content": tool_results})
 

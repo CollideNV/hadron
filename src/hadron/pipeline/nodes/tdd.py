@@ -6,7 +6,6 @@ import logging
 from typing import Any
 
 from hadron.agent.prompt import PromptComposer
-from hadron.git.worktree import WorktreeManager
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import NodeContext, RepoInfo, gather_files, pipeline_node, run_agent
@@ -157,8 +156,7 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
     ))
 
     # Commit the work
-    wm = WorktreeManager(ctx.workspace_dir)
-    await wm.commit_and_push(
+    await ctx.worktree_manager.commit_and_push(
         ri.worktree_path,
         f"feat: TDD implementation for {cr_id} ({'green' if tests_passing else 'red'})",
     )

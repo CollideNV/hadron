@@ -6,7 +6,6 @@ import logging
 from typing import Any
 
 from hadron.config.defaults import BRANCH_PREFIX
-from hadron.git.worktree import WorktreeManager
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import NodeContext, RepoInfo, pipeline_node
@@ -21,7 +20,7 @@ def _join_criteria(criteria: list[str]) -> str:
 @pipeline_node("release")
 async def release_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[str, Any]:
     """Ensure branch is pushed and generate PR description summary."""
-    wm = WorktreeManager(ctx.workspace_dir)
+    wm = ctx.worktree_manager
     structured_cr = state.get("structured_cr", {})
     ri = RepoInfo.from_state(state)
 

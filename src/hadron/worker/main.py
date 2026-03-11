@@ -224,7 +224,7 @@ async def _execute_pipeline(
         checkpointer_cm = AsyncPostgresSaver.from_conn_string(checkpoint_url)
         checkpointer = await checkpointer_cm.__aenter__()
         await checkpointer.setup()
-    except Exception as e:
+    except (ImportError, ConnectionError, OSError, ValueError) as e:
         logger.warning("Failed to set up postgres checkpointer, running without: %s", e)
         checkpointer = None
 
@@ -264,7 +264,7 @@ async def _execute_pipeline(
             try:
                 saved = await compiled.aget_state(runnable_config)
                 has_checkpoint = saved.values is not None and len(saved.values) > 0
-            except Exception as e:
+            except (ValueError, OSError, RuntimeError) as e:
                 logger.debug("Failed to check for existing checkpoint: %s", e)
                 has_checkpoint = False
 

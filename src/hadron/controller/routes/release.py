@@ -8,11 +8,14 @@ which triggers merging of all PRs.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, update
 
+from hadron.controller.dependencies import get_event_bus, get_session_factory
 from hadron.db.models import CRRun, RepoRun
+from hadron.events.bus import EventBus
 from hadron.models.events import EventType, PipelineEvent
 
 logger = logging.getLogger(__name__)
@@ -20,10 +23,11 @@ router = APIRouter(tags=["release"])
 
 
 @router.get("/pipeline/{cr_id}/release")
-async def get_release_status(cr_id: str, request: Request) -> dict:
+async def get_release_status(
+    cr_id: str,
+    session_factory: Any = Depends(get_session_factory),
+) -> dict:
     """Get the release readiness status for a CR across all repos."""
-    session_factory = request.app.state.session_factory
-
     async with session_factory() as session:
         cr_result = await session.execute(select(CRRun).where(CRRun.cr_id == cr_id))
         cr_run = cr_result.scalar_one_or_none()
@@ -65,15 +69,16 @@ async def get_release_status(cr_id: str, request: Request) -> dict:
 
 
 @router.post("/pipeline/{cr_id}/release/approve")
-async def approve_release(cr_id: str, request: Request) -> dict:
+async def approve_release(
+    cr_id: str,
+    session_factory: Any = Depends(get_session_factory),
+    event_bus: EventBus = Depends(get_event_bus),
+) -> dict:
     """Approve the release gate — marks CR as released.
 
     In a full implementation this would trigger PR merging via the git
     provider API. For now it updates the CR status and emits events.
     """
-    session_factory = request.app.state.session_factory
-    event_bus = request.app.state.event_bus
-
     async with session_factory() as session:
         cr_result = await session.execute(select(CRRun).where(CRRun.cr_id == cr_id))
         cr_run = cr_result.scalar_one_or_none()
@@ -109,16 +114,15 @@ async def approve_release(cr_id: str, request: Request) -> dict:
         )
         await session.commit()
 
-    if event_bus:
-        await event_bus.emit(PipelineEvent(
-            cr_id=cr_id,
-            event_type=EventType.PIPELINE_COMPLETED,
-            stage="release_gate",
-            data={
-                "approved_by": "human",
-                "repos": [rr.repo_name for rr in repo_runs],
-            },
-        ))
+    await event_bus.emit(PipelineEvent(
+        cr_id=cr_id,
+        event_type=EventType.PIPELINE_COMPLETED,
+        stage="release_gate",
+        data={
+            "approved_by": "human",
+            "repos": [rr.repo_name for rr in repo_runs],
+        },
+    ))
 
     return {
         "cr_id": cr_id,

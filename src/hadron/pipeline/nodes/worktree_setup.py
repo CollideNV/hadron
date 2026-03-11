@@ -12,7 +12,6 @@ from typing import Any
 
 from hadron.git.detect import detect_languages_and_tests
 from hadron.git.url import extract_repo_name
-from hadron.git.worktree import WorktreeManager
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import NodeContext, pipeline_node
@@ -23,7 +22,7 @@ logger = logging.getLogger(__name__)
 @pipeline_node("worktree_setup")
 async def worktree_setup_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[str, Any]:
     """Clone repo and set up worktree for the CR."""
-    wm = WorktreeManager(ctx.workspace_dir)
+    wm = ctx.worktree_manager
     repo = state.get("repo", {})
     repo_url = repo["repo_url"]
     repo_name = repo.get("repo_name") or extract_repo_name(repo_url)

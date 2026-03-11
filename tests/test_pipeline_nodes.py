@@ -286,7 +286,7 @@ class TestWorktreeSetupNode:
         state = _base_state()
 
         with (
-            patch("hadron.pipeline.nodes.worktree_setup.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
             patch("hadron.pipeline.nodes.worktree_setup.detect_languages_and_tests", return_value=(["python"], ["pytest"])),
         ):
             wm_instance = MockWM.return_value
@@ -315,7 +315,7 @@ class TestWorktreeSetupNode:
         state = _base_state()
 
         with (
-            patch("hadron.pipeline.nodes.worktree_setup.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
             patch("hadron.pipeline.nodes.worktree_setup.detect_languages_and_tests", return_value=(["python"], ["pytest -x"])),
         ):
             wm_instance = MockWM.return_value
@@ -340,7 +340,7 @@ class TestWorktreeSetupNode:
         state = _base_state()
 
         with (
-            patch("hadron.pipeline.nodes.worktree_setup.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
             patch("hadron.pipeline.nodes.worktree_setup.detect_languages_and_tests", return_value=(["python"], ["pytest"])),
         ):
             wm_instance = MockWM.return_value
@@ -545,7 +545,7 @@ class TestTddNode:
         with (
             patch("hadron.pipeline.nodes.tdd.run_agent", side_effect=mock_run_agent),
             patch("hadron.pipeline.nodes.tdd.run_test_command", return_value=(True, "All 5 tests passed")),
-            patch("hadron.pipeline.nodes.tdd.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             MockWM.return_value.commit_and_push = AsyncMock()
             result = await tdd_node(state, config)
@@ -585,7 +585,7 @@ class TestTddNode:
         with (
             patch("hadron.pipeline.nodes.tdd.run_agent", side_effect=mock_run_agent),
             patch("hadron.pipeline.nodes.tdd.run_test_command", side_effect=mock_run_test),
-            patch("hadron.pipeline.nodes.tdd.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             MockWM.return_value.commit_and_push = AsyncMock()
             result = await tdd_node(state, config)
@@ -608,7 +608,7 @@ class TestTddNode:
         with (
             patch("hadron.pipeline.nodes.tdd.run_agent", side_effect=mock_run_agent),
             patch("hadron.pipeline.nodes.tdd.run_test_command", return_value=(False, "FAILED")),
-            patch("hadron.pipeline.nodes.tdd.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             MockWM.return_value.commit_and_push = AsyncMock()
             result = await tdd_node(state, config)
@@ -630,7 +630,7 @@ class TestTddNode:
         with (
             patch("hadron.pipeline.nodes.tdd.run_agent", side_effect=mock_run_agent),
             patch("hadron.pipeline.nodes.tdd.run_test_command", return_value=(True, "passed")),
-            patch("hadron.pipeline.nodes.tdd.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             commit_mock = AsyncMock()
             MockWM.return_value.commit_and_push = commit_mock
@@ -663,7 +663,7 @@ class TestTddNode:
         with (
             patch("hadron.pipeline.nodes.tdd.run_agent", side_effect=mock_run_agent),
             patch("hadron.pipeline.nodes.tdd.run_test_command", return_value=(True, "passed")),
-            patch("hadron.pipeline.nodes.tdd.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             MockWM.return_value.commit_and_push = AsyncMock()
             await tdd_node(state, config)
@@ -692,7 +692,7 @@ class TestReviewNode:
 
         with (
             patch("hadron.pipeline.nodes.review.run_agent", return_value=_make_agent_run_result(output=clean_review)),
-            patch("hadron.pipeline.nodes.review.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             MockWM.return_value.get_diff = AsyncMock(return_value="diff --git a/main.py b/main.py\n+print('hello')")
             result = await review_node(state, config)
@@ -726,7 +726,7 @@ class TestReviewNode:
 
         with (
             patch("hadron.pipeline.nodes.review.run_agent", side_effect=mock_run_agent),
-            patch("hadron.pipeline.nodes.review.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             MockWM.return_value.get_diff = AsyncMock(return_value="diff --git a/auth.py b/auth.py")
             result = await review_node(state, config)
@@ -755,7 +755,7 @@ class TestReviewNode:
 
         with (
             patch("hadron.pipeline.nodes.review.run_agent", side_effect=mock_run_agent),
-            patch("hadron.pipeline.nodes.review.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             MockWM.return_value.get_diff = AsyncMock(return_value="diff --git a/main.py b/main.py")
             result = await review_node(state, config)
@@ -783,7 +783,7 @@ class TestReviewNode:
 
         with (
             patch("hadron.pipeline.nodes.review.run_agent", side_effect=mock_run_agent),
-            patch("hadron.pipeline.nodes.review.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             MockWM.return_value.get_diff = AsyncMock(return_value="diff --git a/main.py b/main.py")
             result = await review_node(state, config)
@@ -807,7 +807,7 @@ class TestReviewNode:
 
         with (
             patch("hadron.pipeline.nodes.review.run_agent", side_effect=mock_run_agent),
-            patch("hadron.pipeline.nodes.review.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             MockWM.return_value.get_diff = AsyncMock(return_value="diff --git a/main.py b/main.py")
             result = await review_node(state, config)
@@ -826,7 +826,7 @@ class TestReviewNode:
 
         with (
             patch("hadron.pipeline.nodes.review.run_agent", return_value=_make_agent_run_result(output=clean_review)),
-            patch("hadron.pipeline.nodes.review.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             MockWM.return_value.get_diff = AsyncMock(return_value="")
             result = await review_node(state, config)
@@ -850,7 +850,7 @@ class TestReviewNode:
 
         with (
             patch("hadron.pipeline.nodes.review.run_agent", side_effect=mock_run_agent),
-            patch("hadron.pipeline.nodes.review.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             MockWM.return_value.get_diff = AsyncMock(return_value="")
             await review_node(state, config)
@@ -874,7 +874,7 @@ class TestReviewNode:
 
         with (
             patch("hadron.pipeline.nodes.review.run_agent", side_effect=mock_run_agent),
-            patch("hadron.pipeline.nodes.review.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             MockWM.return_value.get_diff = AsyncMock(return_value="")
             result = await review_node(state, config)
@@ -901,7 +901,7 @@ class TestRebaseNode:
         state = _base_state()
 
         with (
-            patch("hadron.pipeline.nodes.rebase.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
             patch("hadron.pipeline.nodes.rebase.run_test_command", return_value=(True, "All tests passed")),
         ):
             wm = MockWM.return_value
@@ -921,7 +921,7 @@ class TestRebaseNode:
         state = _base_state()
 
         with (
-            patch("hadron.pipeline.nodes.rebase.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
             patch("hadron.pipeline.nodes.rebase.run_agent", return_value=_make_agent_run_result(output="Conflicts resolved")),
             patch("hadron.pipeline.nodes.rebase.run_test_command", return_value=(True, "All tests passed")),
         ):
@@ -942,7 +942,7 @@ class TestRebaseNode:
         state = _base_state()
 
         with (
-            patch("hadron.pipeline.nodes.rebase.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
             patch("hadron.pipeline.nodes.rebase.run_agent", return_value=_make_agent_run_result(output="Tried to resolve")),
             patch("hadron.pipeline.nodes.rebase.run_test_command", return_value=(True, "passed")),
         ):
@@ -966,7 +966,7 @@ class TestRebaseNode:
         state = _base_state()
 
         with (
-            patch("hadron.pipeline.nodes.rebase.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
             patch("hadron.pipeline.nodes.rebase.run_test_command", return_value=(True, "passed")),
         ):
             wm = MockWM.return_value
@@ -984,7 +984,7 @@ class TestRebaseNode:
         state = _base_state()
 
         with (
-            patch("hadron.pipeline.nodes.rebase.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
             patch("hadron.pipeline.nodes.rebase.run_test_command", return_value=(False, "FAILED: test_login")),
         ):
             wm = MockWM.return_value
@@ -1012,7 +1012,7 @@ class TestDeliveryNode:
         state = _base_state()
 
         with (
-            patch("hadron.pipeline.nodes.delivery.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
             patch("hadron.pipeline.nodes.delivery.run_test_command", return_value=(True, "All 10 tests passed")),
         ):
             MockWM.return_value.commit_and_push = AsyncMock()
@@ -1032,7 +1032,7 @@ class TestDeliveryNode:
         state = _base_state()
 
         with (
-            patch("hadron.pipeline.nodes.delivery.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
             patch("hadron.pipeline.nodes.delivery.run_test_command", return_value=(False, "FAILED: 3 tests")),
         ):
             MockWM.return_value.commit_and_push = AsyncMock()
@@ -1051,7 +1051,7 @@ class TestDeliveryNode:
         state = _base_state()
 
         with (
-            patch("hadron.pipeline.nodes.delivery.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
             patch("hadron.pipeline.nodes.delivery.run_test_command", return_value=(True, "All tests passed")),
         ):
             MockWM.return_value.commit_and_push = AsyncMock(side_effect=RuntimeError("push rejected"))
@@ -1071,7 +1071,7 @@ class TestDeliveryNode:
         long_output = "x" * 5000
 
         with (
-            patch("hadron.pipeline.nodes.delivery.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
             patch("hadron.pipeline.nodes.delivery.run_test_command", return_value=(True, long_output)),
         ):
             MockWM.return_value.commit_and_push = AsyncMock()
@@ -1096,7 +1096,7 @@ class TestReleaseNode:
         config = _make_config()
         state = _base_state()
 
-        with patch("hadron.pipeline.nodes.release.WorktreeManager") as MockWM:
+        with patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM:
             MockWM.return_value.commit_and_push = AsyncMock()
             result = await release_node(state, config)
 
@@ -1121,7 +1121,7 @@ class TestReleaseNode:
             }],
         )
 
-        with patch("hadron.pipeline.nodes.release.WorktreeManager") as MockWM:
+        with patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM:
             MockWM.return_value.commit_and_push = AsyncMock()
             result = await release_node(state, config)
 
@@ -1136,7 +1136,7 @@ class TestReleaseNode:
         config = _make_config()
         state = _base_state()
 
-        with patch("hadron.pipeline.nodes.release.WorktreeManager") as MockWM:
+        with patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM:
             MockWM.return_value.commit_and_push = AsyncMock(side_effect=RuntimeError("nothing to push"))
             result = await release_node(state, config)
 
@@ -1152,7 +1152,7 @@ class TestReleaseNode:
         config = _make_config()
         state = _base_state(review_results=[])
 
-        with patch("hadron.pipeline.nodes.release.WorktreeManager") as MockWM:
+        with patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM:
             MockWM.return_value.commit_and_push = AsyncMock()
             result = await release_node(state, config)
 
@@ -1167,7 +1167,7 @@ class TestReleaseNode:
         config = _make_config()
         state = _base_state()
 
-        with patch("hadron.pipeline.nodes.release.WorktreeManager") as MockWM:
+        with patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM:
             MockWM.return_value.commit_and_push = AsyncMock()
             result = await release_node(state, config)
 

@@ -18,7 +18,7 @@ from typing import Any
 
 from hadron.agent.base import AgentResult
 from hadron.agent.prompt import PromptComposer
-from hadron.git.worktree import WorktreeManager
+from hadron.config.limits import MAX_DIFF_CHARS
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.diff_scope import ScopeFlag, analyse_diff_scope
@@ -30,8 +30,6 @@ logger = logging.getLogger(__name__)
 
 # The three reviewer roles and their prompt template names.
 _REVIEWER_ROLES = ("security_reviewer", "quality_reviewer", "spec_compliance_reviewer")
-
-_MAX_DIFF_CHARS = 30_000
 
 
 # ---------------------------------------------------------------------------
@@ -66,7 +64,7 @@ def _format_diff_section(diff: str, default_branch: str) -> str:
     return f"""## Code Diff (feature branch vs {default_branch})
 
 ```diff
-{diff[:_MAX_DIFF_CHARS]}
+{diff[:MAX_DIFF_CHARS]}
 ```
 """
 
@@ -222,11 +220,10 @@ async def review_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
     total_input = 0
     total_output = 0
 
-    wm = WorktreeManager(ctx.workspace_dir)
     ri = RepoInfo.from_state(state)
 
     # 1. Get diff
-    diff = await wm.get_diff(ri.worktree_path, ri.default_branch)
+    diff = await ctx.worktree_manager.get_diff(ri.worktree_path, ri.default_branch)
 
     # 2. Deterministic diff scope analysis (no LLM)
     scope_flags = analyse_diff_scope(diff)

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from langgraph.types import RunnableConfig
 
 from hadron.config.defaults import DEFAULT_MODEL, DEFAULT_WORKSPACE_DIR
 from hadron.events.bus import EventBus, NoOpEventBus
+from hadron.git.worktree import WorktreeManager
 
 if TYPE_CHECKING:
     import redis.asyncio as aioredis
@@ -29,6 +30,7 @@ class NodeContext:
     event_bus: EventBus
     agent_backend: AgentBackend
     workspace_dir: str
+    worktree_manager: WorktreeManager
     redis: aioredis.Redis | None
     model: str
     explore_model: str
@@ -39,10 +41,12 @@ class NodeContext:
     def from_config(cls, config: RunnableConfig) -> NodeContext:
         """Extract a typed NodeContext from LangGraph's RunnableConfig."""
         configurable = config.get("configurable", {})
+        workspace_dir = configurable.get("workspace_dir", DEFAULT_WORKSPACE_DIR)
         return cls(
             event_bus=configurable.get("event_bus") or NoOpEventBus(),
             agent_backend=configurable.get("agent_backend"),
-            workspace_dir=configurable.get("workspace_dir", DEFAULT_WORKSPACE_DIR),
+            workspace_dir=workspace_dir,
+            worktree_manager=WorktreeManager(workspace_dir),
             redis=configurable.get("redis"),
             model=configurable.get("model", DEFAULT_MODEL),
             explore_model=configurable.get("explore_model", ""),

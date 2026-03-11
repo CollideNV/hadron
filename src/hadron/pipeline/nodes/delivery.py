@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from hadron.git.worktree import WorktreeManager
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import NodeContext, RepoInfo, pipeline_node
@@ -17,7 +16,7 @@ logger = logging.getLogger(__name__)
 @pipeline_node("delivery")
 async def delivery_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[str, Any]:
     """Self-contained delivery: run full test suite, then push final branch."""
-    wm = WorktreeManager(ctx.workspace_dir)
+    wm = ctx.worktree_manager
 
     ri = RepoInfo.from_state(state)
 

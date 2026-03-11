@@ -13,6 +13,8 @@ from typing import Any, Callable, Awaitable
 import redis.asyncio as aioredis
 
 from hadron.agent.base import AgentResult, AgentTask, OnAgentEvent, OnToolCall
+from hadron.config.limits import MAX_CONTEXT_CHARS
+from hadron.events.bus import EventBus
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes.context import NodeContext
@@ -160,9 +162,6 @@ def extract_json(text: str, *, context: str = "") -> dict[str, Any] | None:
 # Shared file gathering utility (moved from tdd.py)
 # ---------------------------------------------------------------------------
 
-MAX_CONTEXT_CHARS = 24_000  # ~6k tokens — keep injected context lean
-
-
 def gather_files(worktree: str, pattern: str) -> str:
     """Read files matching glob pattern and return formatted content."""
     base = Path(worktree)
@@ -188,7 +187,7 @@ def gather_files(worktree: str, pattern: str) -> str:
 
 
 def make_tool_call_emitter(
-    event_bus: Any, cr_id: str, stage: str, role: str, repo: str = "",
+    event_bus: EventBus, cr_id: str, stage: str, role: str, repo: str = "",
 ) -> OnToolCall:
     """Create an on_tool_call callback that emits AGENT_TOOL_CALL events."""
 
@@ -212,7 +211,7 @@ def make_tool_call_emitter(
 
 
 def make_agent_event_emitter(
-    event_bus: Any, cr_id: str, stage: str, role: str, repo: str = "",
+    event_bus: EventBus, cr_id: str, stage: str, role: str, repo: str = "",
 ) -> OnAgentEvent:
     """Create an on_event callback that emits rich agent events."""
 
@@ -305,7 +304,7 @@ async def store_conversation(
 
 
 async def emit_cost_update(
-    event_bus: Any, cr_id: str, stage: str, result: AgentResult, prior_cost: float = 0.0,
+    event_bus: EventBus, cr_id: str, stage: str, result: AgentResult, prior_cost: float = 0.0,
 ) -> None:
     """Emit a COST_UPDATE event after an agent execution."""
     await event_bus.emit(PipelineEvent(

@@ -8,7 +8,6 @@ from typing import Any
 
 from hadron.agent.prompt import PromptComposer
 from hadron.config.defaults import BRANCH_PREFIX
-from hadron.git.worktree import WorktreeManager
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import NodeContext, RepoInfo, pipeline_node, run_agent
@@ -20,7 +19,7 @@ logger = logging.getLogger(__name__)
 @pipeline_node("rebase")
 async def rebase_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[str, Any]:
     """Fetch latest main and rebase. If conflicts, use an agent to resolve them."""
-    wm = WorktreeManager(ctx.workspace_dir)
+    wm = ctx.worktree_manager
     rebase_clean = True
     had_conflicts = False
     total_cost = 0.0
