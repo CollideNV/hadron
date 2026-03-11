@@ -25,6 +25,7 @@ interface AgentSession {
   stage: string;
   completed: boolean;
   model?: string;
+  models?: string[];
   allowedTools?: string[];
   /** Ordered conversation items built from events */
   items: ConversationItem[];
@@ -96,6 +97,7 @@ function buildSessions(
     if (e.event_type === "agent_started") {
       const session = getSession(role, repo, e.stage);
       session.model = (e.data.model as string) || undefined;
+      session.models = (e.data.models as string[]) || undefined;
       session.allowedTools = (e.data.allowed_tools as string[]) || undefined;
     } else if (e.event_type === "agent_completed") {
       const session = getSession(role, repo, e.stage);
@@ -340,11 +342,11 @@ function AgentConversationView({
         <span className="text-xs font-medium text-text">
           {session.role.replace(/_/g, " ")}
         </span>
-        {session.model && (
-          <span className="text-[10px] text-text-muted font-mono bg-bg-surface border border-border-subtle rounded px-1 py-0.5">
-            {session.model.replace("claude-", "").replace(/-\d{8}$/, "")}
+        {(session.models && session.models.length > 1 ? session.models : session.model ? [session.model] : []).map((m) => (
+          <span key={m} className="text-[10px] text-text-muted font-mono bg-bg-surface border border-border-subtle rounded px-1 py-0.5">
+            {m.replace("claude-", "").replace(/-\d{8}$/, "")}
           </span>
-        )}
+        ))}
         {session.repo && (
           <span className="text-[10px] text-text-dim font-mono">
             ({session.repo})
@@ -502,12 +504,16 @@ function AgentSessionList({
           </div>
           {(session.repo || session.model) && (
             <div className="text-[9px] text-text-dim font-mono ml-3 truncate">
-              {session.model && (
+              {session.models && session.models.length > 1 ? (
+                <span className="text-text-muted">
+                  {session.models.map(m => m.replace("claude-", "").replace(/-\d{8}$/, "").split("-")[0]).join("/")}
+                </span>
+              ) : session.model ? (
                 <span className="text-text-muted">
                   {session.model.replace("claude-", "").replace(/-\d{8}$/, "")}
                 </span>
-              )}
-              {session.repo && session.model && " · "}
+              ) : null}
+              {session.repo && (session.models?.length || session.model) && " · "}
               {session.repo}
             </div>
           )}

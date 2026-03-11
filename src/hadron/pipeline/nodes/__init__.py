@@ -398,11 +398,16 @@ async def run_agent(
         ),
     )
 
+    models_used = [m for m in [effective_explore, effective_plan, effective_model] if m]
     await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.AGENT_STARTED, stage=stage,
             data={
                 "role": role, "repo": repo_name,
-                "model": effective_model, "allowed_tools": allowed_tools,
+                "model": effective_model,
+                "explore_model": effective_explore,
+                "plan_model": effective_plan,
+                "models": models_used,
+                "allowed_tools": allowed_tools,
             },
         ))
 
