@@ -24,7 +24,7 @@ from hadron.git.worktree import WorktreeManager
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.diff_scope import ScopeFlag, analyse_diff_scope
-from hadron.pipeline.nodes import NodeContext, emit_cost_update, extract_json, run_agent
+from hadron.pipeline.nodes import NodeContext, RepoInfo, emit_cost_update, extract_json, run_agent
 
 logger = logging.getLogger(__name__)
 
@@ -229,32 +229,28 @@ async def review_node(state: PipelineState, config: RunnableConfig) -> dict[str,
     total_output = 0
 
     wm = WorktreeManager(ctx.workspace_dir)
-
-    repo = state.get("repo", {})
-    repo_name = repo.get("repo_name", "")
-    worktree_path = repo.get("worktree_path", "")
-    default_branch = repo.get("default_branch", "main")
+    ri = RepoInfo.from_state(state)
 
     # 1. Get diff
-    diff = await wm.get_diff(worktree_path, default_branch)
+    diff = await wm.get_diff(ri.worktree_path, ri.default_branch)
 
     # 2. Deterministic diff scope analysis (no LLM)
     scope_flags = analyse_diff_scope(diff)
 
     # 3. Build payloads for each reviewer
     security_payload = _build_security_payload(
-        diff, structured_cr, default_branch, scope_flags, behaviour_specs, repo_name,
+        diff, structured_cr, ri.default_branch, scope_flags, behaviour_specs, ri.repo_name,
     )
-    quality_payload = _build_quality_payload(diff, structured_cr, default_branch)
+    quality_payload = _build_quality_payload(diff, structured_cr, ri.default_branch)
     spec_payload = _build_spec_compliance_payload(
-        diff, structured_cr, default_branch, behaviour_specs, repo_name,
+        diff, structured_cr, ri.default_branch, behaviour_specs, ri.repo_name,
     )
 
     # 4. Run all 3 reviewers in parallel
     security_result, quality_result, spec_result = await asyncio.gather(
-        _run_single_reviewer("security_reviewer", security_payload, ctx, cr_id, repo_name, worktree_path),
-        _run_single_reviewer("quality_reviewer", quality_payload, ctx, cr_id, repo_name, worktree_path),
-        _run_single_reviewer("spec_compliance_reviewer", spec_payload, ctx, cr_id, repo_name, worktree_path),
+        _run_single_reviewer("security_reviewer", security_payload, ctx, cr_id, ri.repo_name, ri.worktree_path),
+        _run_single_reviewer("quality_reviewer", quality_payload, ctx, cr_id, ri.repo_name, ri.worktree_path),
+        _run_single_reviewer("spec_compliance_reviewer", spec_payload, ctx, cr_id, ri.repo_name, ri.worktree_path),
     )
 
     # 5. Merge findings and costs
@@ -275,7 +271,7 @@ async def review_node(state: PipelineState, config: RunnableConfig) -> dict[str,
     for finding in all_findings:
         await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.REVIEW_FINDING, stage="review",
-            data={"repo": repo_name, **finding},
+            data={"repo": ri.repo_name, **finding},
         ))
 
     # 7. Determine pass/fail — only block on critical/major from ANY reviewer
@@ -283,7 +279,7 @@ async def review_node(state: PipelineState, config: RunnableConfig) -> dict[str,
     passed = len(blocking_findings) == 0
 
     review_results = [{
-        "repo_name": repo_name,
+        "repo_name": ri.repo_name,
         "findings": all_findings,
         "review_passed": passed,
         "review_iteration": state.get("review_loop_count", 0) + 1,

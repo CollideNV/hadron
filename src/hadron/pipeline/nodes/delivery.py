@@ -10,7 +10,7 @@ from typing import Any
 from hadron.git.worktree import WorktreeManager
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
-from hadron.pipeline.nodes import NodeContext
+from hadron.pipeline.nodes import NodeContext, RepoInfo
 from hadron.pipeline.testing import run_test_command
 
 logger = logging.getLogger(__name__)
@@ -27,27 +27,24 @@ async def delivery_node(state: PipelineState, config: RunnableConfig) -> dict[st
 
     wm = WorktreeManager(ctx.workspace_dir)
 
-    repo = state.get("repo", {})
-    repo_name = repo.get("repo_name", "")
-    worktree_path = repo.get("worktree_path", "")
-    test_command = (repo.get("test_commands") or ["pytest"])[0]
+    ri = RepoInfo.from_state(state)
 
     # Run full test suite
     tests_passing, test_output = await run_test_command(
-        worktree_path, test_command, cr_id,
+        ri.worktree_path, ri.test_command, cr_id,
     )
 
     # Push branch
     branch_pushed = False
     if tests_passing:
         try:
-            await wm.commit_and_push(worktree_path, f"chore: final push for {cr_id}")
+            await wm.commit_and_push(ri.worktree_path, f"chore: final push for {cr_id}")
             branch_pushed = True
         except RuntimeError as e:
-            logger.warning("Push failed for %s: %s", repo_name, e)
+            logger.warning("Push failed for %s: %s", ri.repo_name, e)
 
     delivery_results = [{
-        "repo_name": repo_name,
+        "repo_name": ri.repo_name,
         "test_output": test_output[-2000:],
         "tests_passing": tests_passing,
         "branch_pushed": branch_pushed,

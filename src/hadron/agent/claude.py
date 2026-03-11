@@ -14,52 +14,12 @@ from typing import Any, AsyncIterator
 import anthropic
 
 from hadron.agent.base import AgentEvent, AgentResult, AgentTask
-
-# Allowlist of command prefixes an agent is permitted to run.
-# Anything not matching is rejected before reaching the shell.
-_AGENT_COMMAND_ALLOWLIST: list[re.Pattern[str]] = [
-    # Test runners
-    re.compile(r"^pytest(\s|$)"),
-    re.compile(r"^python3?\s+-m\s+pytest(\s|$)"),
-    re.compile(r"^npm\s+(test|run\s+test)(\s|$)"),
-    re.compile(r"^npx\s+(jest|vitest|mocha)(\s|$)"),
-    re.compile(r"^cargo\s+test(\s|$)"),
-    re.compile(r"^go\s+test(\s|$)"),
-    re.compile(r"^mvn\s+(test|verify)(\s|$)"),
-    re.compile(r"^gradle\s+test(\s|$)"),
-    re.compile(r"^bundle\s+exec\s+rspec(\s|$)"),
-    re.compile(r"^mix\s+test(\s|$)"),
-    re.compile(r"^phpunit(\s|$)"),
-    re.compile(r"^dotnet\s+test(\s|$)"),
-    re.compile(r"^make\s+(test|check|lint)(\s|$)"),
-    # Linters and formatters
-    re.compile(r"^(ruff|flake8|mypy|pylint|black|isort)(\s|$)"),
-    re.compile(r"^npx\s+(eslint|prettier|tsc)(\s|$)"),
-    re.compile(r"^cargo\s+(clippy|fmt)(\s|$)"),
-    re.compile(r"^go\s+(vet|fmt)(\s|$)"),
-    # Build tools (read-only inspection)
-    re.compile(r"^(pip|pip3)\s+list(\s|$)"),
-    re.compile(r"^cat\s+"),
-    re.compile(r"^head\s+"),
-    re.compile(r"^tail\s+"),
-    re.compile(r"^wc\s+"),
-    re.compile(r"^find\s+\.\s+"),
-    re.compile(r"^grep\s+"),
-    re.compile(r"^ls(\s|$)"),
-    re.compile(r"^tree(\s|$)"),
-    re.compile(r"^echo(\s|$)"),
-    re.compile(r"^pwd$"),
-    re.compile(r"^which\s+"),
-    re.compile(r"^diff\s+"),
-    re.compile(r"^sleep\s+"),
-]
-
-# Shell metacharacters that indicate chaining/piping — always rejected.
-_DANGEROUS_SHELL_CHARS = frozenset(";|`$\n")
-_DANGEROUS_SHELL_PATTERNS = ("&&", "||", "$(", ">", "<")
-
-# Subcommand flags for `find` that enable arbitrary execution — always blocked.
-_FIND_DANGEROUS_FLAGS = ("-exec", "-execdir", "-delete", "-ok", "-okdir")
+from hadron.security.allowlists import (
+    AGENT_COMMAND_ALLOWLIST,
+    DANGEROUS_SHELL_CHARS,
+    DANGEROUS_SHELL_PATTERNS,
+    FIND_DANGEROUS_FLAGS,
+)
 
 
 def _validate_agent_command(cmd: str) -> bool:
@@ -70,17 +30,17 @@ def _validate_agent_command(cmd: str) -> bool:
     dangerous flags (``-exec``, ``-delete``).
     """
     # Reject obviously dangerous patterns
-    if any(c in cmd for c in _DANGEROUS_SHELL_CHARS):
+    if any(c in cmd for c in DANGEROUS_SHELL_CHARS):
         return False
-    for pat in _DANGEROUS_SHELL_PATTERNS:
+    for pat in DANGEROUS_SHELL_PATTERNS:
         if pat in cmd:
             return False
     # Check against allowlist
-    if not any(p.match(cmd) for p in _AGENT_COMMAND_ALLOWLIST):
+    if not any(p.match(cmd) for p in AGENT_COMMAND_ALLOWLIST):
         return False
     # Extra guard: reject dangerous find flags even if prefix matches
     if cmd.startswith("find "):
-        if any(flag in cmd for flag in _FIND_DANGEROUS_FLAGS):
+        if any(flag in cmd for flag in FIND_DANGEROUS_FLAGS):
             return False
     return True
 
@@ -668,9 +628,6 @@ class ClaudeAgentBackend:
         """
         for attempt in range(_RATE_LIMIT_MAX_RETRIES):
             try:
-                text = ""
-                input_tokens = 0
-                output_tokens = 0
                 async with self._client.messages.stream(
                     model=model,
                     max_tokens=max_tokens,

@@ -11,7 +11,7 @@ from hadron.agent.prompt import PromptComposer
 from hadron.git.worktree import WorktreeManager
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
-from hadron.pipeline.nodes import NodeContext, gather_files, run_agent
+from hadron.pipeline.nodes import NodeContext, RepoInfo, gather_files, run_agent
 from hadron.pipeline.testing import run_test_command
 
 logger = logging.getLogger(__name__)
@@ -37,16 +37,12 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
     total_input = 0
     total_output = 0
 
-    repo = state.get("repo", {})
-    repo_name = repo.get("repo_name", "")
-    worktree_path = repo.get("worktree_path", "")
-    test_command = (repo.get("test_commands") or ["pytest"])[0]
-    languages = repo.get("languages", [])
+    ri = RepoInfo.from_state(state)
 
     repo_context = composer.build_repo_context(
-        agents_md=repo.get("agents_md", ""),
-        languages=languages,
-        test_commands=repo.get("test_commands", []),
+        agents_md=ri.agents_md,
+        languages=ri.languages,
+        test_commands=ri.test_commands,
     )
 
     criteria = "\n".join(f"- {c}" for c in structured_cr.get("acceptance_criteria", []))
@@ -62,13 +58,13 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
     # Include review feedback if this is a retry from review
     review_feedback = ""
     for rr in state.get("review_results", []):
-        if rr.get("repo_name") == repo_name and rr.get("findings"):
+        if rr.get("repo_name") == ri.repo_name and rr.get("findings"):
             review_feedback = "## Review Findings to Address\n\n"
             for f in rr["findings"]:
                 review_feedback += f"- [{f.get('severity', '')}] {f.get('message', '')} ({f.get('file', '')}:{f.get('line', 0)})\n"
 
     # Gather feature files so the test_writer doesn't need to explore
-    feature_content = gather_files(worktree_path, "features/**/*.feature")
+    feature_content = gather_files(ri.worktree_path, "features/**/*.feature")
 
     # === RED PHASE: Write failing tests ===
     await ctx.event_bus.emit(PipelineEvent(
@@ -88,8 +84,8 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
         user_prompt=test_user,
         cr_id=cr_id,
         stage="tdd:test_writer",
-        repo_name=repo_name,
-        working_directory=worktree_path,
+        repo_name=ri.repo_name,
+        working_directory=ri.worktree_path,
         explore_model="",  # No explore/plan — feature files are injected directly
         plan_model="",
     )
@@ -107,7 +103,7 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
     iteration = 0
 
     # Gather test files so the code_writer knows exactly what to implement
-    test_content = gather_files(worktree_path, "tests/**/test_*.py")
+    test_content = gather_files(ri.worktree_path, "tests/**/test_*.py")
 
     await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="tdd:code_writer",
@@ -131,8 +127,8 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
             user_prompt=code_user,
             cr_id=cr_id,
             stage="tdd:code_writer",
-            repo_name=repo_name,
-            working_directory=worktree_path,
+            repo_name=ri.repo_name,
+            working_directory=ri.worktree_path,
             prior_cost=total_cost,
             explore_model="",  # No explore/plan — test files are injected directly
             plan_model="",
@@ -143,13 +139,13 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
 
         # Run tests
         tests_passing, test_output = await run_test_command(
-            worktree_path, test_command, cr_id,
+            ri.worktree_path, ri.test_command, cr_id,
         )
 
         await ctx.event_bus.emit(PipelineEvent(
                 cr_id=cr_id, event_type=EventType.TEST_RUN, stage="tdd:code_writer",
                 data={
-                    "repo": repo_name,
+                    "repo": ri.repo_name,
                     "passed": tests_passing,
                     "iteration": iteration,
                     "output_tail": test_output[-500:],
@@ -157,10 +153,10 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
             ))
 
         if tests_passing:
-            logger.info("Tests passing for %s after iteration %d", repo_name, iteration)
+            logger.info("Tests passing for %s after iteration %d", ri.repo_name, iteration)
             break
         else:
-            logger.info("Tests failing for %s at iteration %d, retrying...", repo_name, iteration)
+            logger.info("Tests failing for %s at iteration %d, retrying...", ri.repo_name, iteration)
 
     await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="tdd:code_writer",
@@ -170,12 +166,12 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
     # Commit the work
     wm = WorktreeManager(ctx.workspace_dir)
     await wm.commit_and_push(
-        worktree_path,
+        ri.worktree_path,
         f"feat: TDD implementation for {cr_id} ({'green' if tests_passing else 'red'})",
     )
 
     dev_result = {
-        "repo_name": repo_name,
+        "repo_name": ri.repo_name,
         "test_files": {},
         "code_files": {},
         "test_output": test_output[-2000:],

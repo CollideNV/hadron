@@ -6,37 +6,23 @@ import asyncio
 import logging
 import re
 
-logger = logging.getLogger(__name__)
+from hadron.security.allowlists import DANGEROUS_SHELL_CHARS, TEST_RUNNER_PATTERNS
 
-# Allowlist of safe test command patterns.
-# Each pattern is matched against the full command string.
-_ALLOWED_COMMANDS: list[re.Pattern[str]] = [
-    re.compile(r"^pytest(\s|$)"),
-    re.compile(r"^python\s+-m\s+pytest(\s|$)"),
-    re.compile(r"^npm\s+test(\s|$)"),
-    re.compile(r"^npx\s+(jest|vitest|mocha)(\s|$)"),
-    re.compile(r"^cargo\s+test(\s|$)"),
-    re.compile(r"^go\s+test(\s|$)"),
-    re.compile(r"^mvn\s+test(\s|$)"),
-    re.compile(r"^gradle\s+test(\s|$)"),
-    re.compile(r"^bundle\s+exec\s+rspec(\s|$)"),
-    re.compile(r"^mix\s+test(\s|$)"),
-    re.compile(r"^phpunit(\s|$)"),
-    re.compile(r"^dotnet\s+test(\s|$)"),
-    re.compile(r"^make\s+test(\s|$)"),
-]
+logger = logging.getLogger(__name__)
 
 
 def validate_test_command(cmd: str) -> bool:
     """Check whether a test command matches the allowlist.
 
     Rejects anything that could be shell injection (pipes, semicolons,
-    subshells, redirects) unless it matches a known-safe pattern.
+    subshells, redirects) unless it matches a known-safe test runner pattern.
     """
-    # Reject obvious shell metacharacters regardless of allowlist
-    if any(c in cmd for c in (";", "|", "&", "`", "$", "(", ")", "<", ">", "\n")):
+    if any(c in cmd for c in DANGEROUS_SHELL_CHARS):
         return False
-    return any(p.match(cmd) for p in _ALLOWED_COMMANDS)
+    # Additional chars not in the general set but dangerous for test commands
+    if any(c in cmd for c in ("&", "(", ")", "<", ">")):
+        return False
+    return any(p.match(cmd) for p in TEST_RUNNER_PATTERNS)
 
 
 async def run_test_command(

@@ -18,6 +18,7 @@ from hadron.pipeline.nodes.context import NodeContext
 # Re-export NodeContext so nodes can do: from hadron.pipeline.nodes import NodeContext
 __all__ = [
     "NodeContext",
+    "RepoInfo",
     "AgentRunResult",
     "extract_json",
     "run_agent",
@@ -30,6 +31,34 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class RepoInfo:
+    """Common repo fields extracted from PipelineState."""
+
+    repo_name: str
+    worktree_path: str
+    default_branch: str
+    test_command: str
+    languages: list[str]
+    test_commands: list[str]
+    agents_md: str
+    raw: dict[str, Any]
+
+    @classmethod
+    def from_state(cls, state: dict[str, Any]) -> RepoInfo:
+        repo = state.get("repo", {})
+        return cls(
+            repo_name=repo.get("repo_name", ""),
+            worktree_path=repo.get("worktree_path", ""),
+            default_branch=repo.get("default_branch", "main"),
+            test_command=(repo.get("test_commands") or ["pytest"])[0],
+            languages=repo.get("languages", []),
+            test_commands=repo.get("test_commands", []),
+            agents_md=repo.get("agents_md", ""),
+            raw=repo,
+        )
 
 
 # ---------------------------------------------------------------------------
