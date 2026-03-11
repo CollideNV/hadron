@@ -58,12 +58,50 @@ class GeminiAgentBackend:
     """
 
     def __init__(self, api_key: str | None = None) -> None:
-        self._api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
-        self._client = genai.Client(api_key=self._api_key)
+        self._client = genai.Client(
+            api_key=api_key or os.environ.get("GOOGLE_API_KEY", ""),
+        )
+        self._prompts = PhasePromptBuilder()
 
-    @property
-    def name(self) -> str:
-        return "gemini"
+    async def _call_with_retry(
+        self,
+        api_call: Callable[[], Any],
+        label: str,
+        on_retry: Callable[[int], Any] | None = None,
+    ) -> _T:
+        """Call *api_call* with exponential back-off on rate-limit errors."""
+        for attempt in range(_RATE_LIMIT_MAX_RETRIES):
+            try:
+                return await api_call()
+            except Exception as e:
+                # Google GenAI raises google.genai.errors.ClientError with status 429
+                # We also catch httpx network disconnects and 5xx errors for robustness.
+                exc_str = str(e).lower()
+                exc_type = type(e).__name__
+                is_retryable = (
+                    "429" in exc_str
+                    # Rate limiting signs
+                    or "resource_exhausted" in exc_str
+                    or "rate" in exc_str
+                    # Server/Network errors
+                    or "503" in exc_str
+                    or "502" in exc_str
+                    or "504" in exc_str
+                    or "500" in exc_str
+                    or "disconnect" in exc_str
+                    or exc_type in ("RemoteProtocolError", "ConnectError", "ReadError", "TimeoutException", "ConnectTimeout", "ReadTimeout")
+                )
+                if not is_retryable or attempt == _RATE_LIMIT_MAX_RETRIES - 1:
+                    raise
+                wait = _RATE_LIMIT_BASE_WAIT * (attempt + 1)
+                logger.warning(
+                    "Network/Rate limit error [%s] (attempt %d/%d), waiting %ds: %s",
+                    label, attempt + 1, _RATE_LIMIT_MAX_RETRIES, wait, e,
+                )
+                if on_retry:
+                    await on_retry(wait)
+                await asyncio.sleep(wait)
+        raise AssertionError("unreachable")  # pragma: no cover
 
     async def execute(self, task: AgentTask) -> AgentResult:
         """Run the agent's tool-use loop to completion."""

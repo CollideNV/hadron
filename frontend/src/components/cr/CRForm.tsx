@@ -15,14 +15,7 @@ export default function CRForm({ onSubmit, submitting }: CRFormProps) {
   const [description, setDescription] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
   const [branch, setBranch] = useState("main");
-  const [testCommand, setTestCommand] = useState("pytest");
-  const [language, setLanguage] = useState("python");
-  const [model, setModel] = useState("default");
-  const [models, setModels] = useState<ModelConfig[]>([]);
-
-  useEffect(() => {
-    listModels().then(setModels).catch(console.error);
-  }, []);
+  const [agentModel, setAgentModel] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,9 +24,7 @@ export default function CRForm({ onSubmit, submitting }: CRFormProps) {
       description,
       repo_url: repoUrl || undefined,
       repo_default_branch: branch,
-      test_command: testCommand,
-      language,
-      model: model === "default" ? undefined : model,
+      agent_model: agentModel || undefined,
     });
   };
 
@@ -90,37 +81,6 @@ export default function CRForm({ onSubmit, submitting }: CRFormProps) {
           />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-xs font-medium text-text-muted mb-1.5">
-            Test Command
-          </label>
-          <input
-            type="text"
-            value={testCommand}
-            onChange={(e) => setTestCommand(e.target.value)}
-            className={inputClass}
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-text-muted mb-1.5">
-            Language
-          </label>
-          <select
-            value={language}
-            onChange={(e) => setLanguage(e.target.value)}
-            className={inputClass}
-          >
-            <option value="python">Python</option>
-            <option value="typescript">TypeScript</option>
-            <option value="javascript">JavaScript</option>
-            <option value="go">Go</option>
-            <option value="java">Java</option>
-            <option value="rust">Rust</option>
-          </select>
-        </div>
-      </div>
-
       <div>
         <label className="block text-xs font-medium text-text-muted mb-1.5">
           Model

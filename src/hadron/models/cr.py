@@ -31,6 +31,32 @@ class RawChangeRequest(BaseModel):
         description="Model override for the pipeline (e.g. gemini-3-pro-preview).",
     )
 
+    @field_validator("agent_model")
+    @classmethod
+    def validate_agent_model(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if not any(v.startswith(prefix) for prefix in _KNOWN_MODEL_PREFIXES):
+            raise ValueError(
+                f"agent_model must start with one of: {', '.join(_KNOWN_MODEL_PREFIXES)}"
+            )
+        return v
+
+    @field_validator("repo_urls")
+    @classmethod
+    def validate_repo_urls(cls, v: list[str]) -> list[str]:
+        """Validate repo URLs.
+
+        Allows HTTPS URLs for hosted repos and local filesystem paths
+        (for development/testing). Rejects file://, ssh://, git:// schemes.
+        """
+        for url in v:
+            if "://" in url and not url.startswith("https://"):
+                raise ValueError(
+                    f"Only HTTPS repository URLs or local paths are allowed, got: {url!r}"
+                )
+        return v
+
 
 class StructuredChangeRequest(BaseModel):
     """Parsed and normalised change request — output of Intake agent."""

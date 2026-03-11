@@ -162,7 +162,7 @@ class WorktreeManager:
     async def rebase(self, worktree_path: str | Path, base_branch: str = "main") -> bool:
         """Fetch and rebase onto latest base branch. Returns True if clean."""
         wt = Path(worktree_path)
-        await _run_git("fetch", "origin", base_branch, cwd=wt)
+        await _run_git("fetch", "origin", f"{base_branch}:refs/remotes/origin/{base_branch}", cwd=wt)
         try:
             await _run_git("rebase", f"origin/{base_branch}", cwd=wt)
             return True
@@ -173,7 +173,9 @@ class WorktreeManager:
     async def rebase_keep_conflicts(self, worktree_path: str | Path, base_branch: str = "main") -> bool:
         """Fetch and rebase, keeping conflicts for agent resolution. Returns True if clean."""
         wt = Path(worktree_path)
-        await _run_git("fetch", "origin", base_branch, cwd=wt)
+        # Bare-clone worktrees don't auto-create remote tracking refs, so use
+        # an explicit refspec to ensure origin/<branch> exists for the rebase.
+        await _run_git("fetch", "origin", f"{base_branch}:refs/remotes/origin/{base_branch}", cwd=wt)
         try:
             await _run_git("rebase", f"origin/{base_branch}", cwd=wt)
             return True

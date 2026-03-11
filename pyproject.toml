@@ -23,6 +23,7 @@ dependencies = [
     "sse-starlette>=2.0",
     "kubernetes>=31.0",
     "httpx>=0.28",
+    "python-dotenv>=1.0",
 ]
 
 [project.optional-dependencies]

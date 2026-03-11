@@ -1,0 +1,4 @@
+2026-03-11 16:37:20,353 __main__ INFO Worker starting for CR CR-c90c41ea, repo hadron-test-repo (/tmp/hadron-test-repo)
+2026-03-11 16:37:20,844 __main__ INFO Resuming CR CR-c90c41ea from existing checkpoint
+2026-03-11 16:37:20,852 __main__ INFO Worker completed for CR CR-c90c41ea repo hadron-test-repo with status=paused cost=$5.9762
+

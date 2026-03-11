@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
 
 from hadron.models.config import BootstrapConfig
+
+# Auto-load .env from project root (no-op if file doesn't exist).
+_project_root = Path(__file__).resolve().parents[3]
+load_dotenv(_project_root / ".env", override=False)
 
 _ENV_PREFIX = "HADRON_"
 

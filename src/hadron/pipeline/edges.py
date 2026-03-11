@@ -13,6 +13,9 @@ def after_verification(state: PipelineState) -> str:
         "tdd" — specs verified, proceed
         "paused" — circuit breaker tripped
     """
+    if state.get("status") == "paused":
+        return "paused"
+
     if state.get("behaviour_verified"):
         return "tdd"
 
@@ -35,6 +38,9 @@ def after_review(state: PipelineState) -> str:
         "tdd" — review failed, loop back (within circuit breaker)
         "paused" — circuit breaker tripped
     """
+    if state.get("status") == "paused":
+        return "paused"
+
     if state.get("review_passed"):
         return "rebase"
 
@@ -56,6 +62,9 @@ def after_rebase(state: PipelineState) -> str:
         "delivery" — rebase clean (or conflicts resolved by agent)
         "paused" — unresolvable conflicts
     """
+    if state.get("status") == "paused":
+        return "paused"
+
     if state.get("rebase_clean", True):
         return "delivery"
     return "paused"

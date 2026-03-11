@@ -24,24 +24,7 @@ export interface RawChangeRequest {
   source?: string;
   repo_url?: string;
   repo_default_branch?: string;
-  test_command?: string;
-  language?: string;
-  model?: string;
-}
-
-export interface ModelConfig {
-  id: string;
-  name: string;
-  provider: string;
-  provider_id: string;
-  context_window: number;
-  is_experimental: boolean;
-}
-
-export interface ProviderConfig {
-  id: string;
-  name: string;
-  configured: boolean;
+  agent_model?: string;
 }
 
 export const EVENT_TYPES = [

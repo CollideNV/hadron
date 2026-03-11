@@ -80,6 +80,7 @@ async def release_node(state: PipelineState, config: RunnableConfig) -> dict[str
         ))
 
     return {
+        "status": "completed",
         "release_results": release_results,
         "current_stage": "release",
         "stage_history": [{"stage": "release", "status": "completed"}],

@@ -34,6 +34,15 @@ async def trigger_pipeline(cr: RawChangeRequest, request: Request) -> dict:
 
     cr_id = f"CR-{uuid.uuid4().hex[:8]}"
     config_snapshot = get_config_snapshot()
+    if cr.agent_model:
+        config_snapshot["pipeline"]["default_model"] = cr.agent_model
+        # When switching model families, override explore/plan models too so
+        # the entire pipeline uses the same provider (avoids missing API key
+        # errors when e.g. only a Google key is configured).
+        if cr.agent_model.startswith("gemini-"):
+            config_snapshot["pipeline"]["explore_model"] = cr.agent_model
+            config_snapshot["pipeline"]["plan_model"] = cr.agent_model
+    default_branch = cr.repo_default_branch
 
     # Apply model override if specified in CR
     if cr.model:
