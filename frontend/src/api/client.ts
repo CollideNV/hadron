@@ -1,4 +1,4 @@
-import type { CRRun, RawChangeRequest } from "./types";
+import type { CRRun, CRRunDetail, RawChangeRequest } from "./types";
 
 const BASE = "/api";
 
@@ -18,8 +18,8 @@ export async function listPipelines(): Promise<CRRun[]> {
   return fetchJSON<CRRun[]>("/pipeline/list");
 }
 
-export async function getPipelineStatus(crId: string): Promise<CRRun> {
-  return fetchJSON<CRRun>(`/pipeline/${crId}`);
+export async function getPipelineStatus(crId: string): Promise<CRRunDetail> {
+  return fetchJSON<CRRunDetail>(`/pipeline/${crId}`);
 }
 
 export async function triggerPipeline(

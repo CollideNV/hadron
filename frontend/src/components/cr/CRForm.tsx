@@ -14,18 +14,14 @@ export default function CRForm({ onSubmit, submitting }: CRFormProps) {
   const [description, setDescription] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
   const [branch, setBranch] = useState("main");
-  const [testCommand, setTestCommand] = useState("pytest");
-  const [language, setLanguage] = useState("python");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSubmit({
       title,
       description,
-      repo_url: repoUrl || undefined,
+      repo_urls: repoUrl ? [repoUrl] : undefined,
       repo_default_branch: branch,
-      test_command: testCommand,
-      language,
     });
   };
 
@@ -66,7 +62,7 @@ export default function CRForm({ onSubmit, submitting }: CRFormProps) {
             type="text"
             value={repoUrl}
             onChange={(e) => setRepoUrl(e.target.value)}
-            placeholder="/path/to/repo or https://..."
+            placeholder="https://github.com/org/repo.git"
             className={inputClass}
           />
         </div>
@@ -80,36 +76,6 @@ export default function CRForm({ onSubmit, submitting }: CRFormProps) {
             onChange={(e) => setBranch(e.target.value)}
             className={inputClass}
           />
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-xs font-medium text-text-muted mb-1.5">
-            Test Command
-          </label>
-          <input
-            type="text"
-            value={testCommand}
-            onChange={(e) => setTestCommand(e.target.value)}
-            className={inputClass}
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-text-muted mb-1.5">
-            Language
-          </label>
-          <select
-            value={language}
-            onChange={(e) => setLanguage(e.target.value)}
-            className={inputClass}
-          >
-            <option value="python">Python</option>
-            <option value="typescript">TypeScript</option>
-            <option value="javascript">JavaScript</option>
-            <option value="go">Go</option>
-            <option value="java">Java</option>
-            <option value="rust">Rust</option>
-          </select>
         </div>
       </div>
       <button

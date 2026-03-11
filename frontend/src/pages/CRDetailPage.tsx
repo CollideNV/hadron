@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { getPipelineStatus } from "../api/client";
-import type { CRRun } from "../api/types";
+import type { CRRunDetail } from "../api/types";
 import { useEventStream } from "../hooks/useEventStream";
 import CRStatusBadge from "../components/cr/CRStatusBadge";
 import CostTracker from "../components/cost/CostTracker";
@@ -19,7 +19,7 @@ type BottomTab = "tests" | "findings" | "logs";
 
 export default function CRDetailPage() {
   const { crId } = useParams<{ crId: string }>();
-  const [crRun, setCrRun] = useState<CRRun | null>(null);
+  const [crRun, setCrRun] = useState<CRRunDetail | null>(null);
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
   const [bottomTab, setBottomTab] = useState<BottomTab>("tests");
   const stream = useEventStream(crId);
