@@ -6,65 +6,16 @@ import asyncio
 import json
 import logging
 import os
-import re
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, AsyncIterator
 
 import anthropic
 
 from hadron.agent.base import AgentEvent, AgentResult, AgentTask
-from hadron.security.allowlists import (
-    AGENT_COMMAND_ALLOWLIST,
-    DANGEROUS_SHELL_CHARS,
-    DANGEROUS_SHELL_PATTERNS,
-    FIND_DANGEROUS_FLAGS,
-)
-
-
-def _validate_agent_command(cmd: str) -> bool:
-    """Check whether a command from an agent is allowed.
-
-    Blocks shell metacharacters and unknown command prefixes.
-    Additional restrictions apply to commands like ``find`` that have
-    dangerous flags (``-exec``, ``-delete``).
-    """
-    # Reject obviously dangerous patterns
-    if any(c in cmd for c in DANGEROUS_SHELL_CHARS):
-        return False
-    for pat in DANGEROUS_SHELL_PATTERNS:
-        if pat in cmd:
-            return False
-    # Check against allowlist
-    if not any(p.match(cmd) for p in AGENT_COMMAND_ALLOWLIST):
-        return False
-    # Extra guard: reject dangerous find flags even if prefix matches
-    if cmd.startswith("find "):
-        if any(flag in cmd for flag in FIND_DANGEROUS_FLAGS):
-            return False
-    return True
+from hadron.agent.phases import PhasePromptBuilder
+from hadron.agent.tools import execute_tool, make_tools
 
 logger = logging.getLogger(__name__)
-
-# Env var prefixes / keys stripped from agent subprocess environments.
-_SCRUB_PREFIXES = ("HADRON_", "ANTHROPIC_", "OPENAI_", "GITHUB_", "AZURE_", "AWS_")
-_SCRUB_KEYS = frozenset({
-    "DATABASE_URL", "REDIS_URL", "SECRET_KEY", "API_KEY",
-    "GH_TOKEN", "GITLAB_TOKEN", "BITBUCKET_TOKEN",
-})
-
-
-def _scrubbed_env() -> dict[str, str]:
-    """Return a copy of os.environ with secrets stripped.
-
-    Keeps PATH and other non-sensitive vars so tools like git/pytest still work.
-    """
-    return {
-        k: v
-        for k, v in os.environ.items()
-        if k not in _SCRUB_KEYS and not k.startswith(_SCRUB_PREFIXES)
-    }
-
 
 # Per-model cost per million tokens: (input, output)
 _MODEL_COSTS: dict[str, tuple[float, float]] = {
@@ -79,8 +30,7 @@ _DEFAULT_COST = (3.00, 15.00)
 _RATE_LIMIT_MAX_RETRIES = 5
 _RATE_LIMIT_BASE_WAIT = 60  # seconds
 
-# Truncation limits for tool results and command output
-_MAX_COMMAND_OUTPUT_CHARS = 50_000
+# Truncation limits for tool result events and callbacks
 _MAX_TOOL_RESULT_EVENT_CHARS = 10_000
 _MAX_TOOL_RESULT_CALLBACK_CHARS = 5_000
 
@@ -89,149 +39,6 @@ def _compute_model_cost(model: str, input_tokens: int, output_tokens: int) -> fl
     """Compute USD cost for a given model and token counts."""
     cost_in, cost_out = _MODEL_COSTS.get(model, _DEFAULT_COST)
     return (input_tokens * cost_in + output_tokens * cost_out) / 1_000_000
-
-
-def _make_tools(allowed: list[str], working_dir: str | None) -> list[dict]:
-    """Build Anthropic tool definitions for the allowed tool set."""
-    all_tools = {
-        "read_file": {
-            "name": "read_file",
-            "description": "Read the contents of a file. Path is relative to the working directory.",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "File path to read"},
-                },
-                "required": ["path"],
-            },
-        },
-        "write_file": {
-            "name": "write_file",
-            "description": "Write content to a file. Creates parent directories if needed. Path is relative to the working directory.",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "File path to write"},
-                    "content": {"type": "string", "description": "File content"},
-                },
-                "required": ["path", "content"],
-            },
-        },
-        "list_directory": {
-            "name": "list_directory",
-            "description": "List files and directories. Path is relative to the working directory.",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Directory path (default: '.')",
-                        "default": ".",
-                    },
-                },
-            },
-        },
-        "run_command": {
-            "name": "run_command",
-            "description": "Run a shell command in the working directory. Use for running tests, linting, etc.",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "command": {"type": "string", "description": "Shell command to execute"},
-                },
-                "required": ["command"],
-            },
-        },
-    }
-    return [all_tools[name] for name in allowed if name in all_tools]
-
-
-def _safe_resolve(working_dir: str, user_path: str) -> Path:
-    """Resolve a user-provided path and ensure it stays within working_dir.
-
-    Raises ValueError if the resolved path escapes the working directory,
-    or if any component of the path is a symlink pointing outside the root.
-    """
-    root = Path(working_dir).resolve()
-    resolved = (root / user_path).resolve()
-    if not resolved.is_relative_to(root):
-        raise ValueError(
-            f"Path escapes working directory: {user_path}"
-        )
-    # Walk each ancestor to detect symlinks that point outside the root.
-    # This prevents an agent from creating a symlink inside the worktree
-    # that targets a file outside it (symlink traversal attack).
-    current = root
-    for part in resolved.relative_to(root).parts:
-        current = current / part
-        if current.is_symlink():
-            link_target = current.resolve()
-            if not link_target.is_relative_to(root):
-                raise ValueError(
-                    f"Symlink escapes working directory: {user_path} -> {link_target}"
-                )
-    return resolved
-
-
-async def _execute_tool(
-    name: str, input_data: dict[str, Any], working_dir: str
-) -> str:
-    """Execute a tool call and return the result string."""
-    try:
-        if name == "read_file":
-            path = _safe_resolve(working_dir, input_data["path"])
-            if not path.is_file():
-                return f"Error: File not found: {input_data['path']}"
-            content = path.read_text()
-            if len(content) > 100_000:
-                return content[:100_000] + "\n... (truncated)"
-            return content
-
-        elif name == "write_file":
-            path = _safe_resolve(working_dir, input_data["path"])
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(input_data["content"])
-            return f"File written: {input_data['path']}"
-
-        elif name == "list_directory":
-            dir_path = _safe_resolve(working_dir, input_data.get("path", "."))
-            if not dir_path.is_dir():
-                return f"Error: Not a directory: {input_data.get('path', '.')}"
-            entries = sorted(dir_path.iterdir())
-            lines = []
-            for e in entries[:200]:
-                prefix = "d " if e.is_dir() else "f "
-                lines.append(f"{prefix}{e.name}")
-            return "\n".join(lines) if lines else "(empty directory)"
-
-        elif name == "run_command":
-            cmd = input_data["command"]
-            if not _validate_agent_command(cmd):
-                return f"Error: Command rejected by safety filter: {cmd!r}"
-            proc = await asyncio.create_subprocess_shell(
-                cmd,
-                cwd=working_dir,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                env={**_scrubbed_env(), "PYTHONDONTWRITEBYTECODE": "1"},
-            )
-            try:
-                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
-            except asyncio.TimeoutError:
-                proc.kill()
-                await proc.wait()
-                return "Error: Command timed out after 120s (process killed)"
-            output = stdout.decode(errors="replace")
-            if len(output) > _MAX_COMMAND_OUTPUT_CHARS:
-                output = output[:_MAX_COMMAND_OUTPUT_CHARS] + "\n... (truncated)"
-            return f"Exit code: {proc.returncode}\n{output}"
-
-        else:
-            return f"Error: Unknown tool: {name}"
-    except ValueError as e:
-        return f"Error: {e}"
-    except Exception as e:
-        return f"Error executing {name}: {e}"
 
 
 def _serialize_messages(msgs: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -288,6 +95,7 @@ class ClaudeAgentBackend:
         self._client = anthropic.AsyncAnthropic(
             api_key=api_key or os.environ.get("ANTHROPIC_API_KEY", ""),
         )
+        self._prompts = PhasePromptBuilder()
 
     async def execute(self, task: AgentTask) -> AgentResult:
         """Run the agent's tool-use loop to completion.
@@ -317,9 +125,9 @@ class ClaudeAgentBackend:
 
             explore_result = await self._run_tool_loop(
                 model=task.explore_model,
-                system_prompt=self._build_explore_system(task),
+                system_prompt=self._prompts.build_explore_system(task),
                 user_prompt=task.user_prompt,
-                tools=_make_tools(task.explore_tools, task.working_directory),
+                tools=make_tools(task.explore_tools, task.working_directory),
                 working_dir=task.working_directory or ".",
                 max_rounds=task.explore_max_rounds,
                 max_tokens=task.max_tokens,
@@ -359,8 +167,8 @@ class ClaudeAgentBackend:
 
             plan_result = await self._run_plan_call(
                 model=task.plan_model,
-                system_prompt=self._build_plan_system(task),
-                user_prompt=self._build_plan_user(task, exploration_summary),
+                system_prompt=self._prompts.build_plan_system(task),
+                user_prompt=self._prompts.build_plan_user(task, exploration_summary),
                 max_tokens=task.max_tokens,
             )
             plan_text = plan_result.output
@@ -389,12 +197,12 @@ class ClaudeAgentBackend:
                 "phase": "act", "model": task.model,
             })
 
-        act_user_prompt = self._build_act_user(task, exploration_summary, plan_text)
+        act_user_prompt = self._prompts.build_act_user(task, exploration_summary, plan_text)
         act_result = await self._run_tool_loop(
             model=task.model,
             system_prompt=task.system_prompt,
             user_prompt=act_user_prompt,
-            tools=_make_tools(task.allowed_tools, task.working_directory),
+            tools=make_tools(task.allowed_tools, task.working_directory),
             working_dir=task.working_directory or ".",
             max_rounds=task.max_tool_rounds,
             max_tokens=task.max_tokens,
@@ -428,61 +236,6 @@ class ClaudeAgentBackend:
             conversation=all_conversations,
             round_count=total_rounds,
         )
-
-    # ------------------------------------------------------------------
-    # Phase helpers
-    # ------------------------------------------------------------------
-
-    def _build_explore_system(self, task: AgentTask) -> str:
-        """Build the system prompt for the explore phase."""
-        from hadron.agent.prompt import PromptComposer, _load_template
-        try:
-            explorer_template = _load_template("explorer")
-        except FileNotFoundError:
-            explorer_template = (
-                "You are a codebase explorer. Use list_directory and read_file "
-                "to understand the project structure. Produce a structured summary. "
-                "Do NOT write files or run commands."
-            )
-        return explorer_template
-
-    def _build_plan_system(self, task: AgentTask) -> str:
-        """Build the system prompt for the plan phase."""
-        from hadron.agent.prompt import _load_template
-        try:
-            planner_template = _load_template("planner")
-        except FileNotFoundError:
-            planner_template = (
-                "You are an implementation planner. Analyse the exploration results "
-                "and produce a concrete implementation plan."
-            )
-        # Include the original role system prompt as context for the planner
-        return f"{planner_template}\n\n## Original Role Instructions\n\n{task.system_prompt}"
-
-    def _build_plan_user(self, task: AgentTask, exploration_summary: str) -> str:
-        """Build the user prompt for the plan phase."""
-        parts = []
-        if exploration_summary:
-            parts.append(f"## Exploration Summary\n\n{exploration_summary}")
-        parts.append(f"## Original Task\n\n{task.user_prompt}")
-        return "\n\n".join(parts)
-
-    def _build_act_user(self, task: AgentTask, exploration_summary: str, plan_text: str) -> str:
-        """Build the user prompt for the act phase.
-
-        If no explore/plan phases ran, returns the original user prompt unchanged
-        for backwards compatibility.
-        """
-        if not exploration_summary and not plan_text:
-            return task.user_prompt
-
-        parts = []
-        if plan_text:
-            parts.append(f"## Implementation Plan\n\n{plan_text}")
-        if exploration_summary:
-            parts.append(f"## Codebase Context (from exploration)\n\n{exploration_summary}")
-        parts.append(f"## Original Task\n\n{task.user_prompt}")
-        return "\n\n".join(parts)
 
     # ------------------------------------------------------------------
     # Core API call helpers
@@ -572,7 +325,7 @@ class ClaudeAgentBackend:
                         "tool": tu.name, "input": tu.input, "round": round_num,
                     })
 
-                result_text = await _execute_tool(tu.name, tu.input, working_dir)
+                result_text = await execute_tool(tu.name, tu.input, working_dir)
 
                 if on_event:
                     await on_event("tool_result", {
@@ -674,7 +427,7 @@ class ClaudeAgentBackend:
 
     async def stream(self, task: AgentTask) -> AsyncIterator[AgentEvent]:
         """Stream agent events. Yields events as they happen."""
-        tools = _make_tools(task.allowed_tools, task.working_directory)
+        tools = make_tools(task.allowed_tools, task.working_directory)
         messages: list[dict[str, Any]] = [{"role": "user", "content": task.user_prompt}]
 
         for round_num in range(task.max_tool_rounds):
@@ -721,7 +474,7 @@ class ClaudeAgentBackend:
             messages.append({"role": "assistant", "content": response.content})
             tool_results = []
             for tu in tool_uses:
-                result_text = await _execute_tool(
+                result_text = await execute_tool(
                     tu.name, tu.input, task.working_directory or "."
                 )
                 tool_results.append({

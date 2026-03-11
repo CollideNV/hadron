@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from hadron.agent.claude import _execute_tool, _safe_resolve, _scrubbed_env
+from hadron.agent.tools import execute_tool as _execute_tool, safe_resolve as _safe_resolve, scrubbed_env as _scrubbed_env
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +173,7 @@ class TestRunCommand:
         from unittest.mock import patch
 
         # Use a very short timeout to trigger it in tests
-        with patch("hadron.agent.claude.asyncio.wait_for", side_effect=asyncio.TimeoutError):
+        with patch("hadron.agent.tools.asyncio.wait_for", side_effect=asyncio.TimeoutError):
             # We need to also mock create_subprocess_shell to give us a controllable process
             from unittest.mock import AsyncMock, MagicMock
 
@@ -181,7 +181,7 @@ class TestRunCommand:
             mock_proc.kill = MagicMock()
             mock_proc.wait = AsyncMock()
 
-            with patch("hadron.agent.claude.asyncio.create_subprocess_shell", return_value=mock_proc):
+            with patch("hadron.agent.tools.asyncio.create_subprocess_shell", return_value=mock_proc):
                 result = await _execute_tool(
                     "run_command", {"command": "sleep 999"}, str(tmp_workdir)
                 )
@@ -267,7 +267,7 @@ class TestUnknownTool:
 # Agent command allowlist (_validate_agent_command)
 # ---------------------------------------------------------------------------
 
-from hadron.agent.claude import _validate_agent_command
+from hadron.agent.tools import validate_agent_command as _validate_agent_command
 
 
 class TestAgentCommandAllowlist:
