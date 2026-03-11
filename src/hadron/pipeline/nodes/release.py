@@ -2,34 +2,22 @@
 
 from __future__ import annotations
 
-from langgraph.types import RunnableConfig
-
 import logging
 from typing import Any
 
 from hadron.config.defaults import BRANCH_PREFIX
-from hadron.git.worktree import WorktreeManager
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
-from hadron.pipeline.nodes import NodeContext, RepoInfo
+from hadron.pipeline.nodes import NodeContext, RepoInfo, pipeline_node
+from hadron.pipeline.nodes.cr_format import format_criteria
 
 logger = logging.getLogger(__name__)
 
 
-def _join_criteria(criteria: list[str]) -> str:
-    return "\n".join(f"- {c}" for c in criteria)
-
-
-async def release_node(state: PipelineState, config: RunnableConfig) -> dict[str, Any]:
+@pipeline_node("release")
+async def release_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[str, Any]:
     """Ensure branch is pushed and generate PR description summary."""
-    ctx = NodeContext.from_config(config)
-    cr_id = state["cr_id"]
-
-    await ctx.event_bus.emit(PipelineEvent(
-            cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="release"
-        ))
-
-    wm = WorktreeManager(ctx.workspace_dir)
+    wm = ctx.worktree_manager
     structured_cr = state.get("structured_cr", {})
     ri = RepoInfo.from_state(state)
 
@@ -46,7 +34,7 @@ async def release_node(state: PipelineState, config: RunnableConfig) -> dict[str
 {structured_cr.get('description', 'N/A')}
 
 ### Acceptance Criteria
-{_join_criteria(structured_cr.get('acceptance_criteria', []))}
+{format_criteria(structured_cr.get('acceptance_criteria', []))}
 
 ### Pipeline Summary
 - **CR ID:** {cr_id}
@@ -73,9 +61,9 @@ async def release_node(state: PipelineState, config: RunnableConfig) -> dict[str
     }]
 
     await ctx.event_bus.emit(PipelineEvent(
-            cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="release",
-            data={"repos": [r["repo_name"] for r in release_results]},
-        ))
+        cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="release",
+        data={"repos": [r["repo_name"] for r in release_results]},
+    ))
 
     return {
         "release_results": release_results,

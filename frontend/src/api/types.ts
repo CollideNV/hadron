@@ -1,3 +1,13 @@
+export interface RepoRun {
+  repo_name: string;
+  repo_url: string;
+  status: string;
+  branch_name: string | null;
+  pr_url: string | null;
+  cost_usd: number;
+  error: string | null;
+}
+
 export interface CRRun {
   cr_id: string;
   title: string;
@@ -8,6 +18,10 @@ export interface CRRun {
   error: string | null;
   created_at: string | null;
   updated_at: string | null;
+}
+
+export interface CRRunDetail extends CRRun {
+  repos: RepoRun[];
 }
 
 export interface PipelineEvent {
@@ -22,7 +36,7 @@ export interface RawChangeRequest {
   title: string;
   description: string;
   source?: string;
-  repo_url?: string;
+  repo_urls?: string[];
   repo_default_branch?: string;
   test_command?: string;
   language?: string;

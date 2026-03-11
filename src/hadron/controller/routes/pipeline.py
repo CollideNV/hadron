@@ -4,13 +4,23 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy import select, update
 
+from hadron.controller.dependencies import (
+    get_event_bus,
+    get_intervention_mgr,
+    get_job_spawner,
+    get_redis,
+    get_session_factory,
+)
 from hadron.db.models import CRRun, RepoRun
+from hadron.events.bus import EventBus
+from hadron.events.interventions import InterventionManager
 from hadron.models.events import EventType, PipelineEvent
 
 logger = logging.getLogger(__name__)
@@ -25,9 +35,11 @@ def _extract_title(cr_run: CRRun) -> str:
 
 
 @router.get("/pipeline/list")
-async def list_pipelines(request: Request) -> list[dict]:
+async def list_pipelines(
+    session_factory: Any = Depends(get_session_factory),
+) -> list[dict]:
     """List all pipeline runs, ordered by creation time (newest first)."""
-    async with request.app.state.session_factory() as session:
+    async with session_factory() as session:
         result = await session.execute(
             select(CRRun).order_by(CRRun.created_at.desc()).limit(100)
         )
@@ -49,9 +61,12 @@ async def list_pipelines(request: Request) -> list[dict]:
 
 
 @router.get("/pipeline/{cr_id}")
-async def get_pipeline_status(cr_id: str, request: Request) -> dict:
+async def get_pipeline_status(
+    cr_id: str,
+    session_factory: Any = Depends(get_session_factory),
+) -> dict:
     """Get the current status of a pipeline run, including per-repo worker status."""
-    async with request.app.state.session_factory() as session:
+    async with session_factory() as session:
         result = await session.execute(select(CRRun).where(CRRun.cr_id == cr_id))
         cr_run = result.scalar_one_or_none()
         if not cr_run:
@@ -92,15 +107,19 @@ class InterventionRequest(BaseModel):
 
 
 @router.post("/pipeline/{cr_id}/intervene")
-async def set_intervention(cr_id: str, body: InterventionRequest, request: Request) -> dict:
+async def set_intervention(
+    cr_id: str,
+    body: InterventionRequest,
+    session_factory: Any = Depends(get_session_factory),
+    intervention_mgr: InterventionManager = Depends(get_intervention_mgr),
+) -> dict:
     """Set a human intervention for a running pipeline."""
-    # Verify CR exists
-    async with request.app.state.session_factory() as session:
+    async with session_factory() as session:
         result = await session.execute(select(CRRun).where(CRRun.cr_id == cr_id))
         if not result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="CR not found")
 
-    await request.app.state.intervention_mgr.set_intervention(cr_id, body.instructions)
+    await intervention_mgr.set_intervention(cr_id, body.instructions)
     return {"status": "intervention_set", "cr_id": cr_id}
 
 
@@ -109,9 +128,16 @@ class ResumeRequest(BaseModel):
 
 
 @router.post("/pipeline/{cr_id}/resume")
-async def resume_pipeline(cr_id: str, body: ResumeRequest, request: Request) -> dict:
+async def resume_pipeline(
+    cr_id: str,
+    body: ResumeRequest,
+    session_factory: Any = Depends(get_session_factory),
+    redis: Any = Depends(get_redis),
+    spawner: Any = Depends(get_job_spawner),
+    event_bus: EventBus = Depends(get_event_bus),
+) -> dict:
     """Resume a paused or failed pipeline, optionally overriding state."""
-    async with request.app.state.session_factory() as session:
+    async with session_factory() as session:
         result = await session.execute(select(CRRun).where(CRRun.cr_id == cr_id))
         cr_run = result.scalar_one_or_none()
         if not cr_run:
@@ -123,20 +149,19 @@ async def resume_pipeline(cr_id: str, body: ResumeRequest, request: Request) -> 
             )
 
     # Store overrides in Redis with 1h TTL so the worker can pick them up
-    redis = request.app.state.redis
     if body.state_overrides:
         override_key = f"hadron:cr:{cr_id}:resume_overrides"
         await redis.set(override_key, json.dumps(body.state_overrides), ex=3600)
 
     # Update DB status to running
-    async with request.app.state.session_factory() as session:
+    async with session_factory() as session:
         await session.execute(
             update(CRRun).where(CRRun.cr_id == cr_id).values(status="running", error=None)
         )
         await session.commit()
 
     # Respawn workers for repos that are paused or failed
-    async with request.app.state.session_factory() as session:
+    async with session_factory() as session:
         repo_result = await session.execute(
             select(RepoRun).where(
                 RepoRun.cr_id == cr_id,
@@ -146,12 +171,12 @@ async def resume_pipeline(cr_id: str, body: ResumeRequest, request: Request) -> 
         repos_to_resume = repo_result.scalars().all()
 
     for rr in repos_to_resume:
-        await request.app.state.job_spawner.spawn(
+        await spawner.spawn(
             cr_id, repo_url=rr.repo_url, repo_name=rr.repo_name,
         )
 
     # Emit event so dashboard updates
-    await request.app.state.event_bus.emit(PipelineEvent(
+    await event_bus.emit(PipelineEvent(
         cr_id=cr_id,
         event_type=EventType.PIPELINE_RESUMED,
         stage="controller",
@@ -167,24 +192,32 @@ class NudgeRequest(BaseModel):
 
 
 @router.post("/pipeline/{cr_id}/nudge")
-async def send_nudge(cr_id: str, body: NudgeRequest, request: Request) -> dict:
+async def send_nudge(
+    cr_id: str,
+    body: NudgeRequest,
+    session_factory: Any = Depends(get_session_factory),
+    intervention_mgr: InterventionManager = Depends(get_intervention_mgr),
+) -> dict:
     """Send a nudge to a specific agent role in a running pipeline."""
-    async with request.app.state.session_factory() as session:
+    async with session_factory() as session:
         result = await session.execute(select(CRRun).where(CRRun.cr_id == cr_id))
         if not result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="CR not found")
 
-    await request.app.state.intervention_mgr.set_nudge(cr_id, body.role, body.message)
+    await intervention_mgr.set_nudge(cr_id, body.role, body.message)
     return {"status": "nudge_set", "cr_id": cr_id, "role": body.role}
 
 
 @router.get("/pipeline/{cr_id}/conversation")
-async def get_conversation(cr_id: str, key: str, request: Request) -> list:
+async def get_conversation(
+    cr_id: str,
+    key: str,
+    redis: Any = Depends(get_redis),
+) -> list:
     """Retrieve a stored agent conversation from Redis."""
     if not key.startswith(f"hadron:cr:{cr_id}:conv:"):
         raise HTTPException(status_code=400, detail="Invalid conversation key")
 
-    redis: object = request.app.state.redis
     data = await redis.get(key)
     if data is None:
         raise HTTPException(status_code=404, detail="Conversation not found or expired")
@@ -197,9 +230,11 @@ async def get_conversation(cr_id: str, key: str, request: Request) -> list:
 
 
 @router.get("/pipeline/{cr_id}/logs")
-async def get_worker_logs(cr_id: str, request: Request) -> PlainTextResponse:
+async def get_worker_logs(
+    cr_id: str,
+    redis: Any = Depends(get_redis),
+) -> PlainTextResponse:
     """Retrieve worker logs for a CR."""
-    redis: object = request.app.state.redis
     key = f"hadron:cr:{cr_id}:worker_log"
     data = await redis.get(key)
     if data is None:

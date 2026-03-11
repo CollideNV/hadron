@@ -8,6 +8,37 @@ Hadron is an AI-powered SDLC pipeline by Collide. It transforms change requests 
 
 **Status:** Pre-implementation. The canonical architecture document is `adr/architecture.md` (v5.0, Feb 2026). All design decisions, stage details, and implementation roadmap live there.
 
+## Project Map
+
+```
+hadron/
+├── src/hadron/              Python backend (pip-installable, src-layout)
+│   ├── agent/               Agent backend, tool execution, prompt composition
+│   ├── config/              Bootstrap config, defaults, limits
+│   ├── controller/          FastAPI app, REST routes, job spawning
+│   ├── db/                  SQLAlchemy models, Alembic migrations
+│   ├── events/              Redis event bus, intervention manager
+│   ├── git/                 WorktreeManager, URL parsing, repo detection
+│   ├── models/              PipelineState, CR models, events
+│   ├── pipeline/            LangGraph graph, stage nodes, edges
+│   ├── prompts/v1/          Markdown prompt templates per agent role
+│   ├── security/            Command validators, diff scope analysis
+│   ├── utils/               Shared utilities (text truncation)
+│   └── worker/              CLI entry point for pipeline execution
+│
+├── frontend/                React 19 + Vite + TypeScript dashboard
+│   ├── src/api/             API client, SSE stream, TypeScript types
+│   ├── src/components/      UI components (pipeline, agents, events, etc.)
+│   ├── src/hooks/           Custom React hooks
+│   └── src/pages/           Route pages (CR list, new CR, CR detail)
+│
+├── tests/                   Backend pytest suite
+├── adr/                     Architecture Decision Records
+├── k8s/                     Kubernetes manifests (base + local overlay)
+├── scripts/                 Dev scripts (build, deploy, test setup)
+└── test-repo/               Minimal FastAPI app for E2E testing
+```
+
 ## Architecture (High Level)
 
 **Pluggable Head → Fixed Core → Pluggable Tail**

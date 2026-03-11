@@ -23,7 +23,7 @@ export default function CRForm({ onSubmit, submitting }: CRFormProps) {
     onSubmit({
       title,
       description,
-      repo_url: repoUrl || undefined,
+      repo_urls: repoUrl ? [repoUrl] : undefined,
       repo_default_branch: branch,
       test_command: testCommand,
       language,
@@ -68,7 +68,7 @@ export default function CRForm({ onSubmit, submitting }: CRFormProps) {
             type="text"
             value={repoUrl}
             onChange={(e) => setRepoUrl(e.target.value)}
-            placeholder="/path/to/repo or https://..."
+            placeholder="https://github.com/org/repo.git"
             className={inputClass}
           />
         </div>

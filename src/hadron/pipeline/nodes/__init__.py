@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import time
@@ -11,8 +12,11 @@ from typing import Any, Callable, Awaitable
 
 import redis.asyncio as aioredis
 
-from hadron.agent.base import AgentResult, AgentTask, OnAgentEvent, OnToolCall
+from hadron.agent.base import AgentCallbacks, AgentResult, AgentTask, OnAgentEvent, OnToolCall, PhaseConfig
+from hadron.config.limits import MAX_CONTEXT_CHARS
+from hadron.events.bus import EventBus
 from hadron.models.events import EventType, PipelineEvent
+from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes.context import NodeContext
 
 # Re-export NodeContext so nodes can do: from hadron.pipeline.nodes import NodeContext
@@ -21,6 +25,7 @@ __all__ = [
     "RepoInfo",
     "AgentRunResult",
     "extract_json",
+    "pipeline_node",
     "run_agent",
     "gather_files",
     "make_tool_call_emitter",
@@ -31,6 +36,64 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Decorator — eliminates boilerplate shared by every pipeline node
+# ---------------------------------------------------------------------------
+
+
+def pipeline_node(stage: str) -> Callable:
+    """Decorator that handles common pipeline node ceremony.
+
+    Wraps a node function to automatically:
+      1. Extract ``NodeContext`` and ``cr_id`` from LangGraph's state/config.
+      2. Emit a ``STAGE_ENTERED`` event.
+      3. Catch unhandled exceptions → log, emit error event, return *paused*.
+
+    The decorated function's signature changes from
+    ``(state, config) -> dict`` to ``(state, ctx, cr_id) -> dict``,
+    while the outer LangGraph-facing signature stays ``(state, config)``.
+    """
+
+    def decorator(
+        fn: Callable[..., Awaitable[dict[str, Any]]],
+    ) -> Callable[..., Awaitable[dict[str, Any]]]:
+        @functools.wraps(fn)
+        async def wrapper(
+            state: PipelineState, config: Any,
+        ) -> dict[str, Any]:
+            ctx = NodeContext.from_config(config)
+            cr_id = state["cr_id"]
+
+            await ctx.event_bus.emit(PipelineEvent(
+                cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage=stage,
+            ))
+
+            try:
+                return await fn(state, ctx, cr_id)
+            except Exception as exc:
+                logger.exception(
+                    "%s node crashed (CR %s): %s", stage, cr_id, exc,
+                )
+                await ctx.event_bus.emit(PipelineEvent(
+                    cr_id=cr_id,
+                    event_type=EventType.STAGE_COMPLETED,
+                    stage=stage,
+                    data={"error": str(exc)},
+                ))
+                return {
+                    "current_stage": stage,
+                    "status": "paused",
+                    "error": f"{stage} node failed: {exc}",
+                    "stage_history": [
+                        {"stage": stage, "status": "error", "error": str(exc)},
+                    ],
+                }
+
+        return wrapper
+
+    return decorator
 
 
 @dataclass
@@ -49,8 +112,14 @@ class RepoInfo:
     @classmethod
     def from_state(cls, state: dict[str, Any]) -> RepoInfo:
         repo = state.get("repo", {})
+        repo_name = repo.get("repo_name", "")
+        if not repo_name:
+            raise ValueError(
+                "PipelineState['repo']['repo_name'] is missing or empty — "
+                "cannot proceed without a repo name"
+            )
         return cls(
-            repo_name=repo.get("repo_name", ""),
+            repo_name=repo_name,
             worktree_path=repo.get("worktree_path", ""),
             default_branch=repo.get("default_branch", "main"),
             test_command=(repo.get("test_commands") or ["pytest"])[0],
@@ -99,9 +168,6 @@ def extract_json(text: str, *, context: str = "") -> dict[str, Any] | None:
 # Shared file gathering utility (moved from tdd.py)
 # ---------------------------------------------------------------------------
 
-MAX_CONTEXT_CHARS = 24_000  # ~6k tokens — keep injected context lean
-
-
 def gather_files(worktree: str, pattern: str) -> str:
     """Read files matching glob pattern and return formatted content."""
     base = Path(worktree)
@@ -127,7 +193,7 @@ def gather_files(worktree: str, pattern: str) -> str:
 
 
 def make_tool_call_emitter(
-    event_bus: Any, cr_id: str, stage: str, role: str, repo: str = "",
+    event_bus: EventBus, cr_id: str, stage: str, role: str, repo: str = "",
 ) -> OnToolCall:
     """Create an on_tool_call callback that emits AGENT_TOOL_CALL events."""
 
@@ -151,7 +217,7 @@ def make_tool_call_emitter(
 
 
 def make_agent_event_emitter(
-    event_bus: Any, cr_id: str, stage: str, role: str, repo: str = "",
+    event_bus: EventBus, cr_id: str, stage: str, role: str, repo: str = "",
 ) -> OnAgentEvent:
     """Create an on_event callback that emits rich agent events."""
 
@@ -244,7 +310,7 @@ async def store_conversation(
 
 
 async def emit_cost_update(
-    event_bus: Any, cr_id: str, stage: str, result: AgentResult, prior_cost: float = 0.0,
+    event_bus: EventBus, cr_id: str, stage: str, result: AgentResult, prior_cost: float = 0.0,
 ) -> None:
     """Emit a COST_UPDATE event after an agent execution."""
     await event_bus.emit(PipelineEvent(
@@ -313,11 +379,15 @@ async def run_agent(
         working_directory=working_directory,
         allowed_tools=allowed_tools,
         model=effective_model,
-        explore_model=effective_explore,
-        plan_model=effective_plan,
-        on_tool_call=make_tool_call_emitter(ctx.event_bus, cr_id, stage, role, repo_name),
-        on_event=make_agent_event_emitter(ctx.event_bus, cr_id, stage, role, repo_name),
-        nudge_poll=make_nudge_poller(ctx.redis, cr_id, role) if ctx.redis else None,
+        phases=PhaseConfig(
+            explore_model=effective_explore,
+            plan_model=effective_plan,
+        ),
+        callbacks=AgentCallbacks(
+            on_tool_call=make_tool_call_emitter(ctx.event_bus, cr_id, stage, role, repo_name),
+            on_event=make_agent_event_emitter(ctx.event_bus, cr_id, stage, role, repo_name),
+            nudge_poll=make_nudge_poller(ctx.redis, cr_id, role) if ctx.redis else None,
+        ),
     )
 
     await ctx.event_bus.emit(PipelineEvent(

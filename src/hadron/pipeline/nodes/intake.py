@@ -2,93 +2,76 @@
 
 from __future__ import annotations
 
-from langgraph.types import RunnableConfig
-
 import logging
 from typing import Any
 
 from hadron.agent.prompt import PromptComposer
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
-from hadron.pipeline.nodes import NodeContext, extract_json, run_agent
+from hadron.pipeline.nodes import NodeContext, extract_json, pipeline_node, run_agent
+from hadron.pipeline.nodes.cr_format import format_cr_section
 
 logger = logging.getLogger(__name__)
 
 
-async def intake_node(state: PipelineState, config: RunnableConfig) -> dict[str, Any]:
+@pipeline_node("intake")
+async def intake_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[str, Any]:
     """Parse raw CR text into a structured change request."""
-    ctx = NodeContext.from_config(config)
-    cr_id = state["cr_id"]
+    composer = PromptComposer()
+    system_prompt = composer.compose_system_prompt("intake_parser")
+    user_prompt = format_cr_section({
+        "title": state.get("raw_cr_title", ""),
+        "description": state.get("raw_cr_text", ""),
+    })
 
-    await ctx.event_bus.emit(PipelineEvent(
-        cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="intake"
-    ))
+    agent_run = await run_agent(
+        ctx,
+        role="intake_parser",
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        cr_id=cr_id,
+        stage="intake",
+        allowed_tools=[],
+        explore_model="",  # No explore/plan for intake
+        plan_model="",
+    )
+    result = agent_run.result
 
-    try:
-        composer = PromptComposer()
-        system_prompt = composer.compose_system_prompt("intake_parser")
-        user_prompt = f"# Change Request\n\n**Title:** {state.get('raw_cr_title', '')}\n\n**Description:**\n{state.get('raw_cr_text', '')}"
-
-        agent_run = await run_agent(
-            ctx,
-            role="intake_parser",
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            cr_id=cr_id,
-            stage="intake",
-            allowed_tools=[],
-            explore_model="",  # No explore/plan for intake
-            plan_model="",
-        )
-        result = agent_run.result
-
-        # Parse JSON from agent output
-        structured = extract_json(result.output, context="intake")
-        if structured is None:
-            # Per design principle: "pipeline never silently fails".
-            # Return a paused status so the human gets a decision screen
-            # instead of proceeding with degraded data.
-            return {
-                "structured_cr": {
-                    "title": state.get("raw_cr_title", ""),
-                    "description": state.get("raw_cr_text", ""),
-                    "acceptance_criteria": [],
-                    "affected_domains": [],
-                    "priority": "medium",
-                    "constraints": [],
-                    "risk_flags": ["intake_parse_failed"],
-                },
-                "current_stage": "intake",
-                "status": "paused",
-                "error": "Intake agent output was not valid JSON — human review required",
-                "cost_input_tokens": result.input_tokens,
-                "cost_output_tokens": result.output_tokens,
-                "cost_usd": result.cost_usd,
-                "stage_history": [{"stage": "intake", "status": "paused"}],
-            }
-
-        await ctx.event_bus.emit(PipelineEvent(
-            cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="intake",
-            data={"structured_cr": structured},
-        ))
-
+    # Parse JSON from agent output
+    structured = extract_json(result.output, context="intake")
+    if structured is None:
+        # Per design principle: "pipeline never silently fails".
+        # Return a paused status so the human gets a decision screen
+        # instead of proceeding with degraded data.
         return {
-            "structured_cr": structured,
+            "structured_cr": {
+                "title": state.get("raw_cr_title", ""),
+                "description": state.get("raw_cr_text", ""),
+                "acceptance_criteria": [],
+                "affected_domains": [],
+                "priority": "medium",
+                "constraints": [],
+                "risk_flags": ["intake_parse_failed"],
+            },
             "current_stage": "intake",
+            "status": "paused",
+            "error": "Intake agent output was not valid JSON — human review required",
             "cost_input_tokens": result.input_tokens,
             "cost_output_tokens": result.output_tokens,
             "cost_usd": result.cost_usd,
-            "stage_history": [{"stage": "intake", "status": "completed"}],
+            "stage_history": [{"stage": "intake", "status": "paused"}],
         }
-    except Exception as exc:
-        logger.exception("Intake node crashed (CR %s): %s", cr_id, exc)
-        await ctx.event_bus.emit(PipelineEvent(
-            cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="intake",
-            data={"error": str(exc)},
-        ))
-        return {
-            "current_stage": "intake",
-            "status": "paused",
-            "error": f"Intake node failed: {exc}",
-            "stage_history": [{"stage": "intake", "status": "error", "error": str(exc)}],
-        }
+
+    await ctx.event_bus.emit(PipelineEvent(
+        cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="intake",
+        data={"structured_cr": structured},
+    ))
+
+    return {
+        "structured_cr": structured,
+        "current_stage": "intake",
+        "cost_input_tokens": result.input_tokens,
+        "cost_output_tokens": result.output_tokens,
+        "cost_usd": result.cost_usd,
+        "stage_history": [{"stage": "intake", "status": "completed"}],
+    }

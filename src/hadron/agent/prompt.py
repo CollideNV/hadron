@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from hadron.utils.text import truncate
+
 logger = logging.getLogger(__name__)
 
 _PROMPTS_DIR = Path(__file__).parent.parent / "prompts" / "v1"
@@ -17,12 +19,6 @@ def _load_template(role: str) -> str:
     if not path.exists():
         raise FileNotFoundError(f"Prompt template not found: {path}")
     return path.read_text()
-
-
-def _truncate(text: str, max_chars: int) -> str:
-    if len(text) <= max_chars:
-        return text
-    return text[:max_chars] + "\n... (truncated)"
 
 
 class PromptComposer:
@@ -44,7 +40,7 @@ class PromptComposer:
         parts = [template]
 
         if repo_context:
-            context = _truncate(repo_context, _MAX_STATIC_CONTEXT_CHARS)
+            context = truncate(repo_context, _MAX_STATIC_CONTEXT_CHARS)
             parts.append(f"\n## Repository Context\n\n{context}")
 
         return "\n".join(parts)

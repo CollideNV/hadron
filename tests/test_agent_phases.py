@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from hadron.agent.base import AgentResult, AgentTask
+from hadron.agent.base import AgentCallbacks, AgentResult, AgentTask, PhaseConfig
 from hadron.agent.claude import (
     ClaudeAgentBackend,
     _MODEL_COSTS,
@@ -132,8 +132,10 @@ class TestPhaseSkipping:
                 system_prompt="You are a test agent.",
                 user_prompt="Do the thing.",
                 working_directory=str(tmp_workdir),
-                explore_model="",
-                plan_model="",
+                phases=PhaseConfig(
+                    explore_model="",
+                    plan_model="",
+                ),
             )
             result = await backend.execute(task)
 
@@ -159,8 +161,10 @@ class TestPhaseSkipping:
                 user_prompt="Task.",
                 working_directory=str(tmp_workdir),
                 model="claude-sonnet-4-20250514",
-                explore_model="",
-                plan_model="",
+                phases=PhaseConfig(
+                    explore_model="",
+                    plan_model="",
+                ),
             )
             result = await backend.execute(task)
 
@@ -192,8 +196,10 @@ class TestExplorePhase:
                 system_prompt="Write code.",
                 user_prompt="Implement feature X.",
                 working_directory=str(tmp_workdir),
-                explore_model="claude-haiku-4-5-20251001",
-                plan_model="",  # No plan phase
+                phases=PhaseConfig(
+                    explore_model="claude-haiku-4-5-20251001",
+                    plan_model="",  # No plan phase
+                ),
             )
             result = await backend.execute(task)
 
@@ -223,8 +229,10 @@ class TestExplorePhase:
                 system_prompt="Write code.",
                 user_prompt="Implement feature X.",
                 working_directory=str(tmp_workdir),
-                explore_model="claude-haiku-4-5-20251001",
-                plan_model="",
+                phases=PhaseConfig(
+                    explore_model="claude-haiku-4-5-20251001",
+                    plan_model="",
+                ),
             )
             result = await backend.execute(task)
 
@@ -262,8 +270,10 @@ class TestPlanPhase:
                 system_prompt="Write code.",
                 user_prompt="Implement feature X.",
                 working_directory=str(tmp_workdir),
-                explore_model="claude-haiku-4-5-20251001",
-                plan_model="claude-opus-4-20250514",
+                phases=PhaseConfig(
+                    explore_model="claude-haiku-4-5-20251001",
+                    plan_model="claude-opus-4-20250514",
+                ),
             )
             result = await backend.execute(task)
 
@@ -295,8 +305,10 @@ class TestPlanPhase:
                 system_prompt="Write code.",
                 user_prompt="Implement feature X.",
                 working_directory=str(tmp_workdir),
-                explore_model="claude-haiku-4-5-20251001",
-                plan_model="claude-opus-4-20250514",
+                phases=PhaseConfig(
+                    explore_model="claude-haiku-4-5-20251001",
+                    plan_model="claude-opus-4-20250514",
+                ),
             )
             await backend.execute(task)
 
@@ -326,8 +338,10 @@ class TestPlanPhase:
                 system_prompt="You are a code writer. Follow TDD.",
                 user_prompt="Task.",
                 working_directory=str(tmp_workdir),
-                explore_model="claude-haiku-4-5-20251001",
-                plan_model="claude-opus-4-20250514",
+                phases=PhaseConfig(
+                    explore_model="claude-haiku-4-5-20251001",
+                    plan_model="claude-opus-4-20250514",
+                ),
             )
             await backend.execute(task)
 
@@ -363,8 +377,10 @@ class TestActPhase:
                 system_prompt="Write code.",
                 user_prompt="Implement feature X.",
                 working_directory=str(tmp_workdir),
-                explore_model="claude-haiku-4-5-20251001",
-                plan_model="claude-opus-4-20250514",
+                phases=PhaseConfig(
+                    explore_model="claude-haiku-4-5-20251001",
+                    plan_model="claude-opus-4-20250514",
+                ),
             )
             result = await backend.execute(task)
 
@@ -397,8 +413,10 @@ class TestActPhase:
                 user_prompt="Task.",
                 working_directory=str(tmp_workdir),
                 model="claude-sonnet-4-20250514",
-                explore_model="claude-haiku-4-5-20251001",
-                plan_model="claude-opus-4-20250514",
+                phases=PhaseConfig(
+                    explore_model="claude-haiku-4-5-20251001",
+                    plan_model="claude-opus-4-20250514",
+                ),
             )
             await backend.execute(task)
 
@@ -434,8 +452,10 @@ class TestCostAggregation:
                 user_prompt="Task.",
                 working_directory=str(tmp_workdir),
                 model="claude-sonnet-4-20250514",
-                explore_model="claude-haiku-4-5-20251001",
-                plan_model="claude-opus-4-20250514",
+                phases=PhaseConfig(
+                    explore_model="claude-haiku-4-5-20251001",
+                    plan_model="claude-opus-4-20250514",
+                ),
             )
             result = await backend.execute(task)
 
@@ -483,9 +503,13 @@ class TestPhaseEvents:
                 user_prompt="Task.",
                 working_directory=str(tmp_workdir),
                 model="claude-sonnet-4-20250514",
-                explore_model="claude-haiku-4-5-20251001",
-                plan_model="claude-opus-4-20250514",
-                on_event=capture_event,
+                phases=PhaseConfig(
+                    explore_model="claude-haiku-4-5-20251001",
+                    plan_model="claude-opus-4-20250514",
+                ),
+                callbacks=AgentCallbacks(
+                    on_event=capture_event,
+                ),
             )
             await backend.execute(task)
 
@@ -524,9 +548,13 @@ class TestPhaseEvents:
                 system_prompt="System.",
                 user_prompt="Task.",
                 working_directory=str(tmp_workdir),
-                explore_model="",
-                plan_model="",
-                on_event=capture_event,
+                phases=PhaseConfig(
+                    explore_model="",
+                    plan_model="",
+                ),
+                callbacks=AgentCallbacks(
+                    on_event=capture_event,
+                ),
             )
             await backend.execute(task)
 
@@ -557,9 +585,11 @@ class TestExploreOnly:
                 user_prompt="Review this diff.",
                 working_directory=str(tmp_workdir),
                 model="claude-haiku-4-5-20251001",  # Act also uses Haiku
-                explore_model="claude-haiku-4-5-20251001",
-                plan_model="",  # No plan
                 allowed_tools=["read_file", "list_directory"],
+                phases=PhaseConfig(
+                    explore_model="claude-haiku-4-5-20251001",
+                    plan_model="",  # No plan
+                ),
             )
             result = await backend.execute(task)
 

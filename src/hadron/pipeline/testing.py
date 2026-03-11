@@ -6,23 +6,9 @@ import asyncio
 import logging
 import re
 
-from hadron.security.allowlists import DANGEROUS_SHELL_CHARS, TEST_RUNNER_PATTERNS
+from hadron.security.validators import validate_test_command
 
 logger = logging.getLogger(__name__)
-
-
-def validate_test_command(cmd: str) -> bool:
-    """Check whether a test command matches the allowlist.
-
-    Rejects anything that could be shell injection (pipes, semicolons,
-    subshells, redirects) unless it matches a known-safe test runner pattern.
-    """
-    if any(c in cmd for c in DANGEROUS_SHELL_CHARS):
-        return False
-    # Additional chars not in the general set but dangerous for test commands
-    if any(c in cmd for c in ("&", "(", ")", "<", ">")):
-        return False
-    return any(p.match(cmd) for p in TEST_RUNNER_PATTERNS)
 
 
 async def run_test_command(

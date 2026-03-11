@@ -2,20 +2,19 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
 from typing import AsyncIterator
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from sse_starlette.sse import EventSourceResponse
+
+from hadron.controller.dependencies import get_event_bus
+from hadron.events.bus import EventBus
 
 router = APIRouter(tags=["events"])
 
 
-async def _event_generator(request: Request, cr_id: str) -> AsyncIterator[dict]:
+async def _event_generator(request: Request, cr_id: str, event_bus: EventBus) -> AsyncIterator[dict]:
     """Generate SSE events from Redis stream for a CR."""
-    event_bus = request.app.state.event_bus
-
     # First replay existing events, capturing the last stream ID
     events, last_id = await event_bus.replay(cr_id)
     for event in events:
@@ -33,6 +32,10 @@ async def _event_generator(request: Request, cr_id: str) -> AsyncIterator[dict]:
 
 
 @router.get("/events/stream")
-async def event_stream(cr_id: str, request: Request) -> EventSourceResponse:
+async def event_stream(
+    cr_id: str,
+    request: Request,
+    event_bus: EventBus = Depends(get_event_bus),
+) -> EventSourceResponse:
     """SSE endpoint for real-time pipeline events."""
-    return EventSourceResponse(_event_generator(request, cr_id))
+    return EventSourceResponse(_event_generator(request, cr_id, event_bus))

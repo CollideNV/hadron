@@ -2,30 +2,21 @@
 
 from __future__ import annotations
 
-from langgraph.types import RunnableConfig
-
 import logging
 from typing import Any
 
-from hadron.git.worktree import WorktreeManager
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
-from hadron.pipeline.nodes import NodeContext, RepoInfo
+from hadron.pipeline.nodes import NodeContext, RepoInfo, pipeline_node
 from hadron.pipeline.testing import run_test_command
 
 logger = logging.getLogger(__name__)
 
 
-async def delivery_node(state: PipelineState, config: RunnableConfig) -> dict[str, Any]:
+@pipeline_node("delivery")
+async def delivery_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[str, Any]:
     """Self-contained delivery: run full test suite, then push final branch."""
-    ctx = NodeContext.from_config(config)
-    cr_id = state["cr_id"]
-
-    await ctx.event_bus.emit(PipelineEvent(
-            cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="delivery"
-        ))
-
-    wm = WorktreeManager(ctx.workspace_dir)
+    wm = ctx.worktree_manager
 
     ri = RepoInfo.from_state(state)
 
@@ -54,9 +45,9 @@ async def delivery_node(state: PipelineState, config: RunnableConfig) -> dict[st
     all_delivered = tests_passing and branch_pushed
 
     await ctx.event_bus.emit(PipelineEvent(
-            cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="delivery",
-            data={"all_delivered": all_delivered},
-        ))
+        cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="delivery",
+        data={"all_delivered": all_delivered},
+    ))
 
     return {
         "delivery_results": delivery_results,
