@@ -8,6 +8,8 @@ import os
 import sys
 from typing import Any, Protocol
 
+from hadron.git.url import extract_repo_name
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,7 +29,7 @@ class SubprocessJobSpawner:
     async def spawn(self, cr_id: str, repo_url: str, repo_name: str = "", default_branch: str = "main") -> None:
         """Spawn a worker subprocess for a single repo within a CR."""
         if not repo_name:
-            repo_name = repo_url.rstrip("/").split("/")[-1]
+            repo_name = extract_repo_name(repo_url)
         worker_key = f"{cr_id}:{repo_name}"
         logger.info("Spawning subprocess worker for CR %s, repo %s", cr_id, repo_name)
         proc = await asyncio.create_subprocess_exec(
@@ -45,7 +47,7 @@ class SubprocessJobSpawner:
         # Fire and forget — log output in background
         asyncio.create_task(self._log_output(worker_key, proc))
 
-    async def _log_output(self, cr_id: str, proc: asyncio.subprocess.Process) -> None:
+    async def _log_output(self, worker_key: str, proc: asyncio.subprocess.Process) -> None:
         """Log worker output in background and store in Redis."""
         try:
             stdout, _ = await proc.communicate()
@@ -53,21 +55,21 @@ class SubprocessJobSpawner:
             if stdout:
                 full_output = stdout.decode(errors="replace")
                 for line in full_output.splitlines():
-                    logger.info("[worker:%s] %s", cr_id, line)
-            logger.info("Worker for CR %s exited with code %s", cr_id, proc.returncode)
+                    logger.info("[worker:%s] %s", worker_key, line)
+            logger.info("Worker %s exited with code %s", worker_key, proc.returncode)
 
             # Store in Redis for log retrieval (24h TTL)
             if self._redis and full_output:
                 try:
                     await self._redis.set(
-                        f"hadron:cr:{cr_id}:worker_log", full_output, ex=86400,
+                        f"hadron:cr:{worker_key}:worker_log", full_output, ex=86400,
                     )
                 except Exception as e:
-                    logger.warning("Failed to store worker log in Redis for CR %s: %s", cr_id, e)
+                    logger.warning("Failed to store worker log in Redis for %s: %s", worker_key, e)
         except Exception as e:
-            logger.error("Error logging worker output for CR %s: %s", cr_id, e)
+            logger.error("Error logging worker output for %s: %s", worker_key, e)
         finally:
-            self._processes.pop(cr_id, None)
+            self._processes.pop(worker_key, None)
 
 
 class K8sJobSpawner:
@@ -86,7 +88,7 @@ class K8sJobSpawner:
         from kubernetes import client, config as k8s_config
 
         if not repo_name:
-            repo_name = repo_url.rstrip("/").split("/")[-1]
+            repo_name = extract_repo_name(repo_url)
 
         try:
             k8s_config.load_incluster_config()

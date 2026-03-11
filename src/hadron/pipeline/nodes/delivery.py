@@ -30,7 +30,7 @@ async def delivery_node(state: PipelineState, config: RunnableConfig) -> dict[st
     repo = state.get("repo", {})
     repo_name = repo.get("repo_name", "")
     worktree_path = repo.get("worktree_path", "")
-    test_command = repo.get("test_commands", ["pytest"])[0]
+    test_command = (repo.get("test_commands") or ["pytest"])[0]
 
     # Run full test suite
     tests_passing, test_output = await run_test_command(

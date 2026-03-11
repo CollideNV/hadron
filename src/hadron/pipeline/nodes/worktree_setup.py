@@ -13,6 +13,7 @@ import logging
 from typing import Any
 
 from hadron.git.detect import detect_languages_and_tests
+from hadron.git.url import extract_repo_name
 from hadron.git.worktree import WorktreeManager
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
@@ -33,7 +34,7 @@ async def worktree_setup_node(state: PipelineState, config: RunnableConfig) -> d
     wm = WorktreeManager(ctx.workspace_dir)
     repo = state.get("repo", {})
     repo_url = repo["repo_url"]
-    repo_name = repo.get("repo_name", repo_url.rstrip("/").split("/")[-1])
+    repo_name = repo.get("repo_name") or extract_repo_name(repo_url)
     default_branch = repo.get("default_branch", "main")
 
     logger.info("Setting up worktree for %s (CR %s)", repo_name, cr_id)

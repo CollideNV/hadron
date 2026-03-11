@@ -56,7 +56,8 @@ def _format_cr_section(structured_cr: dict[str, Any], *, untrusted: bool = False
 
     section = f"{header}\n**Title:** {title}\n**Description:** {desc}\n"
     if criteria and not untrusted:
-        section += f"\n**Acceptance Criteria:**\n{chr(10).join(f'- {c}' for c in criteria)}\n"
+        criteria_str = "\n".join(f"- {c}" for c in criteria)
+        section += f"\n**Acceptance Criteria:**\n{criteria_str}\n"
     return section
 
 

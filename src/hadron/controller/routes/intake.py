@@ -7,8 +7,8 @@ import uuid
 from fastapi import APIRouter, HTTPException, Request
 
 from hadron.config.defaults import BRANCH_PREFIX, get_config_snapshot
-from hadron.controller.job_spawner import SubprocessJobSpawner
 from hadron.db.models import CRRun, RepoRun
+from hadron.git.url import extract_repo_name
 from hadron.models.cr import RawChangeRequest
 
 router = APIRouter(tags=["intake"])
@@ -48,7 +48,7 @@ async def trigger_pipeline(cr: RawChangeRequest, request: Request) -> dict:
 
     repo_runs: list[RepoRun] = []
     for url in cr.repo_urls:
-        repo_name = url.rstrip("/").split("/")[-1]
+        repo_name = extract_repo_name(url)
         repo_runs.append(RepoRun(
             cr_id=cr_id,
             repo_url=url,
@@ -64,13 +64,11 @@ async def trigger_pipeline(cr: RawChangeRequest, request: Request) -> dict:
         await session.commit()
 
     # Spawn one worker per repo URL
-    spawner = getattr(request.app.state, "job_spawner", None) or SubprocessJobSpawner(
-        redis=getattr(request.app.state, "redis", None),
-    )
+    spawner = request.app.state.job_spawner
 
     workers_spawned: list[dict] = []
     for url in cr.repo_urls:
-        repo_name = url.rstrip("/").split("/")[-1]
+        repo_name = extract_repo_name(url)
         await spawner.spawn(cr_id, repo_url=url, repo_name=repo_name, default_branch=default_branch)
         workers_spawned.append({"repo_url": url, "repo_name": repo_name})
 

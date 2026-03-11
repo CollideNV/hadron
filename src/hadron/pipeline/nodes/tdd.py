@@ -40,7 +40,7 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
     repo = state.get("repo", {})
     repo_name = repo.get("repo_name", "")
     worktree_path = repo.get("worktree_path", "")
-    test_command = repo.get("test_commands", ["pytest"])[0]
+    test_command = (repo.get("test_commands") or ["pytest"])[0]
     languages = repo.get("languages", [])
 
     repo_context = composer.build_repo_context(
@@ -49,13 +49,14 @@ async def tdd_node(state: PipelineState, config: RunnableConfig) -> dict[str, An
         test_commands=repo.get("test_commands", []),
     )
 
+    criteria = "\n".join(f"- {c}" for c in structured_cr.get("acceptance_criteria", []))
     cr_text = f"""# Change Request
 
 **Title:** {structured_cr.get('title', '')}
 **Description:** {structured_cr.get('description', '')}
 
 **Acceptance Criteria:**
-{chr(10).join(f'- {c}' for c in structured_cr.get('acceptance_criteria', []))}
+{criteria}
 """
 
     # Include review feedback if this is a retry from review

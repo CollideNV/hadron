@@ -141,7 +141,7 @@ Resolve the conflict markers in each file and write the resolved versions.
                 rebase_clean = False
 
     # Run full test suite to verify
-    test_command = repo.get("test_commands", ["pytest"])[0]
+    test_command = (repo.get("test_commands") or ["pytest"])[0]
     passed, output = await run_test_command(worktree_path, test_command, cr_id)
     test_passed = passed
     if not passed:

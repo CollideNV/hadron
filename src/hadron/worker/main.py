@@ -27,34 +27,12 @@ from hadron.db.engine import create_engine, create_session_factory
 from hadron.db.models import CRRun, RepoRun
 from hadron.events.bus import RedisEventBus
 from hadron.events.interventions import InterventionManager
+from hadron.git.url import extract_repo_name
 from hadron.models.events import EventType, PipelineEvent
+from hadron.models.resume import pick_resume_node
 from hadron.pipeline.graph import build_pipeline_graph
 
 logger = logging.getLogger(__name__)
-
-# Maps override keys to the pipeline node they logically belong to.
-# When resuming with overrides, the latest node in pipeline order is used as as_node.
-OVERRIDE_NODE_MAP: dict[str, str] = {
-    "rebase_clean": "rebase",
-    "review_passed": "review",
-    "behaviour_verified": "verification",
-}
-
-# Pipeline node execution order (used to pick the latest node from multiple overrides).
-PIPELINE_NODE_ORDER: list[str] = [
-    "intake", "repo_id", "worktree_setup", "translation", "verification",
-    "tdd", "review", "rebase", "delivery", "release",
-]
-
-
-def _pick_resume_node(overrides: dict) -> str:
-    """Pick the latest pipeline node that corresponds to the given overrides."""
-    nodes = [OVERRIDE_NODE_MAP[k] for k in overrides if k in OVERRIDE_NODE_MAP]
-    if not nodes:
-        # Fallback: resume from the paused node (which is the last node before END)
-        return "paused"
-    # Return the node that appears latest in the pipeline
-    return max(nodes, key=lambda n: PIPELINE_NODE_ORDER.index(n) if n in PIPELINE_NODE_ORDER else -1)
 
 
 # ---------------------------------------------------------------------------
@@ -290,7 +268,7 @@ async def _execute_pipeline(
                 has_checkpoint = False
 
         if has_checkpoint and state_overrides:
-            resume_node = _pick_resume_node(state_overrides)
+            resume_node = pick_resume_node(state_overrides)
             logger.info("Resuming CR %s from node '%s' with overrides", cr_id, resume_node)
             await compiled.aupdate_state(runnable_config, state_overrides, as_node=resume_node)
             return await compiled.ainvoke(None, config=runnable_config)
@@ -317,7 +295,7 @@ async def run_worker(cr_id: str, repo_url: str, repo_name: str = "", default_bra
     logging.basicConfig(level=getattr(logging, cfg.log_level), format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
     if not repo_name:
-        repo_name = repo_url.rstrip("/").split("/")[-1]
+        repo_name = extract_repo_name(repo_url)
 
     safe_url = re.sub(r"://[^@]+@", "://***@", repo_url)
     logger.info("Worker starting for CR %s, repo %s (%s)", cr_id, repo_name, safe_url)

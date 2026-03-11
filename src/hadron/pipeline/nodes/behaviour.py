@@ -45,13 +45,14 @@ async def behaviour_translation_node(state: PipelineState, config: RunnableConfi
         if spec.get("repo_name") == repo_name and spec.get("verification_feedback"):
             feedback = spec["verification_feedback"]
 
+    criteria = "\n".join(f"- {c}" for c in structured_cr.get("acceptance_criteria", []))
     task_payload = f"""# Change Request
 
 **Title:** {structured_cr.get('title', '')}
 **Description:** {structured_cr.get('description', '')}
 
 **Acceptance Criteria:**
-{chr(10).join(f'- {c}' for c in structured_cr.get('acceptance_criteria', []))}
+{criteria}
 """
     user_prompt = composer.compose_user_prompt(task_payload, feedback)
 
@@ -113,13 +114,14 @@ async def behaviour_verification_node(state: PipelineState, config: RunnableConf
     # Gather feature files so the verifier doesn't need to explore
     feature_content = gather_files(worktree_path, "features/**/*.feature")
 
+    criteria = "\n".join(f"- {c}" for c in structured_cr.get("acceptance_criteria", []))
     task_payload = f"""# Change Request
 
 **Title:** {structured_cr.get('title', '')}
 **Description:** {structured_cr.get('description', '')}
 
 **Acceptance Criteria:**
-{chr(10).join(f'- {c}' for c in structured_cr.get('acceptance_criteria', []))}
+{criteria}
 
 ## Feature Specifications
 

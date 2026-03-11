@@ -7,6 +7,7 @@ from langgraph.types import RunnableConfig
 import logging
 from typing import Any
 
+from hadron.git.url import extract_repo_name
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import NodeContext
@@ -37,7 +38,7 @@ async def repo_id_node(state: PipelineState, config: RunnableConfig) -> dict[str
             "stage_history": [{"stage": "repo_id", "status": "failed"}],
         }
 
-    repo_name = repo.get("repo_name") or repo.get("repo_url", "").rstrip("/").split("/")[-1]
+    repo_name = repo.get("repo_name") or extract_repo_name(repo.get("repo_url", ""))
     if not repo_name:
         logger.error("Could not determine repo name for worker (CR %s)", cr_id)
         return {

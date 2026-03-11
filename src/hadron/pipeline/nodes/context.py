@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langgraph.types import RunnableConfig
 
 from hadron.config.defaults import DEFAULT_MODEL, DEFAULT_WORKSPACE_DIR
 from hadron.events.bus import EventBus, NoOpEventBus
+
+if TYPE_CHECKING:
+    import redis.asyncio as aioredis
+
+    from hadron.agent.base import AgentBackend
+    from hadron.events.interventions import InterventionManager
 
 
 @dataclass
@@ -21,13 +27,13 @@ class NodeContext:
     """
 
     event_bus: EventBus
-    agent_backend: Any  # AgentBackend
+    agent_backend: AgentBackend
     workspace_dir: str
-    redis: Any  # redis.asyncio.Redis | None
+    redis: aioredis.Redis | None
     model: str
     explore_model: str
     plan_model: str
-    intervention_mgr: Any  # InterventionManager | None
+    intervention_mgr: InterventionManager | None
 
     @classmethod
     def from_config(cls, config: RunnableConfig) -> NodeContext:

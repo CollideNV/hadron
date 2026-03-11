@@ -29,7 +29,7 @@ __all__ = [
     "emit_cost_update",
 ]
 
-_log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +62,7 @@ def extract_json(text: str, *, context: str = "") -> dict[str, Any] | None:
                 return json.loads(candidate.strip())
         except (json.JSONDecodeError, IndexError, ValueError):
             continue
-    _log.error("Failed to extract JSON from LLM output (%s): %.500s", context, text)
+    logger.error("Failed to extract JSON from LLM output (%s): %.500s", context, text)
     return None
 
 
