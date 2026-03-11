@@ -71,8 +71,7 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
         stage="tdd:test_writer",
         repo_name=ri.repo_name,
         working_directory=ri.worktree_path,
-        explore_model="",  # No explore/plan — feature files are injected directly
-        plan_model="",
+        # Haiku explores repo structure, Sonnet writes tests
     )
     total_cost += test_run.result.cost_usd
     total_input += test_run.result.input_tokens
@@ -115,8 +114,7 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
             repo_name=ri.repo_name,
             working_directory=ri.worktree_path,
             prior_cost=total_cost,
-            explore_model="",  # No explore/plan — test files are injected directly
-            plan_model="",
+            # Haiku explores repo structure, Sonnet writes code
         )
         total_cost += code_run.result.cost_usd
         total_input += code_run.result.input_tokens

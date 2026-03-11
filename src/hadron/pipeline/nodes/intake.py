@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from hadron.agent.prompt import PromptComposer
+from hadron.config.defaults import DEFAULT_EXPLORE_MODEL
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import NodeContext, extract_json, pipeline_node, run_agent
@@ -32,7 +33,8 @@ async def intake_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
         cr_id=cr_id,
         stage="intake",
         allowed_tools=[],
-        explore_model="",  # No explore/plan for intake
+        model=DEFAULT_EXPLORE_MODEL,  # Simple JSON extraction — Haiku suffices
+        explore_model="",
         plan_model="",
     )
     result = agent_run.result

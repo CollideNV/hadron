@@ -18,6 +18,7 @@ from typing import Any
 
 from hadron.agent.base import AgentResult
 from hadron.agent.prompt import PromptComposer
+from hadron.config.defaults import DEFAULT_EXPLORE_MODEL
 from hadron.config.limits import MAX_DIFF_CHARS
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
@@ -140,10 +141,6 @@ async def _run_single_reviewer(
     """Run a single reviewer agent and return parsed results + cost info."""
     sub_stage = f"review:{role}"
 
-    # Reviewers are explore-only: they read files and output JSON.
-    explore_model = ctx.explore_model
-    model = explore_model or ctx.model
-
     composer = PromptComposer()
     system_prompt = composer.compose_system_prompt(role)
     user_prompt = composer.compose_user_prompt(task_payload)
@@ -162,8 +159,8 @@ async def _run_single_reviewer(
         repo_name=repo_name,
         working_directory=worktree_path,
         allowed_tools=["read_file", "list_directory"],
-        model=model,
-        explore_model="",  # No three-phase for reviewers
+        model=DEFAULT_EXPLORE_MODEL,  # Diff analysis + JSON output — Haiku suffices
+        explore_model="",
         plan_model="",
     )
     result = agent_run.result

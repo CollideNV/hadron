@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from hadron.agent.prompt import PromptComposer
+from hadron.config.defaults import DEFAULT_EXPLORE_MODEL
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import (
@@ -50,7 +51,7 @@ async def behaviour_translation_node(state: PipelineState, ctx: NodeContext, cr_
         repo_name=ri.repo_name,
         working_directory=ri.worktree_path,
         allowed_tools=["read_file", "write_file", "list_directory"],
-        explore_model="",  # No explore/plan — spec_writer only needs the CR
+        explore_model="",  # No explore — spec_writer works from CR, not code
         plan_model="",
     )
     result = agent_run.result
@@ -109,7 +110,8 @@ Verify the above specifications against the CR.
         repo_name=ri.repo_name,
         working_directory=ri.worktree_path,
         allowed_tools=["read_file", "list_directory"],
-        explore_model="",  # No explore/plan — CR + feature files are injected directly
+        model=DEFAULT_EXPLORE_MODEL,  # Structured comparison — Haiku suffices
+        explore_model="",
         plan_model="",
     )
     result = agent_run.result
