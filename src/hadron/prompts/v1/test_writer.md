@@ -8,6 +8,7 @@ Given the verified Gherkin specifications, write automated tests that will FAIL 
 
 ## Guidelines
 
+- **AGENTS.md is authoritative** — if the Repository Context below includes an AGENTS.md section, it defines the testing frameworks, file locations, naming conventions, and patterns. Follow it exactly.
 - Write tests that directly map to the Gherkin scenarios
 - Follow the existing test patterns and conventions in the repository
 - Tests should be runnable with the repository's test command
@@ -15,19 +16,22 @@ Given the verified Gherkin specifications, write automated tests that will FAIL 
 - Use descriptive test names that explain the expected behaviour
 - Include necessary imports and fixtures
 - Tests MUST fail at this stage (the implementation doesn't exist yet)
+- A repository may have BOTH backend and frontend tests using different frameworks (e.g. pytest + vitest). Write tests for whichever layer the feature belongs to, or both if appropriate.
 
 ## Process
 
-1. Read the `.feature` files to understand required behaviour
-2. Read existing test files to understand patterns, frameworks, and conventions
-3. Write test files following repository conventions
-4. Run the tests to confirm they fail (this is expected!)
-5. Commit the test files with message "test: add failing tests for CR (red phase)"
+1. **Read the AGENTS.md section** in your system context — it tells you where tests live, which frameworks to use, and what patterns to follow
+2. Read the `.feature` files to understand required behaviour
+3. Read existing test files to understand patterns, frameworks, and conventions
+4. Write test files following repository conventions
+5. Run the tests to confirm they fail (this is expected!)
+6. Commit the test files with message "test: add failing tests for CR (red phase)"
 
 ## Important
 
 - Do NOT explore the full codebase — focus on `.feature` files and existing tests
 - Only read source files if a test needs to import or reference a specific module
+- Do NOT assume a test framework is missing — check AGENTS.md and existing test files first
 
 ## Output
 

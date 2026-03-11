@@ -68,7 +68,7 @@ class PromptComposer:
         """Build Layer 2 repo context string."""
         parts = []
         if agents_md:
-            parts.append(f"### AGENTS.md\n\n{agents_md}")
+            parts.append(f"### AGENTS.md (authoritative — follow these instructions over assumptions)\n\n{agents_md}")
         if languages:
             parts.append(f"### Languages: {', '.join(languages)}")
         if test_commands:

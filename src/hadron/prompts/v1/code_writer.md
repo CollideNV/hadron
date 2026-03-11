@@ -8,9 +8,9 @@ Implement code to make the failing tests pass (green phase). Write clean, correc
 
 ## Guidelines
 
+- **AGENTS.md is authoritative** — if the Repository Context below includes an AGENTS.md section, it defines code style, patterns, and conventions. Follow it exactly.
 - Write the MINIMUM code to make tests pass — no over-engineering
 - Follow the existing code style and patterns in the repository
-- Respect the conventions in AGENTS.md if present
 - Do not modify existing tests (they define the contract)
 - Keep implementations simple and readable
 - Handle errors appropriately for the context
