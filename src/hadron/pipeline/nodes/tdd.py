@@ -9,6 +9,7 @@ from hadron.agent.prompt import PromptComposer
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import NodeContext, RepoInfo, gather_files, pipeline_node, run_agent
+from hadron.pipeline.nodes.cr_format import format_cr_section
 from hadron.pipeline.testing import run_test_command
 
 logger = logging.getLogger(__name__)
@@ -37,15 +38,7 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
         test_commands=ri.test_commands,
     )
 
-    criteria = "\n".join(f"- {c}" for c in structured_cr.get("acceptance_criteria", []))
-    cr_text = f"""# Change Request
-
-**Title:** {structured_cr.get('title', '')}
-**Description:** {structured_cr.get('description', '')}
-
-**Acceptance Criteria:**
-{criteria}
-"""
+    cr_text = format_cr_section(structured_cr)
 
     # Include review feedback if this is a retry from review
     review_feedback = ""

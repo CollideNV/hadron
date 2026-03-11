@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Callable, TypeVar
+from collections.abc import Awaitable, Callable
+from typing import TypeVar
 
 import anthropic
 
@@ -18,10 +19,10 @@ BASE_WAIT_SECONDS = 60
 
 
 async def call_with_retry(
-    api_call: Callable[[], Any],
+    api_call: Callable[[], Awaitable[_T]],
     *,
     label: str,
-    on_retry: Callable[[int], Any] | None = None,
+    on_retry: Callable[[int], Awaitable[None]] | None = None,
     max_retries: int = MAX_RETRIES,
     base_wait: int = BASE_WAIT_SECONDS,
 ) -> _T:

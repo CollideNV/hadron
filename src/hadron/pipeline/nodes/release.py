@@ -9,12 +9,9 @@ from hadron.config.defaults import BRANCH_PREFIX
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import NodeContext, RepoInfo, pipeline_node
+from hadron.pipeline.nodes.cr_format import format_criteria
 
 logger = logging.getLogger(__name__)
-
-
-def _join_criteria(criteria: list[str]) -> str:
-    return "\n".join(f"- {c}" for c in criteria)
 
 
 @pipeline_node("release")
@@ -37,7 +34,7 @@ async def release_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> di
 {structured_cr.get('description', 'N/A')}
 
 ### Acceptance Criteria
-{_join_criteria(structured_cr.get('acceptance_criteria', []))}
+{format_criteria(structured_cr.get('acceptance_criteria', []))}
 
 ### Pipeline Summary
 - **CR ID:** {cr_id}

@@ -9,6 +9,7 @@ from hadron.agent.prompt import PromptComposer
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import NodeContext, extract_json, pipeline_node, run_agent
+from hadron.pipeline.nodes.cr_format import format_cr_section
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,10 @@ async def intake_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
     """Parse raw CR text into a structured change request."""
     composer = PromptComposer()
     system_prompt = composer.compose_system_prompt("intake_parser")
-    user_prompt = f"# Change Request\n\n**Title:** {state.get('raw_cr_title', '')}\n\n**Description:**\n{state.get('raw_cr_text', '')}"
+    user_prompt = format_cr_section({
+        "title": state.get("raw_cr_title", ""),
+        "description": state.get("raw_cr_text", ""),
+    })
 
     agent_run = await run_agent(
         ctx,

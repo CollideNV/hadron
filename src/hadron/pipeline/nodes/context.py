@@ -42,11 +42,12 @@ class NodeContext:
         """Extract a typed NodeContext from LangGraph's RunnableConfig."""
         configurable = config.get("configurable", {})
         workspace_dir = configurable.get("workspace_dir", DEFAULT_WORKSPACE_DIR)
+        worktree_manager = configurable.get("worktree_manager") or WorktreeManager(workspace_dir)
         return cls(
             event_bus=configurable.get("event_bus") or NoOpEventBus(),
             agent_backend=configurable.get("agent_backend"),
             workspace_dir=workspace_dir,
-            worktree_manager=WorktreeManager(workspace_dir),
+            worktree_manager=worktree_manager,
             redis=configurable.get("redis"),
             model=configurable.get("model", DEFAULT_MODEL),
             explore_model=configurable.get("explore_model", ""),

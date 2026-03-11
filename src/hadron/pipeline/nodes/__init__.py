@@ -12,7 +12,7 @@ from typing import Any, Callable, Awaitable
 
 import redis.asyncio as aioredis
 
-from hadron.agent.base import AgentResult, AgentTask, OnAgentEvent, OnToolCall
+from hadron.agent.base import AgentCallbacks, AgentResult, AgentTask, OnAgentEvent, OnToolCall, PhaseConfig
 from hadron.config.limits import MAX_CONTEXT_CHARS
 from hadron.events.bus import EventBus
 from hadron.models.events import EventType, PipelineEvent
@@ -112,8 +112,14 @@ class RepoInfo:
     @classmethod
     def from_state(cls, state: dict[str, Any]) -> RepoInfo:
         repo = state.get("repo", {})
+        repo_name = repo.get("repo_name", "")
+        if not repo_name:
+            raise ValueError(
+                "PipelineState['repo']['repo_name'] is missing or empty — "
+                "cannot proceed without a repo name"
+            )
         return cls(
-            repo_name=repo.get("repo_name", ""),
+            repo_name=repo_name,
             worktree_path=repo.get("worktree_path", ""),
             default_branch=repo.get("default_branch", "main"),
             test_command=(repo.get("test_commands") or ["pytest"])[0],
@@ -373,11 +379,15 @@ async def run_agent(
         working_directory=working_directory,
         allowed_tools=allowed_tools,
         model=effective_model,
-        explore_model=effective_explore,
-        plan_model=effective_plan,
-        on_tool_call=make_tool_call_emitter(ctx.event_bus, cr_id, stage, role, repo_name),
-        on_event=make_agent_event_emitter(ctx.event_bus, cr_id, stage, role, repo_name),
-        nudge_poll=make_nudge_poller(ctx.redis, cr_id, role) if ctx.redis else None,
+        phases=PhaseConfig(
+            explore_model=effective_explore,
+            plan_model=effective_plan,
+        ),
+        callbacks=AgentCallbacks(
+            on_tool_call=make_tool_call_emitter(ctx.event_bus, cr_id, stage, role, repo_name),
+            on_event=make_agent_event_emitter(ctx.event_bus, cr_id, stage, role, repo_name),
+            nudge_poll=make_nudge_poller(ctx.redis, cr_id, role) if ctx.redis else None,
+        ),
     )
 
     await ctx.event_bus.emit(PipelineEvent(

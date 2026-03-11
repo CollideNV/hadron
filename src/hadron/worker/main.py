@@ -315,8 +315,17 @@ async def run_worker(cr_id: str, repo_url: str, repo_name: str = "", default_bra
         )
         await _persist_result(infra, cr_id, repo_name, final_state)
 
-    except Exception as e:
+    except KeyboardInterrupt:
+        logger.info("Worker interrupted for CR %s repo %s", cr_id, repo_name)
+        raise
+    except (RuntimeError, OSError, ConnectionError, ValueError, TypeError) as e:
         logger.exception("Worker failed for CR %s repo %s", cr_id, repo_name)
+        await _persist_failure(infra, cr_id, repo_name, e)
+    except Exception as e:
+        # Catch-all for truly unexpected errors (e.g. third-party library bugs).
+        # Log at critical level so these stand out and can be narrowed further.
+        logger.critical("Unexpected worker failure for CR %s repo %s: %s", cr_id, repo_name, type(e).__name__)
+        logger.exception("Full traceback:")
         await _persist_failure(infra, cr_id, repo_name, e)
     finally:
         await infra.close()

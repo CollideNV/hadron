@@ -16,12 +16,45 @@ OnAgentEvent = Callable[[str, dict[str, Any]], Awaitable[None]]
 
 
 @dataclass
-class AgentTask:
-    """Task definition for an agent invocation."""
+class PhaseConfig:
+    """Configuration for the three-phase execution pipeline.
 
+    Controls the explore (read-only) -> plan (single call) -> act (full tools) flow.
+    Empty model strings skip the corresponding phase.
+    """
+
+    explore_model: str = ""  # Empty = skip explore phase
+    plan_model: str = ""  # Empty = skip plan phase
+    explore_max_rounds: int = 20
+    explore_tools: list[str] = field(default_factory=lambda: ["read_file", "list_directory"])
+
+
+@dataclass
+class AgentCallbacks:
+    """Optional callbacks for observability during agent execution."""
+
+    on_tool_call: OnToolCall | None = None
+    on_event: OnAgentEvent | None = None
+    nudge_poll: Callable[[], Awaitable[str | None]] | None = None
+
+
+@dataclass
+class AgentTask:
+    """Task definition for an agent invocation.
+
+    Groups concerns into:
+      - Identity: role, prompts
+      - Execution: model, tools, limits, working directory
+      - Phases: three-phase pipeline config (via PhaseConfig)
+      - Callbacks: observability hooks (via AgentCallbacks)
+    """
+
+    # Identity
     role: str  # e.g. "spec_writer", "code_writer", "reviewer"
     system_prompt: str
     user_prompt: str
+
+    # Execution
     working_directory: str | None = None
     allowed_tools: list[str] = field(default_factory=lambda: [
         "read_file", "write_file", "list_directory", "run_command"
@@ -29,14 +62,41 @@ class AgentTask:
     model: str = DEFAULT_MODEL
     max_tokens: int = 16384
     max_tool_rounds: int = 50
-    on_tool_call: OnToolCall | None = None
-    on_event: OnAgentEvent | None = None
-    nudge_poll: Callable[[], Awaitable[str | None]] | None = None
-    # Three-phase execution: explore (read-only) → plan (single call) → act (full tools)
-    explore_model: str = ""  # Empty = skip explore phase
-    plan_model: str = ""  # Empty = skip plan phase
-    explore_max_rounds: int = 20
-    explore_tools: list[str] = field(default_factory=lambda: ["read_file", "list_directory"])
+
+    # Phases (three-phase pipeline)
+    phases: PhaseConfig = field(default_factory=PhaseConfig)
+
+    # Callbacks (observability)
+    callbacks: AgentCallbacks = field(default_factory=AgentCallbacks)
+
+    # --- Convenience accessors for backwards compatibility ---
+    @property
+    def explore_model(self) -> str:
+        return self.phases.explore_model
+
+    @property
+    def plan_model(self) -> str:
+        return self.phases.plan_model
+
+    @property
+    def explore_max_rounds(self) -> int:
+        return self.phases.explore_max_rounds
+
+    @property
+    def explore_tools(self) -> list[str]:
+        return self.phases.explore_tools
+
+    @property
+    def on_tool_call(self) -> OnToolCall | None:
+        return self.callbacks.on_tool_call
+
+    @property
+    def on_event(self) -> OnAgentEvent | None:
+        return self.callbacks.on_event
+
+    @property
+    def nudge_poll(self) -> Callable[[], Awaitable[str | None]] | None:
+        return self.callbacks.nudge_poll
 
 
 @dataclass

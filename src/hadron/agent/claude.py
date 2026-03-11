@@ -18,7 +18,8 @@ from hadron.config.limits import MAX_TOOL_RESULT_CALLBACK_CHARS, MAX_TOOL_RESULT
 
 logger = logging.getLogger(__name__)
 
-# Per-model cost per million tokens: (input, output)
+# Per-model cost per million tokens: (input, output).
+# Use register_model_cost() to add entries at runtime without modifying source.
 _MODEL_COSTS: dict[str, tuple[float, float]] = {
     "claude-haiku-4-5-20251001": (0.80, 4.00),
     "claude-sonnet-4-20250514": (3.00, 15.00),
@@ -26,6 +27,15 @@ _MODEL_COSTS: dict[str, tuple[float, float]] = {
 }
 # Fallback for unknown models (use Sonnet pricing)
 _DEFAULT_COST = (3.00, 15.00)
+
+
+def register_model_cost(model: str, input_cost: float, output_cost: float) -> None:
+    """Register per-million-token costs for a model.
+
+    Allows adding new models at startup (e.g. from database config)
+    without modifying source code.
+    """
+    _MODEL_COSTS[model] = (input_cost, output_cost)
 
 
 def _compute_model_cost(model: str, input_tokens: int, output_tokens: int) -> float:
@@ -251,6 +261,18 @@ class ClaudeAgentBackend:
     # Core API call helpers
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _parse_response_blocks(response: Any) -> tuple[list[str], list[Any]]:
+        """Extract text parts and tool_use blocks from an API response."""
+        text_parts = []
+        tool_uses = []
+        for block in response.content:
+            if block.type == "text":
+                text_parts.append(block.text)
+            elif block.type == "tool_use":
+                tool_uses.append(block)
+        return text_parts, tool_uses
+
     async def _run_tool_loop(self, cfg: ToolLoopConfig) -> _PhaseResult:
         """Run the tool-use loop for a single phase. Core reusable engine."""
         messages: list[dict[str, Any]] = [{"role": "user", "content": cfg.user_prompt}]
@@ -284,14 +306,7 @@ class ClaudeAgentBackend:
             total_input += response.usage.input_tokens
             total_output += response.usage.output_tokens
 
-            # Collect text and tool use blocks
-            text_parts = []
-            tool_uses = []
-            for block in response.content:
-                if block.type == "text":
-                    text_parts.append(block.text)
-                elif block.type == "tool_use":
-                    tool_uses.append(block)
+            text_parts, tool_uses = self._parse_response_blocks(response)
 
             if text_parts:
                 final_text = "\n".join(text_parts)
@@ -382,10 +397,8 @@ class ClaudeAgentBackend:
 
         response = await call_with_retry(_plan_api_call, label="plan")
 
-        text = ""
-        for block in response.content:
-            if block.type == "text":
-                text += block.text
+        text_parts, _ = self._parse_response_blocks(response)
+        text = "".join(text_parts)
 
         cost = _compute_model_cost(model, response.usage.input_tokens, response.usage.output_tokens)
 
@@ -434,18 +447,14 @@ class ClaudeAgentBackend:
             for ev in retry_events:
                 yield ev
 
-            text_parts = []
-            tool_uses = []
-            for block in response.content:
-                if block.type == "text":
-                    text_parts.append(block.text)
-                    yield AgentEvent(event_type="text_delta", data={"text": block.text})
-                elif block.type == "tool_use":
-                    tool_uses.append(block)
-                    yield AgentEvent(
-                        event_type="tool_use",
-                        data={"name": block.name, "input": block.input},
-                    )
+            text_parts, tool_uses = self._parse_response_blocks(response)
+            for text in text_parts:
+                yield AgentEvent(event_type="text_delta", data={"text": text})
+            for tu in tool_uses:
+                yield AgentEvent(
+                    event_type="tool_use",
+                    data={"name": tu.name, "input": tu.input},
+                )
 
             if not tool_uses or response.stop_reason == "end_turn":
                 break

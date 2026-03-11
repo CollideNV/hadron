@@ -11,6 +11,7 @@ from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import (
     NodeContext, RepoInfo, extract_json, gather_files, pipeline_node, run_agent,
 )
+from hadron.pipeline.nodes.cr_format import format_cr_section
 
 logger = logging.getLogger(__name__)
 
@@ -36,15 +37,7 @@ async def behaviour_translation_node(state: PipelineState, ctx: NodeContext, cr_
         if spec.get("repo_name") == ri.repo_name and spec.get("verification_feedback"):
             feedback = spec["verification_feedback"]
 
-    criteria = "\n".join(f"- {c}" for c in structured_cr.get("acceptance_criteria", []))
-    task_payload = f"""# Change Request
-
-**Title:** {structured_cr.get('title', '')}
-**Description:** {structured_cr.get('description', '')}
-
-**Acceptance Criteria:**
-{criteria}
-"""
+    task_payload = format_cr_section(structured_cr)
     user_prompt = composer.compose_user_prompt(task_payload, feedback)
 
     agent_run = await run_agent(
@@ -97,15 +90,7 @@ async def behaviour_verification_node(state: PipelineState, ctx: NodeContext, cr
     # Gather feature files so the verifier doesn't need to explore
     feature_content = gather_files(ri.worktree_path, "features/**/*.feature")
 
-    criteria = "\n".join(f"- {c}" for c in structured_cr.get("acceptance_criteria", []))
-    task_payload = f"""# Change Request
-
-**Title:** {structured_cr.get('title', '')}
-**Description:** {structured_cr.get('description', '')}
-
-**Acceptance Criteria:**
-{criteria}
-
+    task_payload = format_cr_section(structured_cr) + f"""
 ## Feature Specifications
 
 {feature_content if feature_content else "(No .feature files found)"}
