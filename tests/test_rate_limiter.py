@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 import anthropic
 import pytest
 
-from hadron.agent.rate_limiter import call_with_retry
+from hadron.agent.rate_limiter import RetryResult, call_with_retry
 
 
 class TestCallWithRetry:
@@ -15,7 +15,10 @@ class TestCallWithRetry:
     async def test_success_on_first_try(self) -> None:
         api_call = AsyncMock(return_value="ok")
         result = await call_with_retry(api_call, label="test")
-        assert result == "ok"
+        assert isinstance(result, RetryResult)
+        assert result.value == "ok"
+        assert result.throttle_count == 0
+        assert result.throttle_seconds == 0.0
         api_call.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -34,7 +37,9 @@ class TestCallWithRetry:
             result = await call_with_retry(
                 api_call, label="test", max_retries=3, base_wait=1
             )
-        assert result == "ok"
+        assert result.value == "ok"
+        assert result.throttle_count == 1
+        assert result.throttle_seconds == 1.0  # base_wait * (attempt + 1) = 1 * 1
         assert api_call.await_count == 2
 
     @pytest.mark.asyncio
@@ -66,10 +71,12 @@ class TestCallWithRetry:
         )
         on_retry = AsyncMock()
         with patch("hadron.agent.rate_limiter.asyncio.sleep", new_callable=AsyncMock):
-            await call_with_retry(
+            result = await call_with_retry(
                 api_call, label="test", on_retry=on_retry, max_retries=3, base_wait=10
             )
         on_retry.assert_awaited_once_with(10)  # base_wait * (attempt + 1) = 10 * 1
+        assert result.throttle_count == 1
+        assert result.throttle_seconds == 10.0
 
     @pytest.mark.asyncio
     async def test_non_rate_limit_error_not_retried(self) -> None:
@@ -77,3 +84,29 @@ class TestCallWithRetry:
         with pytest.raises(ValueError, match="bad input"):
             await call_with_retry(api_call, label="test")
         api_call.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_multiple_retries_accumulate_throttle_stats(self) -> None:
+        api_call = AsyncMock(
+            side_effect=[
+                anthropic.RateLimitError(
+                    message="rate limited",
+                    response=AsyncMock(status_code=429, headers={}),
+                    body=None,
+                ),
+                anthropic.RateLimitError(
+                    message="rate limited",
+                    response=AsyncMock(status_code=429, headers={}),
+                    body=None,
+                ),
+                "ok",
+            ]
+        )
+        with patch("hadron.agent.rate_limiter.asyncio.sleep", new_callable=AsyncMock):
+            result = await call_with_retry(
+                api_call, label="test", max_retries=5, base_wait=10
+            )
+        assert result.value == "ok"
+        assert result.throttle_count == 2
+        # base_wait * 1 + base_wait * 2 = 10 + 20 = 30
+        assert result.throttle_seconds == 30.0

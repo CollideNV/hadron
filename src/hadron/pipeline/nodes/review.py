@@ -16,7 +16,7 @@ import asyncio
 import logging
 from typing import Any
 
-from hadron.agent.base import AgentResult
+from hadron.agent.base import AgentResult, merge_model_breakdowns
 from hadron.agent.prompt import PromptComposer
 from hadron.config.defaults import DEFAULT_EXPLORE_MODEL
 from hadron.config.limits import MAX_DIFF_CHARS
@@ -184,6 +184,9 @@ async def _run_single_reviewer(
         "cost_usd": result.cost_usd,
         "input_tokens": result.input_tokens,
         "output_tokens": result.output_tokens,
+        "throttle_count": result.throttle_count,
+        "throttle_seconds": result.throttle_seconds,
+        "model_breakdown": result.model_breakdown,
     }
 
 
@@ -195,6 +198,9 @@ async def review_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
     total_cost = 0.0
     total_input = 0
     total_output = 0
+    total_throttle_count = 0
+    total_throttle_seconds = 0.0
+    total_model_breakdown: dict[str, dict[str, Any]] = {}
 
     ri = RepoInfo.from_state(state)
 
@@ -232,6 +238,9 @@ async def review_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
         total_cost += r["cost_usd"]
         total_input += r["input_tokens"]
         total_output += r["output_tokens"]
+        total_throttle_count += r.get("throttle_count", 0)
+        total_throttle_seconds += r.get("throttle_seconds", 0.0)
+        total_model_breakdown = merge_model_breakdowns(total_model_breakdown, r.get("model_breakdown", {}))
         all_findings.extend(r["review"].get("findings", []))
 
     # 6. Emit individual findings
@@ -265,5 +274,8 @@ async def review_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
         "cost_input_tokens": total_input,
         "cost_output_tokens": total_output,
         "cost_usd": total_cost,
+        "throttle_count": total_throttle_count,
+        "throttle_seconds": total_throttle_seconds,
+        "model_breakdown": total_model_breakdown,
         "stage_history": [{"stage": "review", "status": "completed"}],
     }

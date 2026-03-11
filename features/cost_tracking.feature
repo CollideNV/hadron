@@ -21,3 +21,25 @@ Feature: Cost Tracking
   Scenario: Include cost in events
     When an agent completes
     Then a COST_UPDATE event is emitted with the incremental token counts and cost
+
+  Scenario: Model visibility in events
+    When an agent starts and completes
+    Then the agent_started event includes the model name
+    And the agent_completed event includes the model name
+    And the dashboard displays the model as a badge on each agent session
+
+  Scenario: Throttle cost tracked alongside token cost
+    Given an agent is rate-limited during execution
+    When the agent completes
+    Then throttle_count and throttle_seconds are included in the agent_completed event
+    And throttle_count and throttle_seconds accumulate in the pipeline state via reducers
+    And the dashboard shows time lost to throttling per session and in the footer
+
+  Scenario: Per-model cost and throttle breakdown
+    Given an agent uses multiple models across phases (e.g. Haiku for explore, Sonnet for act)
+    When the agent completes
+    Then the AgentResult includes a model_breakdown dict keyed by model name
+    And each entry contains input_tokens, output_tokens, cost_usd, throttle_count, throttle_seconds
+    And model_breakdown is included in the agent_completed event
+    And model_breakdown accumulates in the pipeline state via a merge reducer
+    And the dashboard footer shows a per-model row with tokens, cost, and throttle time

@@ -100,6 +100,53 @@ class AgentTask:
 
 
 @dataclass
+class ModelStats:
+    """Per-model usage stats for cost and throttle breakdown."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
+    throttle_count: int = 0
+    throttle_seconds: float = 0.0
+
+    def merge(self, other: ModelStats) -> ModelStats:
+        """Return a new ModelStats combining self and other."""
+        return ModelStats(
+            input_tokens=self.input_tokens + other.input_tokens,
+            output_tokens=self.output_tokens + other.output_tokens,
+            cost_usd=self.cost_usd + other.cost_usd,
+            throttle_count=self.throttle_count + other.throttle_count,
+            throttle_seconds=self.throttle_seconds + other.throttle_seconds,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "cost_usd": self.cost_usd,
+            "throttle_count": self.throttle_count,
+            "throttle_seconds": self.throttle_seconds,
+        }
+
+
+def merge_model_breakdowns(
+    a: dict[str, dict[str, Any]],
+    b: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Merge two model_breakdown dicts, summing stats per model."""
+    result = {k: dict(v) for k, v in a.items()}
+    for model, stats in b.items():
+        if model in result:
+            for key in ("input_tokens", "output_tokens", "throttle_count"):
+                result[model][key] = result[model].get(key, 0) + stats.get(key, 0)
+            for key in ("cost_usd", "throttle_seconds"):
+                result[model][key] = result[model].get(key, 0.0) + stats.get(key, 0.0)
+        else:
+            result[model] = dict(stats)
+    return result
+
+
+@dataclass
 class AgentResult:
     """Result from an agent invocation."""
 
@@ -110,6 +157,10 @@ class AgentResult:
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     conversation: list[dict[str, Any]] = field(default_factory=list)
     round_count: int = 0
+    model: str = ""
+    throttle_count: int = 0
+    throttle_seconds: float = 0.0
+    model_breakdown: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass

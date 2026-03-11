@@ -11,6 +11,14 @@ interface AgentActivityPanelProps {
   pipelineStatus: string;
 }
 
+interface ModelBreakdownEntry {
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  throttle_count: number;
+  throttle_seconds: number;
+}
+
 interface AgentSession {
   role: string;
   repo: string;
@@ -25,6 +33,9 @@ interface AgentSession {
   costUsd: number;
   roundCount: number;
   conversationKey?: string;
+  throttleCount: number;
+  throttleSeconds: number;
+  modelBreakdown: Record<string, ModelBreakdownEntry>;
 }
 
 type ConversationItem =
@@ -57,6 +68,9 @@ function buildSessions(
         outputTokens: 0,
         costUsd: 0,
         roundCount: 0,
+        throttleCount: 0,
+        throttleSeconds: 0,
+        modelBreakdown: {},
       };
       sessionMap.set(key, session);
       sessions.push(session);
@@ -86,11 +100,15 @@ function buildSessions(
     } else if (e.event_type === "agent_completed") {
       const session = getSession(role, repo, e.stage);
       session.completed = true;
+      session.model = session.model || (e.data.model as string) || undefined;
       session.inputTokens = (e.data.input_tokens as number) || 0;
       session.outputTokens = (e.data.output_tokens as number) || 0;
       session.costUsd = (e.data.cost_usd as number) || 0;
       session.roundCount = (e.data.round_count as number) || 0;
       session.conversationKey = (e.data.conversation_key as string) || undefined;
+      session.throttleCount = (e.data.throttle_count as number) || 0;
+      session.throttleSeconds = (e.data.throttle_seconds as number) || 0;
+      session.modelBreakdown = (e.data.model_breakdown as Record<string, ModelBreakdownEntry>) || {};
     } else if (e.event_type === "agent_output") {
       const session = getSession(role, repo, e.stage);
       session.items.push({
@@ -322,6 +340,11 @@ function AgentConversationView({
         <span className="text-xs font-medium text-text">
           {session.role.replace(/_/g, " ")}
         </span>
+        {session.model && (
+          <span className="text-[10px] text-text-muted font-mono bg-bg-surface border border-border-subtle rounded px-1 py-0.5">
+            {session.model.replace("claude-", "").replace(/-\d{8}$/, "")}
+          </span>
+        )}
         {session.repo && (
           <span className="text-[10px] text-text-dim font-mono">
             ({session.repo})
@@ -330,6 +353,11 @@ function AgentConversationView({
         {session.roundCount > 0 && (
           <span className="text-[10px] text-text-dim">
             round {session.roundCount}
+          </span>
+        )}
+        {session.throttleCount > 0 && (
+          <span className="text-[10px] text-status-error" title={`Throttled ${session.throttleCount} time(s), lost ${session.throttleSeconds.toFixed(0)}s`}>
+            {session.throttleSeconds.toFixed(0)}s throttled
           </span>
         )}
         {session.costUsd > 0 && (
@@ -392,10 +420,42 @@ function AgentConversationView({
         })}
       </div>
 
-      {/* Token info footer */}
+      {/* Token info footer with per-model breakdown */}
       {tokenInfo && (
-        <div className="px-3 py-1 border-t border-border-subtle text-[10px] text-text-dim text-right flex-shrink-0">
-          {tokenInfo}
+        <div className="border-t border-border-subtle flex-shrink-0">
+          {Object.keys(session.modelBreakdown).length > 0 && (
+            <div className="px-3 pt-1.5 pb-0.5 space-y-0.5">
+              {Object.entries(session.modelBreakdown).map(([model, stats]) => {
+                const shortName = model.replace("claude-", "").replace(/-\d{8}$/, "");
+                return (
+                  <div key={model} className="flex items-center gap-2 text-[10px]">
+                    <span className="font-mono text-text-muted w-20 truncate" title={model}>
+                      {shortName}
+                    </span>
+                    <span className="text-text-dim">
+                      {(stats.input_tokens / 1000).toFixed(1)}k/{(stats.output_tokens / 1000).toFixed(1)}k tok
+                    </span>
+                    <span className="text-accent">
+                      ${stats.cost_usd.toFixed(4)}
+                    </span>
+                    {stats.throttle_count > 0 && (
+                      <span className="text-status-error">
+                        {stats.throttle_seconds.toFixed(0)}s throttled
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <div className="px-3 py-1 text-[10px] text-text-dim text-right flex items-center justify-end gap-3">
+            {session.throttleCount > 0 && (
+              <span className="text-status-error">
+                total: {session.throttleSeconds.toFixed(0)}s throttled
+              </span>
+            )}
+            <span>{tokenInfo}</span>
+          </div>
         </div>
       )}
 
@@ -440,8 +500,14 @@ function AgentSessionList({
               {session.role.replace(/_/g, " ")}
             </span>
           </div>
-          {session.repo && (
+          {(session.repo || session.model) && (
             <div className="text-[9px] text-text-dim font-mono ml-3 truncate">
+              {session.model && (
+                <span className="text-text-muted">
+                  {session.model.replace("claude-", "").replace(/-\d{8}$/, "")}
+                </span>
+              )}
+              {session.repo && session.model && " · "}
               {session.repo}
             </div>
           )}

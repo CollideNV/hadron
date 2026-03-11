@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from hadron.agent.base import merge_model_breakdowns
 from hadron.agent.prompt import PromptComposer
 from hadron.config.defaults import BRANCH_PREFIX
 from hadron.models.events import EventType, PipelineEvent
@@ -25,6 +26,9 @@ async def rebase_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
     total_cost = 0.0
     total_input = 0
     total_output = 0
+    total_throttle_count = 0
+    total_throttle_seconds = 0.0
+    total_model_breakdown: dict[str, dict[str, Any]] = {}
 
     ri = RepoInfo.from_state(state)
 
@@ -82,6 +86,9 @@ Resolve the conflict markers in each file and write the resolved versions.
         total_cost += agent_run.result.cost_usd
         total_input += agent_run.result.input_tokens
         total_output += agent_run.result.output_tokens
+        total_throttle_count += agent_run.result.throttle_count
+        total_throttle_seconds += agent_run.result.throttle_seconds
+        total_model_breakdown = merge_model_breakdowns(total_model_breakdown, agent_run.result.model_breakdown)
 
         # Try to continue the rebase
         rebase_continued = await wm.continue_rebase(ri.worktree_path)
@@ -114,6 +121,9 @@ Resolve the conflict markers in each file and write the resolved versions.
                 total_cost += retry_run.result.cost_usd
                 total_input += retry_run.result.input_tokens
                 total_output += retry_run.result.output_tokens
+                total_throttle_count += retry_run.result.throttle_count
+                total_throttle_seconds += retry_run.result.throttle_seconds
+                total_model_breakdown = merge_model_breakdowns(total_model_breakdown, retry_run.result.model_breakdown)
 
                 rebase_continued = await wm.continue_rebase(ri.worktree_path)
                 if rebase_continued:
@@ -148,6 +158,9 @@ Resolve the conflict markers in each file and write the resolved versions.
         "cost_input_tokens": total_input,
         "cost_output_tokens": total_output,
         "cost_usd": total_cost,
+        "throttle_count": total_throttle_count,
+        "throttle_seconds": total_throttle_seconds,
+        "model_breakdown": total_model_breakdown,
         "stage_history": [{"stage": "rebase", "status": "completed"}],
     }
 

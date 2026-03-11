@@ -10,7 +10,7 @@ from typing import Any, AsyncIterator, Callable
 
 import anthropic
 
-from hadron.agent.base import AgentEvent, AgentResult, AgentTask, OnAgentEvent, OnToolCall
+from hadron.agent.base import AgentEvent, AgentResult, AgentTask, ModelStats, OnAgentEvent, OnToolCall
 from hadron.agent.phases import PhasePromptBuilder
 from hadron.agent.rate_limiter import call_with_retry
 from hadron.agent.tools import execute_tool, make_tools
@@ -96,12 +96,24 @@ class _PhaseResult:
     """Internal result from a single phase."""
 
     output: str
+    model: str
     input_tokens: int
     output_tokens: int
     cost_usd: float
     tool_calls: list[dict[str, Any]]
     conversation: list[dict[str, Any]]
     round_count: int
+    throttle_count: int = 0
+    throttle_seconds: float = 0.0
+
+    def to_model_stats(self) -> ModelStats:
+        return ModelStats(
+            input_tokens=self.input_tokens,
+            output_tokens=self.output_tokens,
+            cost_usd=self.cost_usd,
+            throttle_count=self.throttle_count,
+            throttle_seconds=self.throttle_seconds,
+        )
 
 
 class ClaudeAgentBackend:
@@ -133,6 +145,9 @@ class ClaudeAgentBackend:
         all_tool_calls: list[dict[str, Any]] = []
         all_conversations: list[dict[str, Any]] = []
         total_rounds = 0
+        total_throttle_count = 0
+        total_throttle_seconds = 0.0
+        breakdown: dict[str, ModelStats] = {}
         exploration_summary = ""
         plan_text = ""
 
@@ -161,6 +176,10 @@ class ClaudeAgentBackend:
             all_tool_calls.extend(explore_result.tool_calls)
             all_conversations.extend(explore_result.conversation)
             total_rounds += explore_result.round_count
+            total_throttle_count += explore_result.throttle_count
+            total_throttle_seconds += explore_result.throttle_seconds
+            stats = explore_result.to_model_stats()
+            breakdown[task.explore_model] = breakdown.get(task.explore_model, ModelStats()).merge(stats)
 
             if task.on_event:
                 await task.on_event("phase_completed", {
@@ -196,6 +215,10 @@ class ClaudeAgentBackend:
             total_output += plan_result.output_tokens
             total_cost += plan_result.cost_usd
             all_conversations.extend(plan_result.conversation)
+            total_throttle_count += plan_result.throttle_count
+            total_throttle_seconds += plan_result.throttle_seconds
+            stats = plan_result.to_model_stats()
+            breakdown[task.plan_model] = breakdown.get(task.plan_model, ModelStats()).merge(stats)
 
             if task.on_event:
                 await task.on_event("phase_completed", {
@@ -237,6 +260,10 @@ class ClaudeAgentBackend:
         all_tool_calls.extend(act_result.tool_calls)
         all_conversations.extend(act_result.conversation)
         total_rounds += act_result.round_count
+        total_throttle_count += act_result.throttle_count
+        total_throttle_seconds += act_result.throttle_seconds
+        act_stats = act_result.to_model_stats()
+        breakdown[task.model] = breakdown.get(task.model, ModelStats()).merge(act_stats)
 
         if task.on_event and (task.explore_model or task.plan_model):
             await task.on_event("phase_completed", {
@@ -255,6 +282,10 @@ class ClaudeAgentBackend:
             tool_calls=all_tool_calls,
             conversation=all_conversations,
             round_count=total_rounds,
+            model=task.model,
+            throttle_count=total_throttle_count,
+            throttle_seconds=total_throttle_seconds,
+            model_breakdown={m: s.to_dict() for m, s in breakdown.items()},
         )
 
     # ------------------------------------------------------------------
@@ -281,6 +312,8 @@ class ClaudeAgentBackend:
         all_tool_calls: list[dict[str, Any]] = []
         final_text = ""
         round_num = 0
+        total_throttle_count = 0
+        total_throttle_seconds = 0.0
 
         for round_num in range(cfg.max_rounds):
             # API call with rate-limit retry
@@ -291,7 +324,7 @@ class ClaudeAgentBackend:
                         "round": round_num,
                     })
 
-            response = await call_with_retry(
+            retry_result = await call_with_retry(
                 lambda: self._client.messages.create(
                     model=cfg.model,
                     max_tokens=cfg.max_tokens,
@@ -302,6 +335,9 @@ class ClaudeAgentBackend:
                 label=cfg.phase,
                 on_retry=_on_retry,
             )
+            response = retry_result.value
+            total_throttle_count += retry_result.throttle_count
+            total_throttle_seconds += retry_result.throttle_seconds
 
             total_input += response.usage.input_tokens
             total_output += response.usage.output_tokens
@@ -363,12 +399,15 @@ class ClaudeAgentBackend:
 
         return _PhaseResult(
             output=final_text,
+            model=cfg.model,
             input_tokens=total_input,
             output_tokens=total_output,
             cost_usd=cost,
             tool_calls=all_tool_calls,
             conversation=_serialize_messages(messages),
             round_count=round_num + 1 if messages else 0,
+            throttle_count=total_throttle_count,
+            throttle_seconds=total_throttle_seconds,
         )
 
     async def _run_plan_call(
@@ -395,7 +434,8 @@ class ClaudeAgentBackend:
                     pass
                 return await stream.get_final_message()
 
-        response = await call_with_retry(_plan_api_call, label="plan")
+        retry_result = await call_with_retry(_plan_api_call, label="plan")
+        response = retry_result.value
 
         text_parts, _ = self._parse_response_blocks(response)
         text = "".join(text_parts)
@@ -404,6 +444,7 @@ class ClaudeAgentBackend:
 
         return _PhaseResult(
             output=text,
+            model=model,
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
             cost_usd=cost,
@@ -413,6 +454,8 @@ class ClaudeAgentBackend:
                 {"role": "assistant", "content": text},
             ],
             round_count=1,
+            throttle_count=retry_result.throttle_count,
+            throttle_seconds=retry_result.throttle_seconds,
         )
 
     # ------------------------------------------------------------------
@@ -433,7 +476,7 @@ class ClaudeAgentBackend:
                     data={"text": f"[Rate limited — waiting {wait}s before retrying...]"},
                 ))
 
-            response = await call_with_retry(
+            retry_result = await call_with_retry(
                 lambda: self._client.messages.create(
                     model=task.model,
                     max_tokens=task.max_tokens,
@@ -444,6 +487,7 @@ class ClaudeAgentBackend:
                 label="stream",
                 on_retry=_on_stream_retry,
             )
+            response = retry_result.value
             for ev in retry_events:
                 yield ev
 

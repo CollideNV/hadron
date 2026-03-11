@@ -41,11 +41,26 @@ Feature: Agent Execution
     When the agent backend retries
     Then it waits with exponential backoff starting at 60 seconds
     And it retries up to 5 times before failing
+    And the retry count and total wait time are recorded in the result
+
+  Scenario: Throttle tracking across phases
+    Given an agent task with three phases configured
+    When rate limiting occurs during the explore and act phases
+    Then throttle_count and throttle_seconds are accumulated across all phases
+    And the totals are included in the AgentResult
+    And a throttle summary is emitted in the agent_completed event
 
   Scenario: Track agent cost
     When an agent completes execution
     Then the input token count, output token count, and USD cost are recorded
+    And the model used is recorded in the result
     And the cost is accumulated in the pipeline state via reducers
+
+  Scenario: Track throttle time in pipeline state
+    Given multiple agents execute across different pipeline stages
+    When rate limiting causes retries
+    Then throttle_count and throttle_seconds are accumulated in the pipeline state via reducers
+    And the dashboard displays total time lost to throttling per agent session
 
   Scenario: Store agent conversation
     When an agent completes execution

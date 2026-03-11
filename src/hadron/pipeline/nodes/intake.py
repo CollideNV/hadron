@@ -61,6 +61,9 @@ async def intake_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
             "cost_input_tokens": result.input_tokens,
             "cost_output_tokens": result.output_tokens,
             "cost_usd": result.cost_usd,
+            "throttle_count": result.throttle_count,
+            "throttle_seconds": result.throttle_seconds,
+            "model_breakdown": result.model_breakdown,
             "stage_history": [{"stage": "intake", "status": "paused"}],
         }
 
@@ -75,5 +78,8 @@ async def intake_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
         "cost_input_tokens": result.input_tokens,
         "cost_output_tokens": result.output_tokens,
         "cost_usd": result.cost_usd,
+        "throttle_count": result.throttle_count,
+        "throttle_seconds": result.throttle_seconds,
+        "model_breakdown": result.model_breakdown,
         "stage_history": [{"stage": "intake", "status": "completed"}],
     }

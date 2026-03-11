@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from hadron.agent.base import merge_model_breakdowns
 from hadron.agent.prompt import PromptComposer
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
@@ -29,6 +30,9 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
     total_cost = 0.0
     total_input = 0
     total_output = 0
+    total_throttle_count = 0
+    total_throttle_seconds = 0.0
+    total_model_breakdown: dict[str, dict[str, Any]] = {}
 
     ri = RepoInfo.from_state(state)
 
@@ -76,6 +80,9 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
     total_cost += test_run.result.cost_usd
     total_input += test_run.result.input_tokens
     total_output += test_run.result.output_tokens
+    total_throttle_count += test_run.result.throttle_count
+    total_throttle_seconds += test_run.result.throttle_seconds
+    total_model_breakdown = merge_model_breakdowns(total_model_breakdown, test_run.result.model_breakdown)
 
     await ctx.event_bus.emit(PipelineEvent(
         cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="tdd:test_writer",
@@ -119,6 +126,9 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
         total_cost += code_run.result.cost_usd
         total_input += code_run.result.input_tokens
         total_output += code_run.result.output_tokens
+        total_throttle_count += code_run.result.throttle_count
+        total_throttle_seconds += code_run.result.throttle_seconds
+        total_model_breakdown = merge_model_breakdowns(total_model_breakdown, code_run.result.model_breakdown)
 
         # Run tests
         tests_passing, test_output = await run_test_command(
@@ -173,5 +183,8 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
         "cost_input_tokens": total_input,
         "cost_output_tokens": total_output,
         "cost_usd": total_cost,
+        "throttle_count": total_throttle_count,
+        "throttle_seconds": total_throttle_seconds,
+        "model_breakdown": total_model_breakdown,
         "stage_history": [{"stage": "tdd", "status": "completed"}],
     }

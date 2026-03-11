@@ -9,6 +9,8 @@ from __future__ import annotations
 import operator
 from typing import Annotated, Any, TypedDict
 
+from hadron.agent.base import merge_model_breakdowns
+
 
 class StructuredCR(TypedDict, total=False):
     """Parsed change request — output of Intake."""
@@ -131,6 +133,13 @@ class PipelineState(TypedDict, total=False):
     cost_input_tokens: Annotated[int, operator.add]
     cost_output_tokens: Annotated[int, operator.add]
     cost_usd: Annotated[float, operator.add]
+
+    # --- Throttling (reducer: accumulates across nodes) ---
+    throttle_count: Annotated[int, operator.add]
+    throttle_seconds: Annotated[float, operator.add]
+
+    # --- Per-model breakdown (reducer: merges across nodes) ---
+    model_breakdown: Annotated[dict[str, dict[str, Any]], merge_model_breakdowns]
 
     # --- Config snapshot (frozen at intake) ---
     config_snapshot: dict[str, Any]

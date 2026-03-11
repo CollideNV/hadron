@@ -417,6 +417,7 @@ async def run_agent(
             cr_id=cr_id, event_type=EventType.AGENT_COMPLETED, stage=stage,
             data={
                 "role": role, "repo": repo_name,
+                "model": effective_model,
                 "output": result.output[:2000],
                 "input_tokens": result.input_tokens,
                 "output_tokens": result.output_tokens,
@@ -424,6 +425,9 @@ async def run_agent(
                 "tool_calls_count": len(result.tool_calls),
                 "round_count": result.round_count,
                 "conversation_key": conv_key,
+                "throttle_count": result.throttle_count,
+                "throttle_seconds": result.throttle_seconds,
+                "model_breakdown": result.model_breakdown,
             },
         ))
 

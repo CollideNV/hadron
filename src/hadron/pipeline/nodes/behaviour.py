@@ -74,6 +74,9 @@ async def behaviour_translation_node(state: PipelineState, ctx: NodeContext, cr_
         "cost_input_tokens": result.input_tokens,
         "cost_output_tokens": result.output_tokens,
         "cost_usd": result.cost_usd,
+        "throttle_count": result.throttle_count,
+        "throttle_seconds": result.throttle_seconds,
+        "model_breakdown": result.model_breakdown,
         "stage_history": [{"stage": "behaviour_translation", "status": "completed"}],
     }
 
@@ -172,5 +175,8 @@ Verify the above specifications against the CR.
         "cost_input_tokens": result.input_tokens,
         "cost_output_tokens": result.output_tokens,
         "cost_usd": result.cost_usd,
+        "throttle_count": result.throttle_count,
+        "throttle_seconds": result.throttle_seconds,
+        "model_breakdown": result.model_breakdown,
         "stage_history": [{"stage": "behaviour_verification", "status": "completed"}],
     }

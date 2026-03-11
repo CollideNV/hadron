@@ -42,12 +42,87 @@ hadron/
 - **Git ops** via `asyncio.create_subprocess_exec`
 - **Env vars** all prefixed `HADRON_`
 
-## Running Tests
+## Testing
 
-```bash
-source .venv/bin/activate
-pytest tests/ -x -q
+### Backend — pytest
+
+- **Location:** `tests/` (flat directory, all files at top level)
+- **Config:** `pyproject.toml` → `[tool.pytest.ini_options]`, `asyncio_mode = "auto"`
+- **Run all:** `pytest` (from repo root, venv activated)
+- **Run one file:** `pytest tests/test_rate_limiter.py`
+- **Run one test:** `pytest tests/test_rate_limiter.py::TestCallWithRetry::test_success_on_first_try`
+- **File naming:** `tests/test_*.py`
+- **Class naming:** `class TestFeatureName:` (no unittest.TestCase)
+- **Function naming:** `async def test_thing(self) -> None:`
+- **Async:** All async tests auto-detected — no `@pytest.mark.asyncio` decorator needed
+- **Fixtures:** `tests/conftest.py` — `tmp_workdir` for tool tests
+- **No external services:** All infra is mocked. Tests don't need Postgres/Redis running.
+
+#### Mocking patterns (pipeline node tests)
+
+```python
+from hadron.agent.base import AgentResult
+from unittest.mock import AsyncMock, MagicMock
+
+# Mock AgentResult
+agent_result = AgentResult(
+    output='{"key": "value"}',
+    cost_usd=0.01,
+    input_tokens=100,
+    output_tokens=50,
+)
+
+# Mock agent backend
+agent_backend = AsyncMock()
+agent_backend.execute = AsyncMock(return_value=agent_result)
+
+# Mock event bus
+event_bus = AsyncMock()
+event_bus.emit = AsyncMock()
+
+# Mock Redis (nudge polling + conversation storage)
+redis_mock = AsyncMock()
+pipe_mock = AsyncMock()
+pipe_mock.execute = AsyncMock(return_value=[None, 0])
+redis_mock.pipeline = MagicMock(return_value=pipe_mock)
+redis_mock.set = AsyncMock()
 ```
+
+### Frontend — Vitest
+
+- **Location:** Co-located with source — `src/**/*.test.ts` and `src/**/*.test.tsx`
+- **Config:** `frontend/vite.config.ts` → `test` block
+- **Run all:** `cd frontend && npm test`
+- **Run watch:** `cd frontend && npm run test:watch`
+- **Environment:** jsdom
+- **Setup file:** `frontend/src/test-setup.ts`
+- **Globals:** enabled — `describe`, `it`, `expect`, `vi` available without import
+
+#### Frontend test patterns
+
+```typescript
+import { describe, it, expect, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { makeEvent } from "../../test-utils";
+
+// Mock API modules at top of file
+vi.mock("../../api/client", () => ({
+  sendNudge: vi.fn().mockResolvedValue({ status: "nudge_set" }),
+}));
+
+describe("MyComponent", () => {
+  it("renders correctly", () => {
+    render(<MyComponent prop={someValue} />);
+    expect(screen.getByText(/expected text/i)).toBeInTheDocument();
+  });
+});
+```
+
+- **Rendering:** `@testing-library/react` — `render()`, `screen.getByText()`, `screen.getAllByText()`
+- **User interaction:** `@testing-library/user-event`
+- **Mocking:** `vi.mock("../../api/client", () => ({ ... }))` at file top
+- **Assertions:** `@testing-library/jest-dom` matchers (`.toBeInTheDocument()`, etc.)
+- **Test data factories:** `src/test-utils.ts` — `makeEvent()` and `makeCRRun()` helpers
 
 ## API Contract
 

@@ -52,3 +52,31 @@ Feature: Three-phase agent execution
     And Sonnet tokens are priced at $3.00/$15.00 per million
     And Opus tokens are priced at $15.00/$75.00 per million
     And the total cost is the sum across all phases
+
+  Scenario: Per-model breakdown in result
+    Given an agent uses Haiku for explore and Sonnet for act
+    When the agent completes
+    Then model_breakdown contains an entry for each model used
+    And each entry has input_tokens, output_tokens, cost_usd, throttle_count, throttle_seconds
+    And the sum of all entries equals the aggregate totals in AgentResult
+    And the breakdown is included in the agent_completed event
+
+  Scenario: Per-model breakdown accumulated in pipeline state
+    Given multiple agents execute using different models
+    When model_breakdown dicts are returned from pipeline nodes
+    Then the merge_model_breakdowns reducer merges them by model name
+    And the pipeline-level breakdown shows total usage per model across all stages
+    And the dashboard displays a per-model cost and throttle summary
+
+  Scenario: Model name recorded in result
+    When an agent completes a multi-phase execution
+    Then the AgentResult includes the act-phase model name
+    And the agent_completed event includes the model name
+    And the dashboard shows the model as a badge next to the agent role
+
+  Scenario: Throttle stats accumulated across phases
+    Given rate limiting occurs during the explore phase and the act phase
+    When the agent completes
+    Then throttle_count is the sum of retries across all phases
+    And throttle_seconds is the total wait time across all phases
+    And both values are included in the AgentResult

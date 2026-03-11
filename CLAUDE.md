@@ -101,6 +101,13 @@ The roadmap in `adr/roadmap.md` §22 defines 8 phases:
 7. **Production (Wk 13):** Observability, retention, load testing, prompt A/B testing
 8. **Landscape Intelligence (Wk 14-17):** Scanner, Knowledge Store with pgvector, LLM-assisted repo identification
 
+## Testing
+
+- **Backend:** `pytest` — tests in `tests/`, async auto-detected, all infra mocked (no DB/Redis needed). Run: `pytest`
+- **Frontend:** `vitest` — tests co-located as `*.test.ts(x)` next to source. Run: `cd frontend && npm test`
+- **BDD specs:** `features/*.feature` — Gherkin files describing pipeline behaviour
+- **See `AGENTS.md`** for detailed test patterns, mocking conventions, and example code.
+
 ## Key Design Decisions
 
 - **LangGraph + PostgreSQL checkpointing** — durable state survives pod failures; any worker can resume any repo's pipeline
