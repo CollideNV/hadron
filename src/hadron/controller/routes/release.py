@@ -85,6 +85,9 @@ async def approve_release(cr_id: str, request: Request) -> dict:
         )
         repo_runs = repo_result.scalars().all()
 
+    if not repo_runs:
+        raise HTTPException(status_code=409, detail="No repos found for this CR")
+
     # Verify all repos are completed
     not_ready = [rr for rr in repo_runs if rr.status != "completed"]
     if not_ready:
@@ -93,9 +96,6 @@ async def approve_release(cr_id: str, request: Request) -> dict:
             status_code=409,
             detail=f"Not all repos are ready: {', '.join(names)} ({[rr.status for rr in not_ready]})",
         )
-
-    if not repo_runs:
-        raise HTTPException(status_code=409, detail="No repos found for this CR")
 
     # TODO: Merge PRs via git provider API (GitHub, GitLab, etc.)
     # For each repo_run with a pr_url, call the merge API.

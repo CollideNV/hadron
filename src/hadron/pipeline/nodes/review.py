@@ -222,81 +222,94 @@ async def review_node(state: PipelineState, config: RunnableConfig) -> dict[str,
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="review",
         ))
 
-    structured_cr = state.get("structured_cr", {})
-    behaviour_specs = state.get("behaviour_specs", [])
-    total_cost = 0.0
-    total_input = 0
-    total_output = 0
+    try:
+        structured_cr = state.get("structured_cr", {})
+        behaviour_specs = state.get("behaviour_specs", [])
+        total_cost = 0.0
+        total_input = 0
+        total_output = 0
 
-    wm = WorktreeManager(ctx.workspace_dir)
-    ri = RepoInfo.from_state(state)
+        wm = WorktreeManager(ctx.workspace_dir)
+        ri = RepoInfo.from_state(state)
 
-    # 1. Get diff
-    diff = await wm.get_diff(ri.worktree_path, ri.default_branch)
+        # 1. Get diff
+        diff = await wm.get_diff(ri.worktree_path, ri.default_branch)
 
-    # 2. Deterministic diff scope analysis (no LLM)
-    scope_flags = analyse_diff_scope(diff)
+        # 2. Deterministic diff scope analysis (no LLM)
+        scope_flags = analyse_diff_scope(diff)
 
-    # 3. Build payloads for each reviewer
-    security_payload = _build_security_payload(
-        diff, structured_cr, ri.default_branch, scope_flags, behaviour_specs, ri.repo_name,
-    )
-    quality_payload = _build_quality_payload(diff, structured_cr, ri.default_branch)
-    spec_payload = _build_spec_compliance_payload(
-        diff, structured_cr, ri.default_branch, behaviour_specs, ri.repo_name,
-    )
+        # 3. Build payloads for each reviewer
+        security_payload = _build_security_payload(
+            diff, structured_cr, ri.default_branch, scope_flags, behaviour_specs, ri.repo_name,
+        )
+        quality_payload = _build_quality_payload(diff, structured_cr, ri.default_branch)
+        spec_payload = _build_spec_compliance_payload(
+            diff, structured_cr, ri.default_branch, behaviour_specs, ri.repo_name,
+        )
 
-    # 4. Run all 3 reviewers in parallel
-    security_result, quality_result, spec_result = await asyncio.gather(
-        _run_single_reviewer("security_reviewer", security_payload, ctx, cr_id, ri.repo_name, ri.worktree_path),
-        _run_single_reviewer("quality_reviewer", quality_payload, ctx, cr_id, ri.repo_name, ri.worktree_path),
-        _run_single_reviewer("spec_compliance_reviewer", spec_payload, ctx, cr_id, ri.repo_name, ri.worktree_path),
-    )
+        # 4. Run all 3 reviewers in parallel
+        security_result, quality_result, spec_result = await asyncio.gather(
+            _run_single_reviewer("security_reviewer", security_payload, ctx, cr_id, ri.repo_name, ri.worktree_path),
+            _run_single_reviewer("quality_reviewer", quality_payload, ctx, cr_id, ri.repo_name, ri.worktree_path),
+            _run_single_reviewer("spec_compliance_reviewer", spec_payload, ctx, cr_id, ri.repo_name, ri.worktree_path),
+        )
 
-    # 5. Merge findings and costs
-    all_findings: list[dict[str, Any]] = []
-    for role, r in zip(_REVIEWER_ROLES, (security_result, quality_result, spec_result)):
-        await emit_cost_update(ctx.event_bus, cr_id, f"review:{role}", AgentResult(
-            output="",
-            cost_usd=r["cost_usd"],
-            input_tokens=r["input_tokens"],
-            output_tokens=r["output_tokens"],
-        ), total_cost)
-        total_cost += r["cost_usd"]
-        total_input += r["input_tokens"]
-        total_output += r["output_tokens"]
-        all_findings.extend(r["review"].get("findings", []))
+        # 5. Merge findings and costs
+        all_findings: list[dict[str, Any]] = []
+        for role, r in zip(_REVIEWER_ROLES, (security_result, quality_result, spec_result)):
+            await emit_cost_update(ctx.event_bus, cr_id, f"review:{role}", AgentResult(
+                output="",
+                cost_usd=r["cost_usd"],
+                input_tokens=r["input_tokens"],
+                output_tokens=r["output_tokens"],
+            ), total_cost)
+            total_cost += r["cost_usd"]
+            total_input += r["input_tokens"]
+            total_output += r["output_tokens"]
+            all_findings.extend(r["review"].get("findings", []))
 
-    # 6. Emit individual findings
-    for finding in all_findings:
+        # 6. Emit individual findings
+        for finding in all_findings:
+            await ctx.event_bus.emit(PipelineEvent(
+                cr_id=cr_id, event_type=EventType.REVIEW_FINDING, stage="review",
+                data={"repo": ri.repo_name, **finding},
+            ))
+
+        # 7. Determine pass/fail — only block on critical/major from ANY reviewer
+        blocking_findings = [f for f in all_findings if f.get("severity") in ("critical", "major")]
+        passed = len(blocking_findings) == 0
+
+        review_results = [{
+            "repo_name": ri.repo_name,
+            "findings": all_findings,
+            "review_passed": passed,
+            "review_iteration": state.get("review_loop_count", 0) + 1,
+        }]
+
         await ctx.event_bus.emit(PipelineEvent(
-            cr_id=cr_id, event_type=EventType.REVIEW_FINDING, stage="review",
-            data={"repo": ri.repo_name, **finding},
-        ))
+                cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="review",
+                data={"all_passed": passed},
+            ))
 
-    # 7. Determine pass/fail — only block on critical/major from ANY reviewer
-    blocking_findings = [f for f in all_findings if f.get("severity") in ("critical", "major")]
-    passed = len(blocking_findings) == 0
-
-    review_results = [{
-        "repo_name": ri.repo_name,
-        "findings": all_findings,
-        "review_passed": passed,
-        "review_iteration": state.get("review_loop_count", 0) + 1,
-    }]
-
-    await ctx.event_bus.emit(PipelineEvent(
+        return {
+            "review_results": review_results,
+            "review_passed": passed,
+            "review_loop_count": state.get("review_loop_count", 0) + 1,
+            "current_stage": "review",
+            "cost_input_tokens": total_input,
+            "cost_output_tokens": total_output,
+            "cost_usd": total_cost,
+            "stage_history": [{"stage": "review", "status": "completed"}],
+        }
+    except Exception as exc:
+        logger.exception("Review node crashed (CR %s): %s", cr_id, exc)
+        await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="review",
-            data={"all_passed": passed},
+            data={"error": str(exc)},
         ))
-
-    return {
-        "review_results": review_results,
-        "review_passed": passed,
-        "review_loop_count": state.get("review_loop_count", 0) + 1,
-        "current_stage": "review",
-        "cost_input_tokens": total_input,
-        "cost_output_tokens": total_output,
-        "cost_usd": total_cost,
-        "stage_history": [{"stage": "review", "status": "completed"}],
-    }
+        return {
+            "current_stage": "review",
+            "status": "paused",
+            "error": f"Review node failed: {exc}",
+            "stage_history": [{"stage": "review", "status": "error", "error": str(exc)}],
+        }

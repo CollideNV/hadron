@@ -38,7 +38,8 @@ async def _run_git(
 ) -> str:
     """Run a git command and return stdout."""
     cmd = ["git"] + list(args)
-    logger.debug("git %s (cwd=%s)", " ".join(args), cwd)
+    safe_args = _sanitize_git_output(" ".join(args))
+    logger.debug("git %s (cwd=%s)", safe_args, cwd)
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         cwd=cwd,
@@ -51,7 +52,7 @@ async def _run_git(
         # Sanitize stderr to avoid leaking credentials embedded in URLs
         safe_stderr = _sanitize_git_output(stderr.decode().strip())
         raise RuntimeError(
-            f"git {' '.join(args)} failed (rc={proc.returncode}): {safe_stderr}"
+            f"git {safe_args} failed (rc={proc.returncode}): {safe_stderr}"
         )
     return stdout.decode().strip()
 

@@ -24,26 +24,27 @@ async def behaviour_translation_node(state: PipelineState, config: RunnableConfi
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="behaviour_translation"
         ))
 
-    composer = PromptComposer()
-    structured_cr = state.get("structured_cr", {})
-    ri = RepoInfo.from_state(state)
+    try:
+        composer = PromptComposer()
+        structured_cr = state.get("structured_cr", {})
+        ri = RepoInfo.from_state(state)
 
-    repo_context = composer.build_repo_context(
-        agents_md=ri.agents_md,
-        languages=ri.languages,
-        test_commands=ri.test_commands,
-    )
-    system_prompt = composer.compose_system_prompt("spec_writer", repo_context)
+        repo_context = composer.build_repo_context(
+            agents_md=ri.agents_md,
+            languages=ri.languages,
+            test_commands=ri.test_commands,
+        )
+        system_prompt = composer.compose_system_prompt("spec_writer", repo_context)
 
-    # Include feedback from verification if this is a retry
-    feedback = ""
-    existing_specs = state.get("behaviour_specs", [])
-    for spec in existing_specs:
-        if spec.get("repo_name") == ri.repo_name and spec.get("verification_feedback"):
-            feedback = spec["verification_feedback"]
+        # Include feedback from verification if this is a retry
+        feedback = ""
+        existing_specs = state.get("behaviour_specs", [])
+        for spec in existing_specs:
+            if spec.get("repo_name") == ri.repo_name and spec.get("verification_feedback"):
+                feedback = spec["verification_feedback"]
 
-    criteria = "\n".join(f"- {c}" for c in structured_cr.get("acceptance_criteria", []))
-    task_payload = f"""# Change Request
+        criteria = "\n".join(f"- {c}" for c in structured_cr.get("acceptance_criteria", []))
+        task_payload = f"""# Change Request
 
 **Title:** {structured_cr.get('title', '')}
 **Description:** {structured_cr.get('description', '')}
@@ -51,43 +52,55 @@ async def behaviour_translation_node(state: PipelineState, config: RunnableConfi
 **Acceptance Criteria:**
 {criteria}
 """
-    user_prompt = composer.compose_user_prompt(task_payload, feedback)
+        user_prompt = composer.compose_user_prompt(task_payload, feedback)
 
-    agent_run = await run_agent(
-        ctx,
-        role="spec_writer",
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        cr_id=cr_id,
-        stage="behaviour_translation",
-        repo_name=ri.repo_name,
-        working_directory=ri.worktree_path,
-        allowed_tools=["read_file", "write_file", "list_directory"],
-        explore_model="",  # No explore/plan — spec_writer only needs the CR
-        plan_model="",
-    )
-    result = agent_run.result
+        agent_run = await run_agent(
+            ctx,
+            role="spec_writer",
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            cr_id=cr_id,
+            stage="behaviour_translation",
+            repo_name=ri.repo_name,
+            working_directory=ri.worktree_path,
+            allowed_tools=["read_file", "write_file", "list_directory"],
+            explore_model="",  # No explore/plan — spec_writer only needs the CR
+            plan_model="",
+        )
+        result = agent_run.result
 
-    specs_list = [{
-        "repo_name": ri.repo_name,
-        "feature_files": {},  # Agent writes directly to disk
-        "verified": False,
-        "verification_feedback": "",
-        "verification_iteration": state.get("verification_loop_count", 0),
-    }]
+        specs_list = [{
+            "repo_name": ri.repo_name,
+            "feature_files": {},  # Agent writes directly to disk
+            "verified": False,
+            "verification_feedback": "",
+            "verification_iteration": state.get("verification_loop_count", 0),
+        }]
 
-    await ctx.event_bus.emit(PipelineEvent(
+        await ctx.event_bus.emit(PipelineEvent(
+                cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="behaviour_translation",
+            ))
+
+        return {
+            "behaviour_specs": specs_list,
+            "current_stage": "behaviour_translation",
+            "cost_input_tokens": result.input_tokens,
+            "cost_output_tokens": result.output_tokens,
+            "cost_usd": result.cost_usd,
+            "stage_history": [{"stage": "behaviour_translation", "status": "completed"}],
+        }
+    except Exception as exc:
+        logger.exception("Behaviour translation node crashed (CR %s): %s", cr_id, exc)
+        await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="behaviour_translation",
+            data={"error": str(exc)},
         ))
-
-    return {
-        "behaviour_specs": specs_list,
-        "current_stage": "behaviour_translation",
-        "cost_input_tokens": result.input_tokens,
-        "cost_output_tokens": result.output_tokens,
-        "cost_usd": result.cost_usd,
-        "stage_history": [{"stage": "behaviour_translation", "status": "completed"}],
-    }
+        return {
+            "current_stage": "behaviour_translation",
+            "status": "paused",
+            "error": f"Behaviour translation failed: {exc}",
+            "stage_history": [{"stage": "behaviour_translation", "status": "error", "error": str(exc)}],
+        }
 
 
 async def behaviour_verification_node(state: PipelineState, config: RunnableConfig) -> dict[str, Any]:
@@ -99,18 +112,19 @@ async def behaviour_verification_node(state: PipelineState, config: RunnableConf
             cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="behaviour_verification"
         ))
 
-    composer = PromptComposer()
-    structured_cr = state.get("structured_cr", {})
+    try:
+        composer = PromptComposer()
+        structured_cr = state.get("structured_cr", {})
 
-    ri = RepoInfo.from_state(state)
+        ri = RepoInfo.from_state(state)
 
-    system_prompt = composer.compose_system_prompt("spec_verifier")
+        system_prompt = composer.compose_system_prompt("spec_verifier")
 
-    # Gather feature files so the verifier doesn't need to explore
-    feature_content = gather_files(ri.worktree_path, "features/**/*.feature")
+        # Gather feature files so the verifier doesn't need to explore
+        feature_content = gather_files(ri.worktree_path, "features/**/*.feature")
 
-    criteria = "\n".join(f"- {c}" for c in structured_cr.get("acceptance_criteria", []))
-    task_payload = f"""# Change Request
+        criteria = "\n".join(f"- {c}" for c in structured_cr.get("acceptance_criteria", []))
+        task_payload = f"""# Change Request
 
 **Title:** {structured_cr.get('title', '')}
 **Description:** {structured_cr.get('description', '')}
@@ -124,78 +138,90 @@ async def behaviour_verification_node(state: PipelineState, config: RunnableConf
 
 Verify the above specifications against the CR.
 """
-    user_prompt = composer.compose_user_prompt(task_payload)
+        user_prompt = composer.compose_user_prompt(task_payload)
 
-    agent_run = await run_agent(
-        ctx,
-        role="spec_verifier",
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        cr_id=cr_id,
-        stage="behaviour_verification",
-        repo_name=ri.repo_name,
-        working_directory=ri.worktree_path,
-        allowed_tools=["read_file", "list_directory"],
-        explore_model="",  # No explore/plan — CR + feature files are injected directly
-        plan_model="",
-    )
-    result = agent_run.result
-
-    # Parse verification result — try multiple extraction strategies
-    verification = extract_json(result.output, context=f"spec_verifier:{ri.repo_name}")
-    if verification is None:
-        verification = {"verified": False, "feedback": f"Verifier output was not valid JSON: {result.output[:200]}", "missing_scenarios": [], "issues": ["Output parsing failed"]}
-
-    verified = verification.get("verified", True)
-    feedback = verification.get("feedback", "")
-    missing = verification.get("missing_scenarios", [])
-    issues = verification.get("issues", [])
-
-    if not verified:
-        logger.warning(
-            "Verification FAILED for repo %s (iteration %d): feedback=%s, missing=%s, issues=%s",
-            ri.repo_name, state.get("verification_loop_count", 0) + 1,
-            feedback, missing, issues,
+        agent_run = await run_agent(
+            ctx,
+            role="spec_verifier",
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            cr_id=cr_id,
+            stage="behaviour_verification",
+            repo_name=ri.repo_name,
+            working_directory=ri.worktree_path,
+            allowed_tools=["read_file", "list_directory"],
+            explore_model="",  # No explore/plan — CR + feature files are injected directly
+            plan_model="",
         )
-    else:
-        logger.info("Verification PASSED for repo %s", ri.repo_name)
+        result = agent_run.result
 
-    updated_specs = [{
-        "repo_name": ri.repo_name,
-        "feature_files": {},
-        "verified": verified,
-        "verification_feedback": feedback,
-        "verification_iteration": state.get("verification_loop_count", 0) + 1,
-    }]
+        # Parse verification result — try multiple extraction strategies
+        verification = extract_json(result.output, context=f"spec_verifier:{ri.repo_name}")
+        if verification is None:
+            verification = {"verified": False, "feedback": f"Verifier output was not valid JSON: {result.output[:200]}", "missing_scenarios": [], "issues": ["Output parsing failed"]}
 
-    await ctx.event_bus.emit(PipelineEvent(
-            cr_id=cr_id, event_type=EventType.STAGE_COMPLETED,
-            stage=f"behaviour_verification:{ri.repo_name}",
-            data={
-                "repo": ri.repo_name,
-                "verified": verified,
-                "feedback": feedback,
-                "missing_scenarios": missing,
-                "issues": issues,
-                "iteration": state.get("verification_loop_count", 0) + 1,
-            },
-        ))
+        verified = verification.get("verified", True)
+        feedback = verification.get("feedback", "")
+        missing = verification.get("missing_scenarios", [])
+        issues = verification.get("issues", [])
 
-    await ctx.event_bus.emit(PipelineEvent(
+        if not verified:
+            logger.warning(
+                "Verification FAILED for repo %s (iteration %d): feedback=%s, missing=%s, issues=%s",
+                ri.repo_name, state.get("verification_loop_count", 0) + 1,
+                feedback, missing, issues,
+            )
+        else:
+            logger.info("Verification PASSED for repo %s", ri.repo_name)
+
+        updated_specs = [{
+            "repo_name": ri.repo_name,
+            "feature_files": {},
+            "verified": verified,
+            "verification_feedback": feedback,
+            "verification_iteration": state.get("verification_loop_count", 0) + 1,
+        }]
+
+        await ctx.event_bus.emit(PipelineEvent(
+                cr_id=cr_id, event_type=EventType.STAGE_COMPLETED,
+                stage=f"behaviour_verification:{ri.repo_name}",
+                data={
+                    "repo": ri.repo_name,
+                    "verified": verified,
+                    "feedback": feedback,
+                    "missing_scenarios": missing,
+                    "issues": issues,
+                    "iteration": state.get("verification_loop_count", 0) + 1,
+                },
+            ))
+
+        await ctx.event_bus.emit(PipelineEvent(
+                cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="behaviour_verification",
+                data={
+                    "all_verified": verified,
+                    "iteration": state.get("verification_loop_count", 0) + 1,
+                },
+            ))
+
+        return {
+            "behaviour_specs": updated_specs,
+            "behaviour_verified": verified,
+            "verification_loop_count": state.get("verification_loop_count", 0) + 1,
+            "current_stage": "behaviour_verification",
+            "cost_input_tokens": result.input_tokens,
+            "cost_output_tokens": result.output_tokens,
+            "cost_usd": result.cost_usd,
+            "stage_history": [{"stage": "behaviour_verification", "status": "completed"}],
+        }
+    except Exception as exc:
+        logger.exception("Behaviour verification node crashed (CR %s): %s", cr_id, exc)
+        await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="behaviour_verification",
-            data={
-                "all_verified": verified,
-                "iteration": state.get("verification_loop_count", 0) + 1,
-            },
+            data={"error": str(exc)},
         ))
-
-    return {
-        "behaviour_specs": updated_specs,
-        "behaviour_verified": verified,
-        "verification_loop_count": state.get("verification_loop_count", 0) + 1,
-        "current_stage": "behaviour_verification",
-        "cost_input_tokens": result.input_tokens,
-        "cost_output_tokens": result.output_tokens,
-        "cost_usd": result.cost_usd,
-        "stage_history": [{"stage": "behaviour_verification", "status": "completed"}],
-    }
+        return {
+            "current_stage": "behaviour_verification",
+            "status": "paused",
+            "error": f"Behaviour verification failed: {exc}",
+            "stage_history": [{"stage": "behaviour_verification", "status": "error", "error": str(exc)}],
+        }

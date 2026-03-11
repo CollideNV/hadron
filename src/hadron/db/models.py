@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import JSON, DateTime, Float, String, Text, func
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, String, Text, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
@@ -34,6 +34,10 @@ class CRRun(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
+    repo_runs: Mapped[list[RepoRun]] = relationship(
+        "RepoRun", back_populates="cr_run", lazy="selectin"
+    )
+
 
 class RepoRun(Base):
     """Tracks a single repo-worker within a CR.
@@ -46,7 +50,10 @@ class RepoRun(Base):
     __tablename__ = "repo_runs"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    cr_id: Mapped[str] = mapped_column(String(64), index=True)
+    cr_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("cr_runs.cr_id"), index=True
+    )
+    cr_run: Mapped[CRRun] = relationship("CRRun", back_populates="repo_runs")
     repo_url: Mapped[str] = mapped_column(String(512))
     repo_name: Mapped[str] = mapped_column(String(256))
     status: Mapped[str] = mapped_column(

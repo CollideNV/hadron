@@ -7,7 +7,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Callable, TypeVar
 
 import anthropic
 
@@ -16,6 +16,8 @@ from hadron.agent.phases import PhasePromptBuilder
 from hadron.agent.tools import execute_tool, make_tools
 
 logger = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
 
 # Per-model cost per million tokens: (input, output)
 _MODEL_COSTS: dict[str, tuple[float, float]] = {
@@ -96,6 +98,40 @@ class ClaudeAgentBackend:
             api_key=api_key or os.environ.get("ANTHROPIC_API_KEY", ""),
         )
         self._prompts = PhasePromptBuilder()
+
+    async def _call_with_retry(
+        self,
+        api_call: Callable[[], Any],
+        label: str,
+        on_retry: Callable[[int], Any] | None = None,
+    ) -> _T:
+        """Call *api_call* with exponential back-off on rate-limit errors.
+
+        Args:
+            api_call: Async callable (no args) that makes the Anthropic API call.
+            label: Human-readable label for log messages (e.g. "explore", "plan").
+            on_retry: Optional async callback invoked with the wait-seconds on each
+                retry, allowing callers to emit events / yield before sleeping.
+
+        Returns:
+            The value returned by *api_call*.
+        """
+        for attempt in range(_RATE_LIMIT_MAX_RETRIES):
+            try:
+                return await api_call()
+            except anthropic.RateLimitError as e:
+                if attempt == _RATE_LIMIT_MAX_RETRIES - 1:
+                    raise
+                wait = _RATE_LIMIT_BASE_WAIT * (attempt + 1)
+                logger.warning(
+                    "Rate limited [%s] (attempt %d/%d), waiting %ds: %s",
+                    label, attempt + 1, _RATE_LIMIT_MAX_RETRIES, wait, e,
+                )
+                if on_retry:
+                    await on_retry(wait)
+                await asyncio.sleep(wait)
+        # Unreachable — the final attempt either returns or re-raises.
+        raise AssertionError("unreachable")  # pragma: no cover
 
     async def execute(self, task: AgentTask) -> AgentResult:
         """Run the agent's tool-use loop to completion.
@@ -266,30 +302,24 @@ class ClaudeAgentBackend:
 
         for round_num in range(max_rounds):
             # API call with rate-limit retry
-            for attempt in range(_RATE_LIMIT_MAX_RETRIES):
-                try:
-                    response = await self._client.messages.create(
-                        model=model,
-                        max_tokens=max_tokens,
-                        system=system_prompt,
-                        tools=tools,
-                        messages=messages,
-                    )
-                    break
-                except anthropic.RateLimitError as e:
-                    if attempt == _RATE_LIMIT_MAX_RETRIES - 1:
-                        raise
-                    wait = _RATE_LIMIT_BASE_WAIT * (attempt + 1)
-                    logger.warning(
-                        "Rate limited [%s] (attempt %d/%d), waiting %ds: %s",
-                        phase, attempt + 1, _RATE_LIMIT_MAX_RETRIES, wait, e,
-                    )
-                    if on_event:
-                        await on_event("output", {
-                            "text": f"[Rate limited ({phase}) — waiting {wait}s before retrying...]",
-                            "round": round_num,
-                        })
-                    await asyncio.sleep(wait)
+            async def _on_retry(wait: int) -> None:
+                if on_event:
+                    await on_event("output", {
+                        "text": f"[Rate limited ({phase}) — waiting {wait}s before retrying...]",
+                        "round": round_num,
+                    })
+
+            response = await self._call_with_retry(
+                lambda: self._client.messages.create(
+                    model=model,
+                    max_tokens=max_tokens,
+                    system=system_prompt,
+                    tools=tools,
+                    messages=messages,
+                ),
+                label=phase,
+                on_retry=_on_retry,
+            )
 
             total_input += response.usage.input_tokens
             total_output += response.usage.output_tokens
@@ -379,27 +409,18 @@ class ClaudeAgentBackend:
         Uses streaming because the Anthropic SDK requires it for calls
         that may exceed 10 minutes (e.g. Opus with large context).
         """
-        for attempt in range(_RATE_LIMIT_MAX_RETRIES):
-            try:
-                async with self._client.messages.stream(
-                    model=model,
-                    max_tokens=max_tokens,
-                    system=system_prompt,
-                    messages=[{"role": "user", "content": user_prompt}],
-                ) as stream:
-                    async for event in stream:
-                        pass
-                    response = await stream.get_final_message()
-                break
-            except anthropic.RateLimitError as e:
-                if attempt == _RATE_LIMIT_MAX_RETRIES - 1:
-                    raise
-                wait = _RATE_LIMIT_BASE_WAIT * (attempt + 1)
-                logger.warning(
-                    "Rate limited [plan] (attempt %d/%d), waiting %ds: %s",
-                    attempt + 1, _RATE_LIMIT_MAX_RETRIES, wait, e,
-                )
-                await asyncio.sleep(wait)
+        async def _plan_api_call() -> Any:
+            async with self._client.messages.stream(
+                model=model,
+                max_tokens=max_tokens,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}],
+            ) as stream:
+                async for event in stream:
+                    pass
+                return await stream.get_final_message()
+
+        response = await self._call_with_retry(_plan_api_call, label="plan")
 
         text = ""
         for block in response.content:
@@ -431,29 +452,27 @@ class ClaudeAgentBackend:
         messages: list[dict[str, Any]] = [{"role": "user", "content": task.user_prompt}]
 
         for round_num in range(task.max_tool_rounds):
-            for attempt in range(_RATE_LIMIT_MAX_RETRIES):
-                try:
-                    response = await self._client.messages.create(
-                        model=task.model,
-                        max_tokens=task.max_tokens,
-                        system=task.system_prompt,
-                        tools=tools,
-                        messages=messages,
-                    )
-                    break
-                except anthropic.RateLimitError as e:
-                    if attempt == _RATE_LIMIT_MAX_RETRIES - 1:
-                        raise
-                    wait = _RATE_LIMIT_BASE_WAIT * (attempt + 1)
-                    logger.warning(
-                        "Rate limited in stream (attempt %d/%d), waiting %ds: %s",
-                        attempt + 1, _RATE_LIMIT_MAX_RETRIES, wait, e,
-                    )
-                    yield AgentEvent(
-                        event_type="text_delta",
-                        data={"text": f"[Rate limited — waiting {wait}s before retrying...]"},
-                    )
-                    await asyncio.sleep(wait)
+            retry_events: list[AgentEvent] = []
+
+            async def _on_stream_retry(wait: int) -> None:
+                retry_events.append(AgentEvent(
+                    event_type="text_delta",
+                    data={"text": f"[Rate limited — waiting {wait}s before retrying...]"},
+                ))
+
+            response = await self._call_with_retry(
+                lambda: self._client.messages.create(
+                    model=task.model,
+                    max_tokens=task.max_tokens,
+                    system=task.system_prompt,
+                    tools=tools,
+                    messages=messages,
+                ),
+                label="stream",
+                on_retry=_on_stream_retry,
+            )
+            for ev in retry_events:
+                yield ev
 
             text_parts = []
             tool_uses = []
