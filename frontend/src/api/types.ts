@@ -38,9 +38,6 @@ export interface RawChangeRequest {
   source?: string;
   repo_urls?: string[];
   repo_default_branch?: string;
-  test_command?: string;
-  language?: string;
-  agent_model?: string;
 }
 
 export const EVENT_TYPES = [

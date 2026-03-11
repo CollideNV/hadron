@@ -13,7 +13,6 @@ _FIELD_MAP = {
     "postgres_url_sync": "POSTGRES_URL_SYNC",
     "redis_url": "REDIS_URL",
     "anthropic_api_key": "ANTHROPIC_API_KEY",
-    "google_api_key": "GOOGLE_API_KEY",
     "workspace_dir": "WORKSPACE_DIR",
     "controller_host": "CONTROLLER_HOST",
     "controller_port": "CONTROLLER_LISTEN_PORT",
