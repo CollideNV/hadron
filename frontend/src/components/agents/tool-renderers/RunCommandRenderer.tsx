@@ -3,7 +3,7 @@ import type { RichToolCallProps } from "./helpers";
 import { getInput, extractExitCode } from "./helpers";
 
 export default function RunCommandRenderer({ call, result }: RichToolCallProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const input = getInput(call);
   const command = String(input.command || input.cmd || "");
   const exitCode = result ? extractExitCode(result.result) : null;

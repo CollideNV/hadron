@@ -3,7 +3,7 @@ import type { RichToolCallProps } from "./helpers";
 import { getInput } from "./helpers";
 
 export default function WriteFileRenderer({ call, result }: RichToolCallProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const input = getInput(call);
   const path = String(input.path || input.file_path || "");
   const content = String(input.content || "");
