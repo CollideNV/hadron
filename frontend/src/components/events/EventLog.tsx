@@ -1,45 +1,8 @@
 import { useState } from "react";
 import type { PipelineEvent } from "../../api/types";
 import { STAGES } from "../../api/types";
-
-/* ── Group colors (same as StageTimeline) ── */
-const STAGE_GROUP: Record<string, string> = {
-  intake: "Understand",
-  repo_id: "Understand",
-  worktree_setup: "Understand",
-  behaviour_translation: "Specify",
-  behaviour_verification: "Specify",
-  tdd: "Build",
-  review: "Validate",
-  rebase: "Validate",
-  delivery: "Ship",
-  release_gate: "Ship",
-  release: "Ship",
-  retrospective: "Ship",
-};
-
-const GROUP_ACCENT: Record<string, string> = {
-  Understand: "#4dc9f6",
-  Specify: "#a78bfa",
-  Build: "#37e284",
-  Validate: "#f0b832",
-  Ship: "#f472b6",
-};
-
-const STAGE_LABEL: Record<string, string> = {
-  intake: "Intake",
-  repo_id: "Repo ID",
-  worktree_setup: "Worktree Setup",
-  behaviour_translation: "Behaviour Translation",
-  behaviour_verification: "Behaviour Verification",
-  tdd: "TDD Development",
-  review: "Code Review",
-  rebase: "Rebase",
-  delivery: "Delivery",
-  release_gate: "Release Gate",
-  release: "Release",
-  retrospective: "Retrospective",
-};
+import { STAGE_GROUP, GROUP_ACCENT, STAGE_LABEL } from "../../utils/stages";
+import { formatDuration } from "../../utils/format";
 
 /* ── Types ── */
 interface SubStageInfo {
@@ -167,14 +130,6 @@ function formatTs(ts: number): string {
     minute: "2-digit",
     second: "2-digit",
   });
-}
-
-function formatDuration(start: number, end: number): string {
-  const secs = Math.round(end - start);
-  if (secs < 60) return `${secs}s`;
-  const mins = Math.floor(secs / 60);
-  const rem = secs % 60;
-  return `${mins}m ${rem}s`;
 }
 
 /* ── Sub-components ── */

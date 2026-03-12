@@ -9,19 +9,14 @@ import InterventionModal from "../components/intervention/InterventionModal";
 import ResumeModal from "../components/intervention/ResumeModal";
 import StageTimeline from "../components/pipeline/StageTimeline";
 import EventLog from "../components/events/EventLog";
-import StageDetailLog from "../components/events/StageDetailLog";
-import AgentActivityPanel from "../components/agents/AgentActivityPanel";
-import TestResultsPanel from "../components/tests/TestResultsPanel";
-import ReviewFindingsPanel from "../components/review/ReviewFindingsPanel";
+import StageDetailView from "../components/stages/StageDetailView";
 import LogsPanel from "../components/logs/LogsPanel";
-
-type BottomTab = "tests" | "findings" | "logs";
 
 export default function CRDetailPage() {
   const { crId } = useParams<{ crId: string }>();
   const [crRun, setCrRun] = useState<CRRunDetail | null>(null);
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
-  const [bottomTab, setBottomTab] = useState<BottomTab>("tests");
+  const [showLogs, setShowLogs] = useState(false);
   const stream = useEventStream(crId);
 
   useEffect(() => {
@@ -104,13 +99,6 @@ export default function CRDetailPage() {
     setSelectedStage(stage === selectedStage ? null : stage);
   };
 
-  const tabClass = (tab: BottomTab) =>
-    `px-3 py-1.5 text-[11px] font-medium cursor-pointer bg-transparent border-none transition-colors ${
-      bottomTab === tab
-        ? "text-accent border-b-2 border-accent"
-        : "text-text-dim hover:text-text"
-    }`;
-
   return (
     <div className="flex flex-col h-[calc(100vh-49px)]">
       {/* Header bar */}
@@ -129,6 +117,16 @@ export default function CRDetailPage() {
           <CRStatusBadge status={displayStatus} />
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowLogs(!showLogs)}
+            className={`px-2.5 py-1 text-[11px] font-medium rounded cursor-pointer border transition-colors ${
+              showLogs
+                ? "bg-accent/15 text-accent border-accent/30"
+                : "bg-transparent text-text-dim border-border-subtle hover:text-text hover:border-border-subtle"
+            }`}
+          >
+            Logs
+          </button>
           <CostTracker
             costUsd={stream.costUsd || crRun?.cost_usd || 0}
           />
@@ -149,11 +147,11 @@ export default function CRDetailPage() {
         />
       </div>
 
-      {/* Stage filter indicator */}
+      {/* Stage filter indicator (overview mode only) */}
       {selectedStage && (
         <div className="bg-bg-card border-b border-border-subtle px-4 py-1.5 flex items-center gap-2">
           <span className="text-[10px] text-text-dim uppercase tracking-wider">
-            Filtered to
+            Stage
           </span>
           <span className="text-xs text-accent font-medium">
             {selectedStage.replace(/_/g, " ")}
@@ -162,67 +160,45 @@ export default function CRDetailPage() {
             onClick={() => setSelectedStage(null)}
             className="text-[10px] text-text-dim hover:text-text ml-auto cursor-pointer bg-transparent border-none transition-colors"
           >
-            Clear filter
+            Close
           </button>
         </div>
       )}
 
-      {/* Main content grid */}
-      <div className="flex-1 grid grid-cols-2 grid-rows-2 gap-px bg-border-subtle overflow-hidden">
-        <div className="bg-bg-surface overflow-hidden">
+      {/* Main content */}
+      <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="flex-1 overflow-hidden">
           {selectedStage ? (
-            <StageDetailLog
-              events={filteredEvents}
+            <StageDetailView
+              crId={crId}
               stageName={selectedStage}
+              events={filteredEvents}
+              toolCalls={filteredToolCalls}
+              agentOutputs={filteredAgentOutputs}
+              agentNudges={filteredAgentNudges}
+              testRuns={filteredTestRuns}
+              findings={filteredFindings}
+              pipelineStatus={displayStatus}
               onBack={() => setSelectedStage(null)}
             />
           ) : (
-            <EventLog
-              events={stream.events}
-              currentStage={stream.currentStage}
-              status={displayStatus}
-              onSelectStage={handleSelectStage}
-            />
+            <div className="h-full bg-bg-surface overflow-hidden">
+              <EventLog
+                events={stream.events}
+                currentStage={stream.currentStage}
+                status={displayStatus}
+                onSelectStage={handleSelectStage}
+              />
+            </div>
           )}
         </div>
-        <div className="bg-bg-surface overflow-hidden">
-          <AgentActivityPanel
-            crId={crId}
-            events={filteredEvents}
-            toolCalls={filteredToolCalls}
-            agentOutputs={filteredAgentOutputs}
-            agentNudges={filteredAgentNudges}
-            pipelineStatus={displayStatus}
-          />
-        </div>
-        <div className="bg-bg-surface overflow-hidden">
-          <TestResultsPanel testRuns={filteredTestRuns} />
-        </div>
-        <div className="bg-bg-surface overflow-hidden flex flex-col">
-          {/* Bottom-right panel with tabs */}
-          <div className="flex border-b border-border-subtle flex-shrink-0">
-            <button
-              onClick={() => setBottomTab("findings")}
-              className={tabClass("findings")}
-            >
-              Findings
-            </button>
-            <button
-              onClick={() => setBottomTab("logs")}
-              className={tabClass("logs")}
-            >
-              Logs
-            </button>
+
+        {/* Logs drawer */}
+        {showLogs && (
+          <div className="h-64 flex-shrink-0 border-t border-border-subtle bg-bg-surface">
+            <LogsPanel crId={crId} pipelineStatus={displayStatus} />
           </div>
-          <div className="flex-1 overflow-hidden">
-            {bottomTab === "findings" && (
-              <ReviewFindingsPanel findings={filteredFindings} />
-            )}
-            {bottomTab === "logs" && (
-              <LogsPanel crId={crId} pipelineStatus={displayStatus} />
-            )}
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Error banner */}

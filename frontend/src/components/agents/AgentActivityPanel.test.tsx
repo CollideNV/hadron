@@ -101,7 +101,8 @@ describe("AgentActivityPanel", () => {
         pipelineStatus="running"
       />,
     );
-    expect(screen.getByText("read_file")).toBeInTheDocument();
+    // RichToolCall renders read_file as a file path pill
+    expect(screen.getByText("src/main.py")).toBeInTheDocument();
   });
 
   it("shows thinking state for active agent", () => {
