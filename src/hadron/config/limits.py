@@ -19,3 +19,7 @@ MAX_CONTEXT_CHARS = 24_000  # ~6k tokens — keep injected context lean
 
 # --- Code review ---
 MAX_DIFF_CHARS = 30_000
+
+# --- Conversation compaction ---
+# Compact conversation when a single round's input tokens exceed this threshold.
+COMPACT_INPUT_TOKEN_THRESHOLD = 80_000

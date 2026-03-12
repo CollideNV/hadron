@@ -34,6 +34,8 @@ def _make_api_response(text: str, input_tokens: int = 100, output_tokens: int = 
     usage = MagicMock()
     usage.input_tokens = input_tokens
     usage.output_tokens = output_tokens
+    usage.cache_creation_input_tokens = 0
+    usage.cache_read_input_tokens = 0
 
     response = MagicMock()
     response.content = [text_block]
@@ -54,6 +56,8 @@ def _make_tool_response(tool_name: str, tool_input: dict, tool_id: str = "tu_1",
     usage = MagicMock()
     usage.input_tokens = input_tokens
     usage.output_tokens = output_tokens
+    usage.cache_creation_input_tokens = 0
+    usage.cache_read_input_tokens = 0
 
     response = MagicMock()
     response.content = [tool_block]
@@ -347,7 +351,9 @@ class TestPlanPhase:
 
         stream_kwargs = mock_stream.call_args.kwargs
         plan_system = stream_kwargs["system"]
-        assert "You are a code writer. Follow TDD." in plan_system
+        # system is now a list of content blocks with cache_control
+        plan_system_text = plan_system[0]["text"] if isinstance(plan_system, list) else plan_system
+        assert "You are a code writer. Follow TDD." in plan_system_text
 
 
 # ---------------------------------------------------------------------------
@@ -597,3 +603,112 @@ class TestExploreOnly:
         assert mock_create.call_count == 2
         for call in mock_create.call_args_list:
             assert call.kwargs["model"] == "claude-haiku-4-5-20251001"
+
+
+# ---------------------------------------------------------------------------
+# Conversation compaction
+# ---------------------------------------------------------------------------
+
+
+class TestConversationCompaction:
+    @pytest.mark.asyncio
+    async def test_compact_messages_summarizes_middle(self, tmp_workdir):
+        """When called with enough messages, compaction summarizes the middle."""
+        backend = ClaudeAgentBackend(api_key="test-key")
+
+        summary_response = _make_api_response("Summary: read main.py, found bug in line 10.")
+
+        messages = [
+            {"role": "user", "content": "Fix the bug in main.py"},
+            {"role": "assistant", "content": [{"type": "text", "text": "Let me read the file."}]},
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "file contents..."}]},
+            {"role": "assistant", "content": [{"type": "text", "text": "I see the issue."}]},
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t2", "content": "more results..."}]},
+            {"role": "assistant", "content": [{"type": "text", "text": "Writing fix."}]},
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t3", "content": "write ok"}]},
+        ]
+
+        with patch.object(backend._client.messages, "create", new_callable=AsyncMock, return_value=summary_response):
+            result = await backend._compact_messages(messages, phase="test")
+
+        # Should keep original user, add summary, continue prompt, and tail
+        assert result[0] == messages[0]  # Original user preserved
+        assert "[Conversation compacted" in result[1]["content"]  # Summary block
+        assert result[2]["content"] == "Continue from where you left off."
+        assert result[-2:] == messages[-2:]  # Tail preserved
+        assert len(result) < len(messages)
+
+    @pytest.mark.asyncio
+    async def test_compact_skips_short_conversations(self, tmp_workdir):
+        """Compaction is a no-op for short conversations."""
+        backend = ClaudeAgentBackend(api_key="test-key")
+
+        messages = [
+            {"role": "user", "content": "Do something"},
+            {"role": "assistant", "content": "Done."},
+        ]
+        result = await backend._compact_messages(messages, phase="test")
+        assert result is messages  # Unchanged
+
+    @pytest.mark.asyncio
+    async def test_compact_survives_api_failure(self, tmp_workdir):
+        """If the summary API call fails, original messages are returned."""
+        backend = ClaudeAgentBackend(api_key="test-key")
+
+        messages = [
+            {"role": "user", "content": "Task"},
+            {"role": "assistant", "content": "Step 1"},
+            {"role": "user", "content": "result 1"},
+            {"role": "assistant", "content": "Step 2"},
+            {"role": "user", "content": "result 2"},
+            {"role": "assistant", "content": "Step 3"},
+            {"role": "user", "content": "result 3"},
+        ]
+
+        with patch.object(
+            backend._client.messages, "create",
+            new_callable=AsyncMock,
+            side_effect=Exception("API down"),
+        ):
+            result = await backend._compact_messages(messages, phase="test")
+
+        assert result is messages  # Unchanged on failure
+
+    @pytest.mark.asyncio
+    async def test_compaction_triggered_by_high_input_tokens(self, tmp_workdir):
+        """Tool loop triggers compaction when input tokens exceed threshold."""
+        # Rounds 1-2: normal tool calls (build up message count)
+        tool_r1 = _make_tool_response("read_file", {"path": "a.py"}, tool_id="t1")
+        tool_r2 = _make_tool_response("read_file", {"path": "b.py"}, tool_id="t2")
+        # Round 3: high token count → triggers compaction (now >= 5 messages)
+        tool_r3 = _make_tool_response("read_file", {"path": "c.py"}, tool_id="t3")
+        tool_r3.usage.input_tokens = 90_000  # Over threshold
+        # Compaction summary call (made by _compact_messages to Haiku)
+        summary_response = _make_api_response("Summary of prior work.")
+        # Round 4: final response after compaction
+        end_response = _make_api_response("Done.", input_tokens=5000, output_tokens=200)
+
+        backend = ClaudeAgentBackend(api_key="test-key")
+
+        with patch.object(
+            backend._client.messages, "create",
+            new_callable=AsyncMock,
+            side_effect=[tool_r1, tool_r2, tool_r3, summary_response, end_response],
+        ), patch("hadron.agent.claude.execute_tool", new_callable=AsyncMock, return_value="file contents"):
+            events: list[tuple[str, dict]] = []
+
+            async def capture_event(event_type: str, data: dict) -> None:
+                events.append((event_type, data))
+
+            task = AgentTask(
+                role="code_writer",
+                system_prompt="System.",
+                user_prompt="Task.",
+                working_directory=str(tmp_workdir),
+                phases=PhaseConfig(explore_model="", plan_model=""),
+                callbacks=AgentCallbacks(on_event=capture_event),
+            )
+            await backend.execute(task)
+
+        compaction_events = [e for e in events if e[0] == "compaction"]
+        assert len(compaction_events) > 0, "Expected compaction event to be emitted"

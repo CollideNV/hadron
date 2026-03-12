@@ -108,6 +108,8 @@ class ModelStats:
     cost_usd: float = 0.0
     throttle_count: int = 0
     throttle_seconds: float = 0.0
+    cache_creation_tokens: int = 0
+    cache_read_tokens: int = 0
 
     def merge(self, other: ModelStats) -> ModelStats:
         """Return a new ModelStats combining self and other."""
@@ -117,6 +119,8 @@ class ModelStats:
             cost_usd=self.cost_usd + other.cost_usd,
             throttle_count=self.throttle_count + other.throttle_count,
             throttle_seconds=self.throttle_seconds + other.throttle_seconds,
+            cache_creation_tokens=self.cache_creation_tokens + other.cache_creation_tokens,
+            cache_read_tokens=self.cache_read_tokens + other.cache_read_tokens,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -126,6 +130,8 @@ class ModelStats:
             "cost_usd": self.cost_usd,
             "throttle_count": self.throttle_count,
             "throttle_seconds": self.throttle_seconds,
+            "cache_creation_tokens": self.cache_creation_tokens,
+            "cache_read_tokens": self.cache_read_tokens,
         }
 
 
@@ -137,7 +143,7 @@ def merge_model_breakdowns(
     result = {k: dict(v) for k, v in a.items()}
     for model, stats in b.items():
         if model in result:
-            for key in ("input_tokens", "output_tokens", "throttle_count"):
+            for key in ("input_tokens", "output_tokens", "throttle_count", "cache_creation_tokens", "cache_read_tokens"):
                 result[model][key] = result[model].get(key, 0) + stats.get(key, 0)
             for key in ("cost_usd", "throttle_seconds"):
                 result[model][key] = result[model].get(key, 0.0) + stats.get(key, 0.0)
@@ -160,6 +166,8 @@ class AgentResult:
     model: str = ""
     throttle_count: int = 0
     throttle_seconds: float = 0.0
+    cache_creation_tokens: int = 0
+    cache_read_tokens: int = 0
     model_breakdown: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
