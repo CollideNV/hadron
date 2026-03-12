@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useMemo } from "react";
 import type { PipelineEvent } from "../../api/types";
 import type { AgentSession } from "./types";
 import { buildTimeline } from "../../utils/buildTimeline";
@@ -39,7 +39,10 @@ export default function RichConversationView({
     ? `${(session.inputTokens / 1000).toFixed(1)}k / ${(session.outputTokens / 1000).toFixed(1)}k tok`
     : "";
 
-  const timeline = buildTimeline(session.items, testRuns, findings);
+  const timeline = useMemo(
+    () => buildTimeline(session.items, testRuns, findings),
+    [session.items, testRuns, findings],
+  );
 
   return (
     <div className="flex flex-col h-full">

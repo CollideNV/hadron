@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef, useId } from "react";
 
 interface ModalProps {
   open: boolean;
@@ -8,9 +8,35 @@ interface ModalProps {
 }
 
 export default function Modal({ open, onClose, title, children }: ModalProps) {
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+        return;
+      }
+
+      // Focus trap: cycle focus within the modal
+      if (e.key === "Tab" && dialogRef.current) {
+        const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        );
+        if (focusable.length === 0) return;
+
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     },
     [onClose],
   );
@@ -18,7 +44,20 @@ export default function Modal({ open, onClose, title, children }: ModalProps) {
   useEffect(() => {
     if (!open) return;
     document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+
+    // Focus the dialog on open, unless an element inside has autoFocus
+    const prev = document.activeElement as HTMLElement | null;
+    requestAnimationFrame(() => {
+      if (dialogRef.current && !dialogRef.current.contains(document.activeElement)) {
+        dialogRef.current.focus();
+      }
+    });
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      // Restore focus on close
+      prev?.focus();
+    };
   }, [open, handleKeyDown]);
 
   if (!open) return null;
@@ -29,10 +68,15 @@ export default function Modal({ open, onClose, title, children }: ModalProps) {
       onClick={onClose}
     >
       <div
-        className="bg-bg-surface rounded-xl border border-border-subtle shadow-2xl w-full max-w-lg mx-4 p-6"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="bg-bg-surface rounded-xl border border-border-subtle shadow-2xl w-full max-w-lg mx-4 p-6 outline-none"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-lg font-semibold text-text mb-4">{title}</h2>
+        <h2 id={titleId} className="text-lg font-semibold text-text mb-4">{title}</h2>
         {children}
       </div>
     </div>

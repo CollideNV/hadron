@@ -60,4 +60,64 @@ describe("Modal", () => {
     await user.click(screen.getByText("Content"));
     expect(onClose).not.toHaveBeenCalled();
   });
+
+  it("has role=dialog and aria-modal", () => {
+    render(
+      <Modal open={true} onClose={vi.fn()} title="Accessible Modal">
+        <p>Content</p>
+      </Modal>,
+    );
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+  });
+
+  it("has aria-labelledby pointing to the title", () => {
+    render(
+      <Modal open={true} onClose={vi.fn()} title="My Title">
+        <p>Content</p>
+      </Modal>,
+    );
+    const dialog = screen.getByRole("dialog");
+    const labelledBy = dialog.getAttribute("aria-labelledby");
+    expect(labelledBy).toBeTruthy();
+    const titleEl = document.getElementById(labelledBy!);
+    expect(titleEl?.textContent).toBe("My Title");
+  });
+
+  it("traps focus within the modal on Tab", async () => {
+    const user = userEvent.setup();
+    render(
+      <Modal open={true} onClose={vi.fn()} title="Focus Trap">
+        <button>First</button>
+        <button>Last</button>
+      </Modal>,
+    );
+
+    // Focus the first button
+    const first = screen.getByText("First");
+    const last = screen.getByText("Last");
+    first.focus();
+
+    // Tab from last should cycle to first
+    last.focus();
+    await user.tab();
+    expect(document.activeElement).toBe(first);
+  });
+
+  it("traps focus on Shift+Tab from first element", async () => {
+    const user = userEvent.setup();
+    render(
+      <Modal open={true} onClose={vi.fn()} title="Focus Trap">
+        <button>First</button>
+        <button>Last</button>
+      </Modal>,
+    );
+
+    const first = screen.getByText("First");
+    const last = screen.getByText("Last");
+    first.focus();
+
+    await user.tab({ shift: true });
+    expect(document.activeElement).toBe(last);
+  });
 });

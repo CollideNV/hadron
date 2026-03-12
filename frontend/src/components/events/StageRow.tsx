@@ -2,7 +2,9 @@ import { useState } from "react";
 import type { StageInfo } from "../../utils/buildStageInfos";
 import { formatTs, summarizeEvent } from "../../utils/buildStageInfos";
 import { STAGE_GROUP, GROUP_ACCENT, STAGE_LABEL } from "../../utils/stages";
+import { STATUS_COLORS } from "../../utils/statusStyles";
 import { formatDuration } from "../../utils/format";
+import { CheckmarkIcon, FailIcon, PauseIcon } from "../shared/StatusIcons";
 import AgentRow from "./AgentRow";
 import EventBadge from "./EventBadge";
 
@@ -40,25 +42,17 @@ export default function StageRow({
       <div
         className="flex items-center gap-3 px-4 py-2.5 hover:bg-bg-card/50 transition-colors cursor-pointer rounded-lg"
         onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
+        role="button"
       >
         {/* Status indicator */}
         <div className="flex-shrink-0">
           {isCompleted && !isCurrent ? (
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <circle cx="8" cy="8" r="7" stroke={color} strokeWidth="1.5" opacity="0.4" />
-              <path d="M5 8l2 2 4-4" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <CheckmarkIcon color={color} />
           ) : isFailed ? (
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <circle cx="8" cy="8" r="7" stroke="#ff4157" strokeWidth="1.5" opacity="0.4" />
-              <path d="M5.5 5.5l5 5M10.5 5.5l-5 5" stroke="#ff4157" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
+            <FailIcon />
           ) : isPaused ? (
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <circle cx="8" cy="8" r="7" stroke="#f0b832" strokeWidth="1.5" opacity="0.4" />
-              <rect x="6" y="5" width="1.5" height="6" rx="0.5" fill="#f0b832" />
-              <rect x="8.5" y="5" width="1.5" height="6" rx="0.5" fill="#f0b832" />
-            </svg>
+            <PauseIcon />
           ) : isCurrent ? (
             <div
               className="w-4 h-4 rounded-full animate-pulse-glow"
@@ -72,7 +66,7 @@ export default function StageRow({
         {/* Stage name */}
         <span
           className="text-xs font-medium min-w-[140px]"
-          style={{ color: isFailed ? "#ff4157" : isPaused ? "#f0b832" : isCompleted || isCurrent ? color : "#63717a" }}
+          style={{ color: isFailed ? STATUS_COLORS.failed : isPaused ? STATUS_COLORS.paused : isCompleted || isCurrent ? color : STATUS_COLORS.inactive }}
         >
           {STAGE_LABEL[info.stage] || info.stage}
         </span>
@@ -103,7 +97,7 @@ export default function StageRow({
               className="text-[9px] px-1.5 py-0.5 rounded"
               style={{
                 backgroundColor: testRuns.some((t) => t.data.passed) ? "rgba(55,226,132,0.12)" : "rgba(255,65,87,0.12)",
-                color: testRuns.some((t) => t.data.passed) ? "#37e284" : "#ff4157",
+                color: testRuns.some((t) => t.data.passed) ? "#37e284" : STATUS_COLORS.failed,
               }}
             >
               {testRuns.some((t) => t.data.passed) ? "PASS" : "FAIL"}
@@ -117,7 +111,7 @@ export default function StageRow({
         </div>
 
         {/* Expand toggle */}
-        <span className="text-text-dim text-xs ml-1">{expanded ? "-" : "+"}</span>
+        <span className="text-text-dim text-xs ml-1" aria-hidden="true">{expanded ? "-" : "+"}</span>
       </div>
 
       {/* Expanded detail */}
