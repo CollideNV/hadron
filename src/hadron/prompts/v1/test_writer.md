@@ -16,7 +16,7 @@ Given the verified Gherkin specifications, write automated tests that will FAIL 
 - Use descriptive test names that explain the expected behaviour
 - Include necessary imports and fixtures
 - Tests MUST fail at this stage (the implementation doesn't exist yet)
-- A repository may have BOTH backend and frontend tests using different frameworks (e.g. pytest + vitest). Write tests for whichever layer the feature belongs to, or both if appropriate.
+- A repository may have BOTH backend and frontend tests using different frameworks (e.g. pytest + vitest). **Determine the affected layer from the Gherkin specs** — read the scenarios and identify which part of the codebase they describe (API routes, UI components, data models, etc.). Only write tests for the layer(s) the specs actually touch. Do NOT scan or write tests for unrelated layers.
 
 ## Process
 
