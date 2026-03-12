@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import RichConversationView from "./RichConversationView";
 import type { AgentSession } from "./types";
 import { makeEvent } from "../../test-utils";
@@ -180,7 +180,8 @@ describe("RichConversationView", () => {
         pipelineStatus="running"
       />,
     );
-    // Orphaned result should still render (as a tool block with the result)
+    // Orphaned result renders as collapsed tool block — expand to see content
+    fireEvent.click(screen.getByText("expand"));
     expect(screen.getByText(/orphaned content/)).toBeInTheDocument();
   });
 

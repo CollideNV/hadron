@@ -26,6 +26,8 @@ describe("RichToolCall", () => {
     const call = makeCall("read_file", { path: "src/main.py" });
     const result = makeResult("read_file", "line1\nline2\nline3");
     render(<RichToolCall call={call} result={result} />);
+    // Collapsed by default — expand to see content
+    fireEvent.click(screen.getByText("expand"));
     expect(screen.getByText(/1 \| line1/)).toBeInTheDocument();
     expect(screen.getByText(/3 \| line3/)).toBeInTheDocument();
   });
@@ -37,6 +39,8 @@ describe("RichToolCall", () => {
     });
     render(<RichToolCall call={call} />);
     expect(screen.getByText("src/new_file.py")).toBeInTheDocument();
+    // Collapsed by default — expand to see content
+    fireEvent.click(screen.getByText("expand"));
     expect(screen.getByText("print('created')")).toBeInTheDocument();
   });
 
@@ -96,13 +100,15 @@ describe("RichToolCall", () => {
   it("renders read_file with missing path gracefully", () => {
     const call = makeCall("read_file", {});
     render(<RichToolCall call={call} />);
-    // Should render without crashing, empty path shown
-    expect(screen.getByText("collapse")).toBeInTheDocument();
+    // Should render without crashing — collapsed by default
+    expect(screen.getByText("expand")).toBeInTheDocument();
   });
 
   it("renders write_file with missing path and content", () => {
     const call = makeCall("write_file", {});
     render(<RichToolCall call={call} />);
+    // Collapsed by default — expand to see content
+    fireEvent.click(screen.getByText("expand"));
     expect(screen.getByText("(empty)")).toBeInTheDocument();
   });
 
