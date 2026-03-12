@@ -67,4 +67,63 @@ describe("CRForm", () => {
     render(<CRForm onSubmit={vi.fn()} submitting={true} />);
     expect(screen.getByRole("button", { name: /submitting/i })).toBeDisabled();
   });
+
+  // URL validation tests
+  it("shows error for invalid URL", async () => {
+    const user = userEvent.setup();
+    render(<CRForm onSubmit={vi.fn()} submitting={false} />);
+
+    await user.type(screen.getByPlaceholderText(/github\.com/i), "not-a-url");
+    expect(screen.getByText(/url must start with/i)).toBeInTheDocument();
+  });
+
+  it("clears error when URL becomes valid", async () => {
+    const user = userEvent.setup();
+    render(<CRForm onSubmit={vi.fn()} submitting={false} />);
+
+    const urlInput = screen.getByPlaceholderText(/github\.com/i);
+    await user.type(urlInput, "not-a-url");
+    expect(screen.getByText(/url must start with/i)).toBeInTheDocument();
+
+    await user.clear(urlInput);
+    await user.type(urlInput, "https://github.com/org/repo");
+    expect(screen.queryByText(/url must start with/i)).not.toBeInTheDocument();
+  });
+
+  it("allows empty URL (optional field)", async () => {
+    const user = userEvent.setup();
+    render(<CRForm onSubmit={vi.fn()} submitting={false} />);
+
+    // Empty URL should not show error
+    expect(screen.queryByText(/url must start with/i)).not.toBeInTheDocument();
+
+    // Type something invalid, then clear
+    const urlInput = screen.getByPlaceholderText(/github\.com/i);
+    await user.type(urlInput, "x");
+    expect(screen.getByText(/url must start with/i)).toBeInTheDocument();
+
+    await user.clear(urlInput);
+    expect(screen.queryByText(/url must start with/i)).not.toBeInTheDocument();
+  });
+
+  it("disables submit when URL is invalid", async () => {
+    const user = userEvent.setup();
+    render(<CRForm onSubmit={vi.fn()} submitting={false} />);
+
+    await user.type(screen.getByPlaceholderText(/health check/i), "My CR");
+    await user.type(screen.getByPlaceholderText(/describe the change/i), "Details");
+    await user.type(screen.getByPlaceholderText(/github\.com/i), "bad-url");
+
+    expect(screen.getByRole("button", { name: /trigger pipeline/i })).toBeDisabled();
+  });
+
+  // Accessibility: label associations
+  it("has properly associated labels", () => {
+    render(<CRForm onSubmit={vi.fn()} submitting={false} />);
+
+    expect(screen.getByLabelText("Title")).toBeInTheDocument();
+    expect(screen.getByLabelText("Description")).toBeInTheDocument();
+    expect(screen.getByLabelText("Repository URL")).toBeInTheDocument();
+    expect(screen.getByLabelText("Default Branch")).toBeInTheDocument();
+  });
 });

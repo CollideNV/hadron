@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { PipelineEvent } from "../../api/types";
+import { useStageData } from "../../contexts/StageDataContext";
 import { buildSessions } from "../agents/types";
 import { useAutoSelectSession } from "../agents/useAutoSelectSession";
 import AgentSessionList from "../agents/AgentSessionList";
@@ -7,30 +7,25 @@ import RichConversationView from "../agents/RichConversationView";
 import StageSummaryCard, { getStageColor } from "./StageSummaryCard";
 
 interface StageDetailViewProps {
-  crId: string;
   stageName: string;
-  events: PipelineEvent[];
-  toolCalls: PipelineEvent[];
-  agentOutputs: PipelineEvent[];
-  agentNudges: PipelineEvent[];
-  testRuns: PipelineEvent[];
-  findings: PipelineEvent[];
-  pipelineStatus: string;
   onBack: () => void;
 }
 
 export default function StageDetailView({
-  crId,
   stageName,
-  events,
-  toolCalls,
-  agentOutputs,
-  agentNudges,
-  testRuns,
-  findings,
-  pipelineStatus,
   onBack,
 }: StageDetailViewProps) {
+  const {
+    crId,
+    pipelineStatus,
+    events,
+    toolCalls,
+    agentOutputs,
+    agentNudges,
+    testRuns,
+    findings,
+  } = useStageData();
+
   const sessions = useMemo(
     () => buildSessions(events, toolCalls, agentOutputs, agentNudges),
     [events, toolCalls, agentOutputs, agentNudges],

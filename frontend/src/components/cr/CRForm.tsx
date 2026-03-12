@@ -9,14 +9,32 @@ interface CRFormProps {
 const inputClass =
   "w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/40 placeholder:text-text-dim";
 
+const URL_PATTERN = /^https?:\/\/.+/;
+
 export default function CRForm({ onSubmit, submitting }: CRFormProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
   const [branch, setBranch] = useState("main");
+  const [urlError, setUrlError] = useState("");
+
+  const validateUrl = (url: string) => {
+    if (url === "" || URL_PATTERN.test(url)) {
+      setUrlError("");
+    } else {
+      setUrlError("URL must start with http:// or https://");
+    }
+  };
+
+  const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setRepoUrl(val);
+    validateUrl(val);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (urlError) return;
     onSubmit({
       title,
       description,
@@ -28,10 +46,11 @@ export default function CRForm({ onSubmit, submitting }: CRFormProps) {
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       <div>
-        <label className="block text-xs font-medium text-text-muted mb-1.5">
+        <label htmlFor="cr-title" className="block text-xs font-medium text-text-muted mb-1.5">
           Title
         </label>
         <input
+          id="cr-title"
           type="text"
           required
           value={title}
@@ -41,10 +60,11 @@ export default function CRForm({ onSubmit, submitting }: CRFormProps) {
         />
       </div>
       <div>
-        <label className="block text-xs font-medium text-text-muted mb-1.5">
+        <label htmlFor="cr-description" className="block text-xs font-medium text-text-muted mb-1.5">
           Description
         </label>
         <textarea
+          id="cr-description"
           required
           rows={5}
           value={description}
@@ -55,22 +75,27 @@ export default function CRForm({ onSubmit, submitting }: CRFormProps) {
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-xs font-medium text-text-muted mb-1.5">
+          <label htmlFor="cr-repo-url" className="block text-xs font-medium text-text-muted mb-1.5">
             Repository URL
           </label>
           <input
+            id="cr-repo-url"
             type="text"
             value={repoUrl}
-            onChange={(e) => setRepoUrl(e.target.value)}
+            onChange={handleUrlChange}
             placeholder="https://github.com/org/repo.git"
-            className={inputClass}
+            className={`${inputClass}${urlError ? " border-status-failed focus:ring-status-failed/30" : ""}`}
           />
+          {urlError && (
+            <p className="text-[10px] text-status-failed mt-1">{urlError}</p>
+          )}
         </div>
         <div>
-          <label className="block text-xs font-medium text-text-muted mb-1.5">
+          <label htmlFor="cr-branch" className="block text-xs font-medium text-text-muted mb-1.5">
             Default Branch
           </label>
           <input
+            id="cr-branch"
             type="text"
             value={branch}
             onChange={(e) => setBranch(e.target.value)}
@@ -80,7 +105,7 @@ export default function CRForm({ onSubmit, submitting }: CRFormProps) {
       </div>
       <button
         type="submit"
-        disabled={submitting || !title || !description}
+        disabled={submitting || !title || !description || !!urlError}
         className="w-full py-2.5 px-4 bg-accent text-bg rounded-lg font-medium text-sm hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer border-none"
       >
         {submitting ? "Submitting..." : "Trigger Pipeline"}

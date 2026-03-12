@@ -1,33 +1,48 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import StageDetailView from "./StageDetailView";
+import { StageDataProvider } from "../../contexts/StageDataContext";
 import { makeEvent } from "../../test-utils";
+import type { PipelineEvent } from "../../api/types";
 
 vi.mock("../../api/client", () => ({
   sendNudge: vi.fn().mockResolvedValue({ status: "nudge_set" }),
 }));
 
-describe("StageDetailView", () => {
-  const baseProps = {
+function renderWithContext(
+  props: { stageName: string; onBack: () => void },
+  contextOverrides: Partial<{
+    crId: string;
+    pipelineStatus: string;
+    events: PipelineEvent[];
+    toolCalls: PipelineEvent[];
+    agentOutputs: PipelineEvent[];
+    agentNudges: PipelineEvent[];
+    testRuns: PipelineEvent[];
+    findings: PipelineEvent[];
+  }> = {},
+) {
+  const contextDefaults = {
     crId: "cr-1",
-    stageName: "tdd",
     pipelineStatus: "running",
-    onBack: vi.fn(),
+    events: [],
+    toolCalls: [],
+    agentOutputs: [],
+    agentNudges: [],
+    testRuns: [],
+    findings: [],
+    ...contextOverrides,
   };
+  return render(
+    <StageDataProvider {...contextDefaults}>
+      <StageDetailView {...props} />
+    </StageDataProvider>,
+  );
+}
 
+describe("StageDetailView", () => {
   it("shows stage name and back button", () => {
-    render(
-      <StageDetailView
-        {...baseProps}
-        events={[]}
-        toolCalls={[]}
-        agentOutputs={[]}
-        agentNudges={[]}
-        testRuns={[]}
-        findings={[]}
-      />,
-    );
-    // "tdd" appears in both header and summary card
+    renderWithContext({ stageName: "tdd", onBack: vi.fn() });
     const tddLabels = screen.getAllByText("tdd");
     expect(tddLabels.length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/back/i)).toBeInTheDocument();
@@ -35,34 +50,13 @@ describe("StageDetailView", () => {
 
   it("calls onBack when back button clicked", () => {
     const onBack = vi.fn();
-    render(
-      <StageDetailView
-        {...baseProps}
-        onBack={onBack}
-        events={[]}
-        toolCalls={[]}
-        agentOutputs={[]}
-        agentNudges={[]}
-        testRuns={[]}
-        findings={[]}
-      />,
-    );
+    renderWithContext({ stageName: "tdd", onBack });
     fireEvent.click(screen.getByText(/back/i));
     expect(onBack).toHaveBeenCalled();
   });
 
   it("shows 'no agent sessions' when no activity", () => {
-    render(
-      <StageDetailView
-        {...baseProps}
-        events={[]}
-        toolCalls={[]}
-        agentOutputs={[]}
-        agentNudges={[]}
-        testRuns={[]}
-        findings={[]}
-      />,
-    );
+    renderWithContext({ stageName: "tdd", onBack: vi.fn() });
     expect(screen.getByText(/no agent sessions/i)).toBeInTheDocument();
   });
 
@@ -81,21 +75,12 @@ describe("StageDetailView", () => {
         data: { role: "tdd_developer", repo: "backend", text: "Writing tests now" },
       }),
     ];
-    render(
-      <StageDetailView
-        {...baseProps}
-        events={events}
-        toolCalls={[]}
-        agentOutputs={agentOutputs}
-        agentNudges={[]}
-        testRuns={[]}
-        findings={[]}
-      />,
+    renderWithContext(
+      { stageName: "tdd", onBack: vi.fn() },
+      { events, agentOutputs },
     );
-    // Session appears in sidebar
     const devLabels = screen.getAllByText("tdd developer");
     expect(devLabels.length).toBeGreaterThanOrEqual(1);
-    // Output appears in conversation
     expect(screen.getByText("Writing tests now")).toBeInTheDocument();
   });
 
@@ -124,16 +109,9 @@ describe("StageDetailView", () => {
         data: { passed: false, iteration: 2 },
       }),
     ];
-    render(
-      <StageDetailView
-        {...baseProps}
-        events={events}
-        toolCalls={[]}
-        agentOutputs={[]}
-        agentNudges={[]}
-        testRuns={testRuns}
-        findings={[]}
-      />,
+    renderWithContext(
+      { stageName: "tdd", onBack: vi.fn() },
+      { events, testRuns },
     );
     expect(screen.getByText("1 passed")).toBeInTheDocument();
     expect(screen.getByText("1 failed")).toBeInTheDocument();
@@ -148,17 +126,9 @@ describe("StageDetailView", () => {
         data: { severity: "critical", message: "XSS vulnerability" },
       }),
     ];
-    render(
-      <StageDetailView
-        {...baseProps}
-        stageName="review"
-        events={[]}
-        toolCalls={[]}
-        agentOutputs={[]}
-        agentNudges={[]}
-        testRuns={[]}
-        findings={findings}
-      />,
+    renderWithContext(
+      { stageName: "review", onBack: vi.fn() },
+      { findings },
     );
     expect(screen.getByText("1 critical")).toBeInTheDocument();
   });

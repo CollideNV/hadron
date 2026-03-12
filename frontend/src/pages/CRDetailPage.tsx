@@ -1,8 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { getPipelineStatus } from "../api/client";
-import type { CRRunDetail } from "../api/types";
-import { useEventStream } from "../hooks/useEventStream";
+import { useCRDetail } from "../hooks/useCRDetail";
+import { StageDataProvider } from "../contexts/StageDataContext";
 import CRStatusBadge from "../components/cr/CRStatusBadge";
 import CostTracker from "../components/cost/CostTracker";
 import InterventionModal from "../components/intervention/InterventionModal";
@@ -14,86 +13,13 @@ import LogsPanel from "../components/logs/LogsPanel";
 
 export default function CRDetailPage() {
   const { crId } = useParams<{ crId: string }>();
-  const [crRun, setCrRun] = useState<CRRunDetail | null>(null);
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
-  const stream = useEventStream(crId);
-
-  useEffect(() => {
-    if (!crId) return;
-    getPipelineStatus(crId).then(setCrRun).catch(() => {});
-  }, [crId]);
+  const { crRun, displayStatus, title, stream, filterByStage } = useCRDetail(crId);
 
   if (!crId) return null;
 
-  // Re-fetch CR status periodically to catch stale stream state
-  // (e.g. worker crashed without emitting a terminal event)
-  useEffect(() => {
-    if (!crId) return;
-    if (stream.status !== "running") return;
-    const interval = setInterval(() => {
-      getPipelineStatus(crId).then(setCrRun).catch(() => {});
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [crId, stream.status]);
-
-  // Trust the API status when stream says "running" but DB says terminal
-  const apiStatus = crRun?.status;
-  const isStreamStale =
-    stream.status === "running" &&
-    (apiStatus === "paused" || apiStatus === "failed" || apiStatus === "completed");
-  const displayStatus =
-    stream.status === "connecting"
-      ? apiStatus || "pending"
-      : isStreamStale
-        ? apiStatus!
-        : stream.status;
-  const title = crRun?.title || "Loading...";
-
-  // Filter events by selected stage
-  const filteredEvents = selectedStage
-    ? stream.events.filter(
-        (e) =>
-          e.stage === selectedStage ||
-          e.stage.startsWith(selectedStage + ":") ||
-          e.event_type === "pipeline_started" ||
-          e.event_type === "pipeline_resumed" ||
-          e.event_type === "pipeline_completed" ||
-          e.event_type === "pipeline_failed",
-      )
-    : stream.events;
-
-  const filteredToolCalls = selectedStage
-    ? stream.toolCalls.filter(
-        (e) =>
-          e.stage === selectedStage ||
-          e.stage.startsWith(selectedStage + ":"),
-      )
-    : stream.toolCalls;
-
-  const filteredAgentOutputs = selectedStage
-    ? stream.agentOutputs.filter(
-        (e) =>
-          e.stage === selectedStage ||
-          e.stage.startsWith(selectedStage + ":"),
-      )
-    : stream.agentOutputs;
-
-  const filteredAgentNudges = selectedStage
-    ? stream.agentNudges.filter(
-        (e) =>
-          e.stage === selectedStage ||
-          e.stage.startsWith(selectedStage + ":"),
-      )
-    : stream.agentNudges;
-
-  const filteredTestRuns = selectedStage
-    ? stream.testRuns.filter((e) => e.stage === selectedStage)
-    : stream.testRuns;
-
-  const filteredFindings = selectedStage
-    ? stream.reviewFindings.filter((e) => e.stage === selectedStage)
-    : stream.reviewFindings;
+  const filtered = filterByStage(selectedStage);
 
   const handleSelectStage = (stage: string) => {
     setSelectedStage(stage === selectedStage ? null : stage);
@@ -169,18 +95,21 @@ export default function CRDetailPage() {
       <div className="flex-1 overflow-hidden flex flex-col">
         <div className="flex-1 overflow-hidden">
           {selectedStage ? (
-            <StageDetailView
+            <StageDataProvider
               crId={crId}
-              stageName={selectedStage}
-              events={filteredEvents}
-              toolCalls={filteredToolCalls}
-              agentOutputs={filteredAgentOutputs}
-              agentNudges={filteredAgentNudges}
-              testRuns={filteredTestRuns}
-              findings={filteredFindings}
               pipelineStatus={displayStatus}
-              onBack={() => setSelectedStage(null)}
-            />
+              events={filtered.events}
+              toolCalls={filtered.toolCalls}
+              agentOutputs={filtered.agentOutputs}
+              agentNudges={filtered.agentNudges}
+              testRuns={filtered.testRuns}
+              findings={filtered.findings}
+            >
+              <StageDetailView
+                stageName={selectedStage}
+                onBack={() => setSelectedStage(null)}
+              />
+            </StageDataProvider>
           ) : (
             <div className="h-full bg-bg-surface overflow-hidden">
               <EventLog

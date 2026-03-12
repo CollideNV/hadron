@@ -248,6 +248,86 @@ describe("useEventStream", () => {
     expect(mockClose).toHaveBeenCalled();
   });
 
+  it("deduplicates events with same type, stage, and timestamp", () => {
+    const { result } = renderHook(() => useEventStream("cr-1"));
+
+    act(() => {
+      capturedOnEvent!(
+        makeEvent({ event_type: "stage_entered", stage: "intake", timestamp: 100 }),
+      );
+      capturedOnEvent!(
+        makeEvent({ event_type: "stage_entered", stage: "intake", timestamp: 100 }),
+      );
+    });
+
+    expect(result.current.events).toHaveLength(1);
+  });
+
+  it("does not deduplicate events with different timestamps", () => {
+    const { result } = renderHook(() => useEventStream("cr-1"));
+
+    act(() => {
+      capturedOnEvent!(
+        makeEvent({ event_type: "stage_entered", stage: "intake", timestamp: 100 }),
+      );
+      capturedOnEvent!(
+        makeEvent({ event_type: "stage_entered", stage: "intake", timestamp: 101 }),
+      );
+    });
+
+    expect(result.current.events).toHaveLength(2);
+  });
+
+  it("handles cost_update with total_cost_usd=0", () => {
+    const { result } = renderHook(() => useEventStream("cr-1"));
+
+    // First set some cost via delta
+    act(() => {
+      capturedOnEvent!(
+        makeEvent({
+          event_type: "cost_update",
+          data: { delta_usd: 0.5 },
+        }),
+      );
+    });
+    expect(result.current.costUsd).toBe(0.5);
+
+    // Now total_cost_usd=0 should override (not be falsy-skipped)
+    act(() => {
+      capturedOnEvent!(
+        makeEvent({
+          event_type: "cost_update",
+          data: { total_cost_usd: 0 },
+          timestamp: 1700000001,
+        }),
+      );
+    });
+    expect(result.current.costUsd).toBe(0);
+  });
+
+  it("handles cost_update with delta_usd only (accumulates)", () => {
+    const { result } = renderHook(() => useEventStream("cr-1"));
+
+    act(() => {
+      capturedOnEvent!(
+        makeEvent({
+          event_type: "cost_update",
+          data: { delta_usd: 0.1 },
+          timestamp: 1700000001,
+        }),
+      );
+      capturedOnEvent!(
+        makeEvent({
+          event_type: "cost_update",
+          data: { delta_usd: 0.2 },
+          timestamp: 1700000002,
+        }),
+      );
+    });
+
+    expect(result.current.costUsd).toBeCloseTo(0.3);
+  });
+
   it("accumulates multiple events", () => {
     const { result } = renderHook(() => useEventStream("cr-1"));
 

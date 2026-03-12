@@ -35,8 +35,14 @@ const INITIAL_STATE: EventStreamState = {
 export function useEventStream(crId: string | undefined): EventStreamState {
   const [state, setState] = useState<EventStreamState>(INITIAL_STATE);
   const closeRef = useRef<(() => void) | null>(null);
+  const seenRef = useRef<Set<string>>(new Set());
 
   const handleEvent = useCallback((event: PipelineEvent) => {
+    // Deduplicate events by composite key
+    const dedupeKey = `${event.event_type}:${event.stage}:${event.timestamp}`;
+    if (seenRef.current.has(dedupeKey)) return;
+    seenRef.current.add(dedupeKey);
+
     setState((prev) => {
       const events = [...prev.events, event];
       let {
@@ -96,7 +102,11 @@ export function useEventStream(crId: string | undefined): EventStreamState {
           reviewFindings = [...reviewFindings, event];
           break;
         case "cost_update":
-          costUsd = (event.data.total_cost_usd as number) || costUsd + ((event.data.delta_usd as number) || 0);
+          if (typeof event.data.total_cost_usd === "number") {
+            costUsd = event.data.total_cost_usd;
+          } else if (typeof event.data.delta_usd === "number") {
+            costUsd = prev.costUsd + event.data.delta_usd;
+          }
           break;
         case "error":
           error = (event.data.message as string) || "Unknown error";
@@ -124,6 +134,7 @@ export function useEventStream(crId: string | undefined): EventStreamState {
     if (!crId) return;
 
     setState(INITIAL_STATE);
+    seenRef.current = new Set();
 
     const close = connectEventStream(crId, handleEvent, () => {
       // On SSE error, if we haven't received a terminal event, mark as potentially done
