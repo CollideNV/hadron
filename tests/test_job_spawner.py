@@ -2,11 +2,27 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from hadron.controller.job_spawner import SubprocessJobSpawner, K8sJobSpawner
+
+
+class _AsyncLineIter:
+    """Async iterator over lines for mocking proc.stdout."""
+
+    def __init__(self, lines: list[bytes]):
+        self._lines = iter(lines)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._lines)
+        except StopIteration:
+            raise StopAsyncIteration
 
 
 class TestSubprocessJobSpawner:
@@ -51,23 +67,27 @@ class TestSubprocessJobSpawner:
     async def test_log_output_stores_in_redis(self) -> None:
         redis = AsyncMock()
         mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"test output", None))
+        # _log_output reads proc.stdout as an async iterator line-by-line
+        mock_proc.stdout = _AsyncLineIter([b"test output\n"])
+        mock_proc.wait = AsyncMock(return_value=0)
         mock_proc.returncode = 0
 
         spawner = SubprocessJobSpawner(redis=redis)
         await spawner._log_output("cr-1:repo", mock_proc)
 
-        redis.set.assert_awaited_once()
-        call_args = redis.set.call_args
+        redis.append.assert_awaited_once()
+        call_args = redis.append.call_args
         assert "worker_log" in call_args[0][0]
-        assert call_args[1]["ex"] == 86400
+        redis.expire.assert_awaited_once()
+        assert redis.expire.call_args[0][1] == 86400
 
     @pytest.mark.asyncio
     async def test_log_output_handles_redis_failure(self) -> None:
         redis = AsyncMock()
-        redis.set = AsyncMock(side_effect=ConnectionError("redis down"))
+        redis.append = AsyncMock(side_effect=ConnectionError("redis down"))
         mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"output", None))
+        mock_proc.stdout = _AsyncLineIter([b"output\n"])
+        mock_proc.wait = AsyncMock(return_value=0)
         mock_proc.returncode = 0
 
         spawner = SubprocessJobSpawner(redis=redis)
@@ -77,7 +97,8 @@ class TestSubprocessJobSpawner:
     @pytest.mark.asyncio
     async def test_log_output_no_redis(self) -> None:
         mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"output", None))
+        mock_proc.stdout = _AsyncLineIter([b"output\n"])
+        mock_proc.wait = AsyncMock(return_value=0)
         mock_proc.returncode = 0
 
         spawner = SubprocessJobSpawner(redis=None)
@@ -87,7 +108,8 @@ class TestSubprocessJobSpawner:
     @pytest.mark.asyncio
     async def test_log_output_cleans_up_process(self) -> None:
         mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"", None))
+        mock_proc.stdout = _AsyncLineIter([b""])
+        mock_proc.wait = AsyncMock(return_value=0)
         mock_proc.returncode = 0
 
         spawner = SubprocessJobSpawner()

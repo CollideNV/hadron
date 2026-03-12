@@ -374,7 +374,17 @@ class TestGetWorkerLogs:
     async def test_logs_found(self) -> None:
         redis = AsyncMock()
         redis.get = AsyncMock(return_value=b"line 1\nline 2\n")
-        factory, _ = _build_factory_single_query(_make_cr())
+
+        # Logs route queries RepoRun for repo names, then fetches from Redis
+        repo_result = MagicMock()
+        repo_result.all.return_value = [("backend",)]
+        session = AsyncMock()
+        session.execute = AsyncMock(return_value=repo_result)
+
+        @asynccontextmanager
+        async def factory():
+            yield session
+
         app = _make_app(session_factory=factory, redis=redis)
 
         async with AsyncClient(
@@ -389,7 +399,16 @@ class TestGetWorkerLogs:
     async def test_no_logs(self) -> None:
         redis = AsyncMock()
         redis.get = AsyncMock(return_value=None)
-        factory, _ = _build_factory_single_query(_make_cr())
+
+        repo_result = MagicMock()
+        repo_result.all.return_value = [("backend",)]
+        session = AsyncMock()
+        session.execute = AsyncMock(return_value=repo_result)
+
+        @asynccontextmanager
+        async def factory():
+            yield session
+
         app = _make_app(session_factory=factory, redis=redis)
 
         async with AsyncClient(
@@ -416,13 +435,15 @@ class TestResumePipeline:
         cr_result = MagicMock()
         cr_result.scalar_one_or_none.return_value = cr
 
-        # Context 2: update CR status
-        # Context 3: select paused repos
+        # Context 2: select paused repos
         repo_result = MagicMock()
         repo_result.scalars.return_value.all.return_value = repos
 
+        # Context 3: update CRRun + update RepoRun + commit
+        update_result = MagicMock()
+
         sessions = []
-        for side_effects in [[cr_result], [MagicMock()], [repo_result]]:
+        for side_effects in [[cr_result], [repo_result], [update_result, update_result]]:
             s = AsyncMock()
             s.execute = AsyncMock(side_effect=side_effects)
             s.commit = AsyncMock()
