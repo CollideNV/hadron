@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { useCRDetail } from "../hooks/useCRDetail";
 import { StageDataProvider } from "../contexts/StageDataContext";
 import CRDetailHeader from "../components/cr/CRDetailHeader";
@@ -10,8 +10,9 @@ import StageDetailView from "../components/stages/StageDetailView";
 import LogsPanel from "../components/logs/LogsPanel";
 
 export default function CRDetailPage() {
-  const { crId } = useParams<{ crId: string }>();
-  const [selectedStage, setSelectedStage] = useState<string | null>(null);
+  const { crId, stage: urlStage } = useParams<{ crId: string; stage?: string }>();
+  const navigate = useNavigate();
+  const selectedStage = urlStage || null;
   const [showLogs, setShowLogs] = useState(false);
   const { crRun, displayStatus, title, stream, filterByStage } = useCRDetail(crId);
 
@@ -20,7 +21,11 @@ export default function CRDetailPage() {
   const filtered = filterByStage(selectedStage);
 
   const handleSelectStage = (stage: string) => {
-    setSelectedStage(stage === selectedStage ? null : stage);
+    if (stage === selectedStage) {
+      navigate(`/cr/${crId}`, { replace: true });
+    } else {
+      navigate(`/cr/${crId}/${stage}`, { replace: true });
+    }
   };
 
   return (
@@ -50,7 +55,7 @@ export default function CRDetailPage() {
       {selectedStage && (
         <StageFilterBanner
           selectedStage={selectedStage}
-          onClear={() => setSelectedStage(null)}
+          onClear={() => navigate(`/cr/${crId}`, { replace: true })}
         />
       )}
 
@@ -70,7 +75,7 @@ export default function CRDetailPage() {
             >
               <StageDetailView
                 stageName={selectedStage}
-                onBack={() => setSelectedStage(null)}
+                onBack={() => navigate(`/cr/${crId}`, { replace: true })}
               />
             </StageDataProvider>
           ) : (

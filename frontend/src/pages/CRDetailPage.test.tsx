@@ -7,8 +7,10 @@ import type { EventStreamState } from "../hooks/useEventStream";
 
 // Mock react-router
 const mockCrId = "cr-123";
+const mockNavigate = vi.fn();
 vi.mock("react-router-dom", () => ({
   useParams: () => ({ crId: mockCrId }),
+  useNavigate: () => mockNavigate,
   Link: ({ to, children, ...props }: { to: string; children: React.ReactNode; [key: string]: unknown }) => (
     <a href={to} {...props}>{children}</a>
   ),

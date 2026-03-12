@@ -1,4 +1,4 @@
-import type { PipelineEvent, PipelineEventMap } from "../../api/types";
+import type { PipelineEvent, PipelineEventMap, ModelBreakdownEntry } from "../../api/types";
 import type { AgentSession } from "../agents/types";
 import { getStageColor } from "../../utils/stages";
 import { formatDuration, formatModelName } from "../../utils/format";
@@ -39,11 +39,21 @@ export default function StageSummaryCard({
   // Cost across sessions
   const totalCost = sessions.reduce((sum, s) => sum + s.costUsd, 0);
 
-  // Model breakdown
-  const modelSet = new Set<string>();
+  // Aggregate per-model stats across all sessions
+  const modelStats: Record<string, ModelBreakdownEntry> = {};
   for (const s of sessions) {
-    if (s.models) s.models.forEach((m) => modelSet.add(m));
-    else if (s.model) modelSet.add(s.model);
+    for (const [model, stats] of Object.entries(s.modelBreakdown)) {
+      const existing = modelStats[model];
+      if (existing) {
+        existing.input_tokens += stats.input_tokens;
+        existing.output_tokens += stats.output_tokens;
+        existing.cost_usd += stats.cost_usd;
+        existing.throttle_count += stats.throttle_count;
+        existing.throttle_seconds += stats.throttle_seconds;
+      } else {
+        modelStats[model] = { ...stats };
+      }
+    }
   }
 
   // Test summary
@@ -84,17 +94,24 @@ export default function StageSummaryCard({
           </div>
         )}
 
-        {/* Model badges */}
-        {modelSet.size > 0 && (
-          <div className="flex items-center gap-1 flex-wrap">
-            <span className="text-text-dim text-[10px]">Models:</span>
-            {Array.from(modelSet).map((m) => (
-              <span
-                key={m}
-                className="text-[9px] text-text-muted font-mono bg-bg-surface border border-border-subtle rounded px-1 py-0.5"
-              >
-                {formatModelName(m)}
-              </span>
+        {/* Per-model breakdown */}
+        {Object.keys(modelStats).length > 0 && (
+          <div className="space-y-0.5 mt-1">
+            {Object.entries(modelStats).map(([model, stats]) => (
+              <div key={model} className="flex items-center justify-between text-[10px]">
+                <span className="font-mono text-text-muted truncate" title={model}>
+                  {formatModelName(model)}
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-text-dim">
+                    {(stats.input_tokens / 1000).toFixed(1)}k/{(stats.output_tokens / 1000).toFixed(1)}k
+                  </span>
+                  <span className="text-accent font-mono">${stats.cost_usd.toFixed(3)}</span>
+                  {stats.throttle_count > 0 && (
+                    <span className="text-status-error">{stats.throttle_seconds.toFixed(0)}s</span>
+                  )}
+                </div>
+              </div>
             ))}
           </div>
         )}

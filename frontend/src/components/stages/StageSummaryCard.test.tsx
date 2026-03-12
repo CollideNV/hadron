@@ -149,10 +149,20 @@ describe("StageSummaryCard", () => {
     expect(screen.getByText("1 minor")).toBeInTheDocument();
   });
 
-  it("shows model badges from sessions", () => {
+  it("shows per-model cost breakdown from sessions", () => {
     const sessions = [
-      makeSession({ model: "claude-3-5-sonnet-20241022" }),
-      makeSession({ model: "claude-3-5-haiku-20241022" }),
+      makeSession({
+        modelBreakdown: {
+          "claude-3-5-sonnet-20241022": {
+            input_tokens: 5000, output_tokens: 1000,
+            cost_usd: 0.030, throttle_count: 0, throttle_seconds: 0,
+          },
+          "claude-3-5-haiku-20241022": {
+            input_tokens: 2000, output_tokens: 500,
+            cost_usd: 0.004, throttle_count: 1, throttle_seconds: 10,
+          },
+        },
+      }),
     ];
     render(
       <StageSummaryCard
@@ -165,6 +175,9 @@ describe("StageSummaryCard", () => {
     );
     expect(screen.getByText("3-5-sonnet")).toBeInTheDocument();
     expect(screen.getByText("3-5-haiku")).toBeInTheDocument();
+    expect(screen.getByText("$0.030")).toBeInTheDocument();
+    expect(screen.getByText("$0.004")).toBeInTheDocument();
+    expect(screen.getByText("10s")).toBeInTheDocument();
   });
 
   it("handles empty arrays for all props", () => {

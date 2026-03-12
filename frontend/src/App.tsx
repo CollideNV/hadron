@@ -10,7 +10,7 @@ export default function App() {
     <AppShell>
       <Routes>
         <Route path="/" element={<CRListPage />} />
-        <Route path="/cr/:crId" element={<ErrorBoundary><CRDetailPage /></ErrorBoundary>} />
+        <Route path="/cr/:crId/:stage?" element={<ErrorBoundary><CRDetailPage /></ErrorBoundary>} />
         <Route path="/new" element={<NewCRPage />} />
       </Routes>
     </AppShell>
