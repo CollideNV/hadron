@@ -178,8 +178,14 @@ class TestCloneBare:
 
         expected_path = tmp_path / "repos" / "my-repo"
         assert result == expected_path
-        mock_git.assert_called_once_with(
+        assert mock_git.call_count == 2
+        mock_git.assert_any_call(
             "clone", "--bare", "https://github.com/org/repo.git", str(expected_path)
+        )
+        mock_git.assert_any_call(
+            "config", "remote.origin.fetch",
+            "+refs/heads/*:refs/heads/*",
+            cwd=expected_path,
         )
 
     @pytest.mark.asyncio
@@ -192,7 +198,13 @@ class TestCloneBare:
             result = await wm.clone_bare("https://github.com/org/repo.git", "my-repo")
 
         assert result == bare_path
-        mock_git.assert_called_once_with("fetch", "--all", cwd=bare_path)
+        assert mock_git.call_count == 2
+        mock_git.assert_any_call(
+            "config", "remote.origin.fetch",
+            "+refs/heads/*:refs/heads/*",
+            cwd=bare_path, check=False,
+        )
+        mock_git.assert_any_call("fetch", "--all", "--prune", cwd=bare_path)
 
     @pytest.mark.asyncio
     async def test_creates_parent_dirs(self, tmp_path: Path) -> None:

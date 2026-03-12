@@ -94,10 +94,22 @@ class WorktreeManager:
         bare_path = self._bare_path(repo_name)
         if bare_path.exists():
             logger.info("Bare clone already exists: %s", bare_path)
-            await _run_git("fetch", "--all", cwd=bare_path)
+            # Ensure fetch refspec is configured — bare clones don't set one
+            await _run_git(
+                "config", "remote.origin.fetch",
+                "+refs/heads/*:refs/heads/*",
+                cwd=bare_path, check=False,
+            )
+            await _run_git("fetch", "--all", "--prune", cwd=bare_path)
             return bare_path
         bare_path.parent.mkdir(parents=True, exist_ok=True)
         await _run_git("clone", "--bare", repo_url, str(bare_path))
+        # Bare clones lack a fetch refspec; configure one so future fetches update refs
+        await _run_git(
+            "config", "remote.origin.fetch",
+            "+refs/heads/*:refs/heads/*",
+            cwd=bare_path,
+        )
         return bare_path
 
     async def create_worktree(
