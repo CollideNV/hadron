@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
 import type { PipelineEvent } from "../../api/types";
+import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { getStageColor } from "../../utils/stages";
 
 function subStageLabel(stage: string): string {
@@ -87,12 +87,8 @@ export default function StageDetailLog({
   stageName,
   onBack,
 }: StageDetailLogProps) {
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const { scrollRef, onScroll } = useAutoScroll<HTMLDivElement>([events.length]);
   const stageColor = getStageColor(stageName);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [events.length]);
 
   return (
     <div className="flex flex-col h-full">
@@ -113,7 +109,7 @@ export default function StageDetailLog({
           {events.length} event{events.length !== 1 ? "s" : ""}
         </span>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 py-2 space-y-0.5">
+      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-4 py-2 space-y-0.5">
         {events.map((event, i) => {
           const isSubStageHeader =
             event.event_type === "stage_entered" && event.stage.includes(":");
@@ -154,7 +150,7 @@ export default function StageDetailLog({
             </div>
           );
         })}
-        <div ref={bottomRef} />
+        <div />
       </div>
     </div>
   );

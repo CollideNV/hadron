@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { getWorkerLogs } from "../../api/client";
+import { useAutoScroll } from "../../hooks/useAutoScroll";
 
 interface LogsPanelProps {
   crId: string;
@@ -11,7 +12,7 @@ export default function LogsPanel({ crId, pipelineStatus }: LogsPanelProps) {
   const [loading, setLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [filter, setFilter] = useState("");
-  const scrollRef = useRef<HTMLPreElement>(null);
+  const { scrollRef, onScroll } = useAutoScroll<HTMLPreElement>([logs]);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchLogs = useCallback(async () => {
@@ -45,12 +46,6 @@ export default function LogsPanel({ crId, pipelineStatus }: LogsPanelProps) {
     if (intervalRef.current) clearInterval(intervalRef.current);
   }, [autoRefresh, pipelineStatus, fetchLogs]);
 
-  // Auto-scroll
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [logs]);
 
   const filteredLines = filter
     ? logs
@@ -93,6 +88,7 @@ export default function LogsPanel({ crId, pipelineStatus }: LogsPanelProps) {
       <div className="flex-1 overflow-hidden">
         <pre
           ref={scrollRef}
+          onScroll={onScroll}
           className="h-full overflow-y-auto px-4 py-2 text-[11px] font-mono text-text-muted leading-relaxed bg-[#0d1117] m-0 whitespace-pre-wrap break-all"
         >
           {filteredLines || (

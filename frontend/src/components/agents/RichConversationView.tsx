@@ -1,4 +1,5 @@
-import { useRef, useEffect, useMemo } from "react";
+import { useMemo } from "react";
+import { useAutoScroll } from "../../hooks/useAutoScroll";
 import type { PipelineEvent } from "../../api/types";
 import type { AgentSession } from "./types";
 import { buildTimeline } from "../../utils/buildTimeline";
@@ -24,13 +25,7 @@ export default function RichConversationView({
   testRuns = [],
   findings = [],
 }: RichConversationViewProps) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [session, testRuns.length, findings.length]);
+  const { scrollRef, onScroll } = useAutoScroll<HTMLDivElement>([session, testRuns.length, findings.length]);
 
   const isActive =
     !session.completed &&
@@ -50,7 +45,7 @@ export default function RichConversationView({
       <SessionHeader session={session} isActive={isActive} />
 
       {/* Conversation timeline */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
+      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
         {timeline.length === 0 && isActive && (
           <p className="text-xs text-text-dim py-4 text-center animate-pulse">
             Agent is thinking...
