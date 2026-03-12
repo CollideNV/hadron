@@ -68,37 +68,50 @@ def detect_languages_and_tests(
             return override_langs, override_tests
 
     # --- Phase 2: Scan marker files ---
+    # Scan root AND one level of subdirectories to catch monorepo layouts
+    # (e.g. pyproject.toml at root, frontend/package.json nested).
     detected_langs: list[str] = []
     detected_tests: list[str] = []
     seen_langs: set[str] = set()
 
-    for marker, lang, test_cmd in _MARKERS:
-        if marker.startswith("*"):
-            # Glob pattern (e.g. *.csproj)
-            matches = list(base.glob(marker))
-            found = len(matches) > 0
-        else:
-            found = (base / marker).is_file()
+    scan_dirs = [base]
+    scan_dirs.extend(
+        d for d in sorted(base.iterdir())
+        if d.is_dir() and not d.name.startswith(".")
+    )
 
-        if not found or lang is None:
-            continue
+    for scan_dir in scan_dirs:
+        for marker, lang, test_cmd in _MARKERS:
+            if marker.startswith("*"):
+                # Glob pattern (e.g. *.csproj)
+                matches = list(scan_dir.glob(marker))
+                found = len(matches) > 0
+            else:
+                found = (scan_dir / marker).is_file()
 
-        # Special case: package.json → check for TypeScript
-        if marker == "package.json":
-            actual_lang = _detect_js_or_ts(base)
-            if actual_lang not in seen_langs:
-                detected_langs.append(actual_lang)
-                seen_langs.add(actual_lang)
-            # Check for custom test script in package.json
-            pkg_test = _read_package_json_test(base)
-            if pkg_test and test_cmd:
-                test_cmd = pkg_test
-        elif lang not in seen_langs:
-            detected_langs.append(lang)
-            seen_langs.add(lang)
+            if not found or lang is None:
+                continue
 
-        if test_cmd and test_cmd not in detected_tests:
-            detected_tests.append(test_cmd)
+            # Special case: package.json → check for TypeScript
+            if marker == "package.json":
+                actual_lang = _detect_js_or_ts(scan_dir)
+                if actual_lang not in seen_langs:
+                    detected_langs.append(actual_lang)
+                    seen_langs.add(actual_lang)
+                # Check for custom test script in package.json
+                pkg_test = _read_package_json_test(scan_dir)
+                if pkg_test and test_cmd:
+                    test_cmd = pkg_test
+                    # Prefix with subdir path for nested packages
+                    if scan_dir != base:
+                        rel = scan_dir.relative_to(base)
+                        test_cmd = f"cd {rel} && {test_cmd}"
+            elif lang not in seen_langs:
+                detected_langs.append(lang)
+                seen_langs.add(lang)
+
+            if test_cmd and test_cmd not in detected_tests:
+                detected_tests.append(test_cmd)
 
     # Merge: AGENTS.md overrides take precedence
     final_langs = override_langs or detected_langs

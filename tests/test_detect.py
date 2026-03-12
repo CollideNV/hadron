@@ -153,3 +153,40 @@ class TestAgentsMdOverride:
         langs, tests = detect_languages_and_tests(str(repo), agents_md=agents_md)
         assert langs == ["python"]  # not ["python", "rust"]
         assert tests == ["make test"]  # not ["pytest", "cargo test"]
+
+
+class TestNestedDetection:
+    """Detect languages from nested subdirectories (monorepo layout)."""
+
+    def test_monorepo_python_plus_frontend(self, repo) -> None:
+        """Detect both Python (root) and TypeScript (nested frontend/)."""
+        (repo / "pyproject.toml").write_text("[project]\n")
+        frontend = repo / "frontend"
+        frontend.mkdir()
+        (frontend / "package.json").write_text(json.dumps({"scripts": {"test": "vitest"}}))
+        (frontend / "tsconfig.json").write_text("{}")
+
+        langs, tests = detect_languages_and_tests(str(repo))
+        assert "python" in langs
+        assert "typescript" in langs
+        assert "pytest" in tests
+        assert any("frontend" in t and "npm test" in t for t in tests)
+
+    def test_nested_package_json_without_tsconfig(self, repo) -> None:
+        """Nested package.json without tsconfig → javascript, not typescript."""
+        subdir = repo / "webapp"
+        subdir.mkdir()
+        (subdir / "package.json").write_text(json.dumps({"scripts": {"test": "jest"}}))
+
+        langs, tests = detect_languages_and_tests(str(repo))
+        assert "javascript" in langs
+        assert "typescript" not in langs
+
+    def test_hidden_dirs_skipped(self, repo) -> None:
+        """Dotfiles/dirs like .git should not be scanned."""
+        gitdir = repo / ".git"
+        gitdir.mkdir()
+        (gitdir / "package.json").write_text("{}")
+
+        langs, tests = detect_languages_and_tests(str(repo))
+        assert "javascript" not in langs
