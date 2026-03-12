@@ -1,8 +1,8 @@
 import type { PipelineEvent } from "../../api/types";
 
 export function InlineTestRun({ event }: { event: PipelineEvent }) {
-  const d = event.data;
-  const passed = d.passed as boolean;
+  if (event.event_type !== "test_run") return null;
+  const { passed, iteration, repo } = event.data;
   return (
     <div className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs ${
       passed
@@ -13,16 +13,17 @@ export function InlineTestRun({ event }: { event: PipelineEvent }) {
         {passed ? "PASS" : "FAIL"}
       </span>
       <span className="text-text-muted">
-        Iteration {d.iteration as number}
-        {d.repo ? ` - ${String(d.repo)}` : ""}
+        Iteration {iteration}
+        {repo ? ` - ${repo}` : ""}
       </span>
     </div>
   );
 }
 
 export function InlineFinding({ event }: { event: PipelineEvent }) {
-  const d = event.data;
-  const sev = (d.severity as string) || "info";
+  if (event.event_type !== "review_finding") return null;
+  const { severity, message, file, line } = event.data;
+  const sev = severity || "info";
   const sevColors: Record<string, string> = {
     critical: "text-severity-critical border-severity-critical/20 bg-severity-critical/8",
     major: "text-severity-major border-severity-major/20 bg-severity-major/8",
@@ -33,14 +34,14 @@ export function InlineFinding({ event }: { event: PipelineEvent }) {
     <div className={`px-3 py-1.5 rounded-md text-xs border ${sevColors[sev] || sevColors.info}`}>
       <div className="flex items-center gap-2">
         <span className="font-bold uppercase text-[9px] tracking-wider">{sev}</span>
-        {d.file ? (
+        {file ? (
           <span className="font-mono text-text-muted text-[10px]">
-            {String(d.file)}{d.line ? `:${String(d.line)}` : ""}
+            {file}{line ? `:${line}` : ""}
           </span>
         ) : null}
       </div>
       <p className="mt-0.5 text-text-muted text-[11px]">
-        {(d.message as string) || "No message"}
+        {message || "No message"}
       </p>
     </div>
   );

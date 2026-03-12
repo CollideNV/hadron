@@ -73,7 +73,7 @@ export function useEventStream(crId: string | undefined): EventStreamState {
           break;
         case "pipeline_failed":
           status = "failed";
-          error = (event.data.error as string) || "Pipeline failed";
+          error = event.data.error || "Pipeline failed";
           break;
         case "pipeline_paused":
           status = "paused";
@@ -109,7 +109,7 @@ export function useEventStream(crId: string | undefined): EventStreamState {
           }
           break;
         case "error":
-          error = (event.data.message as string) || "Unknown error";
+          error = event.data.message || "Unknown error";
           break;
       }
 

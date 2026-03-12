@@ -1,4 +1,6 @@
-import type { PipelineEvent } from "../../api/types";
+import type { PipelineEvent, PipelineEventMap } from "../../api/types";
+
+type ReviewFindingEvent = PipelineEvent & { event_type: "review_finding"; data: PipelineEventMap["review_finding"] };
 
 const SEVERITY_STYLES: Record<string, string> = {
   critical:
@@ -15,10 +17,11 @@ interface ReviewFindingsPanelProps {
 export default function ReviewFindingsPanel({
   findings,
 }: ReviewFindingsPanelProps) {
-  const grouped: Record<string, PipelineEvent[]> = {};
+  const grouped: Record<string, ReviewFindingEvent[]> = {};
   for (const f of findings) {
-    const sev = (f.data.severity as string) || "info";
-    (grouped[sev] ??= []).push(f);
+    const rf = f as ReviewFindingEvent;
+    const sev = rf.data.severity || "info";
+    (grouped[sev] ??= []).push(rf);
   }
 
   const order = ["critical", "major", "minor", "info"];
@@ -43,7 +46,6 @@ export default function ReviewFindingsPanel({
         )}
         {order.map((sev) =>
           (grouped[sev] || []).map((f, i) => {
-            const d = f.data;
             const style = SEVERITY_STYLES[sev] || SEVERITY_STYLES.info;
             return (
               <div
@@ -54,15 +56,15 @@ export default function ReviewFindingsPanel({
                   <span className="font-bold uppercase text-[9px] tracking-wider">
                     {sev}
                   </span>
-                  {d.file ? (
+                  {f.data.file ? (
                     <span className="font-mono text-text-muted text-[10px]">
-                      {String(d.file)}
-                      {d.line ? `:${String(d.line)}` : ""}
+                      {f.data.file}
+                      {f.data.line ? `:${f.data.line}` : ""}
                     </span>
                   ) : null}
                 </div>
                 <p className="mt-1 text-text-muted text-[11px]">
-                  {(d.message as string) || "No message"}
+                  {f.data.message || "No message"}
                 </p>
               </div>
             );

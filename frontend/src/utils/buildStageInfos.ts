@@ -83,8 +83,8 @@ export function buildStageInfos(events: PipelineEvent[]): StageInfo[] {
       case "agent_started": {
         const agentTrackKey = subKey || `${baseStage}:${e.data.role}:${e.data.repo}`;
         const agent: AgentSpan = {
-          role: (e.data.role as string) || "agent",
-          repo: (e.data.repo as string) || "",
+          role: e.data.role || "agent",
+          repo: e.data.repo || "",
           startedAt: e.timestamp,
           completedAt: null,
           toolCalls: [],
@@ -130,18 +130,17 @@ export function formatTs(ts: number): string {
 }
 
 export function summarizeEvent(event: PipelineEvent): string {
-  const d = event.data;
   switch (event.event_type) {
     case "test_run":
-      return `Tests ${d.passed ? "PASSED" : "FAILED"} (iteration ${d.iteration})`;
+      return `Tests ${event.data.passed ? "PASSED" : "FAILED"} (iteration ${event.data.iteration})`;
     case "review_finding":
-      return `[${d.severity}] ${d.message || "finding"}${d.file ? ` @ ${d.file}` : ""}`;
+      return `[${event.data.severity}] ${event.data.message || "finding"}${event.data.file ? ` @ ${event.data.file}` : ""}`;
     case "cost_update":
-      return `$${((d.total_cost_usd as number) || 0).toFixed(4)}`;
+      return `$${(event.data.total_cost_usd || 0).toFixed(4)}`;
     case "intervention_set":
       return "Intervention received";
     case "error":
-      return String(d.message || d.error || "Error");
+      return String(event.data.message || event.data.error || "Error");
     default:
       return event.event_type;
   }

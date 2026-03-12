@@ -1,4 +1,4 @@
-import type { PipelineEvent } from "../../api/types";
+import type { PipelineEvent, PipelineEventMap } from "../../api/types";
 import type { AgentSession } from "../agents/types";
 import { getStageColor } from "../../utils/stages";
 import { formatDuration, formatModelName } from "../../utils/format";
@@ -47,13 +47,15 @@ export default function StageSummaryCard({
   }
 
   // Test summary
-  const testsPassed = testRuns.filter((t) => t.data.passed).length;
+  type TestRunEvent = PipelineEvent & { event_type: "test_run"; data: PipelineEventMap["test_run"] };
+  const testsPassed = (testRuns as TestRunEvent[]).filter((t) => t.data.passed).length;
   const testsFailed = testRuns.length - testsPassed;
 
   // Finding severity counts
+  type ReviewFindingEvent = PipelineEvent & { event_type: "review_finding"; data: PipelineEventMap["review_finding"] };
   const sevCounts: Record<string, number> = {};
-  for (const f of findings) {
-    const sev = (f.data.severity as string) || "info";
+  for (const f of findings as ReviewFindingEvent[]) {
+    const sev = f.data.severity || "info";
     sevCounts[sev] = (sevCounts[sev] || 0) + 1;
   }
 

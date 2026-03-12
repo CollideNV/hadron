@@ -24,13 +24,138 @@ export interface CRRunDetail extends CRRun {
   repos: RepoRun[];
 }
 
-export interface PipelineEvent {
-  cr_id: string;
-  event_type: string;
-  stage: string;
-  data: Record<string, unknown>;
-  timestamp: number;
+/* ── Per-event-type data shapes ── */
+
+export interface PipelineStartedData {}
+export interface PipelineResumedData {}
+export interface PipelineCompletedData {}
+export interface PipelineFailedData {
+  error?: string;
 }
+export interface PipelinePausedData {}
+export interface StageEnteredData {}
+export interface StageCompletedData {
+  error?: string;
+}
+export interface AgentStartedData {
+  role?: string;
+  repo?: string;
+  model?: string;
+  explore_model?: string;
+  plan_model?: string;
+  models?: string[];
+  allowed_tools?: string[];
+}
+export interface AgentCompletedData {
+  role?: string;
+  repo?: string;
+  model?: string;
+  output?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  cost_usd?: number;
+  tool_calls_count?: number;
+  round_count?: number;
+  conversation_key?: string;
+  throttle_count?: number;
+  throttle_seconds?: number;
+  model_breakdown?: Record<string, ModelBreakdownEntry>;
+}
+export interface ModelBreakdownEntry {
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  throttle_count: number;
+  throttle_seconds: number;
+}
+export interface AgentToolCallData {
+  role?: string;
+  repo?: string;
+  tool?: string;
+  input?: unknown;
+  result?: string;
+  result_snippet?: string;
+  round?: number;
+  type?: "call" | "result";
+}
+export interface AgentOutputData {
+  role?: string;
+  repo?: string;
+  text?: string;
+  round?: number;
+}
+export interface AgentNudgeData {
+  role?: string;
+  repo?: string;
+  text?: string;
+}
+export interface PhaseStartedData {
+  role?: string;
+  repo?: string;
+  [k: string]: unknown;
+}
+export interface PhaseCompletedData {
+  role?: string;
+  repo?: string;
+  [k: string]: unknown;
+}
+export interface TestRunData {
+  passed?: boolean;
+  iteration?: number;
+  repo?: string;
+  output_tail?: string;
+}
+export interface ReviewFindingData {
+  severity?: string;
+  message?: string;
+  file?: string;
+  line?: number;
+}
+export interface InterventionSetData {}
+export interface CostUpdateData {
+  total_cost_usd?: number;
+  delta_usd?: number;
+}
+export interface ErrorData {
+  message?: string;
+  error?: string;
+}
+
+/* ── Event-type → data mapping ── */
+
+export interface PipelineEventMap {
+  pipeline_started: PipelineStartedData;
+  pipeline_resumed: PipelineResumedData;
+  pipeline_completed: PipelineCompletedData;
+  pipeline_failed: PipelineFailedData;
+  pipeline_paused: PipelinePausedData;
+  stage_entered: StageEnteredData;
+  stage_completed: StageCompletedData;
+  agent_started: AgentStartedData;
+  agent_completed: AgentCompletedData;
+  agent_tool_call: AgentToolCallData;
+  agent_output: AgentOutputData;
+  agent_nudge: AgentNudgeData;
+  phase_started: PhaseStartedData;
+  phase_completed: PhaseCompletedData;
+  test_run: TestRunData;
+  review_finding: ReviewFindingData;
+  intervention_set: InterventionSetData;
+  cost_update: CostUpdateData;
+  error: ErrorData;
+}
+
+/* ── Discriminated union PipelineEvent ── */
+
+export type PipelineEvent = {
+  [K in EventType]: {
+    cr_id: string;
+    event_type: K;
+    stage: string;
+    data: PipelineEventMap[K];
+    timestamp: number;
+  };
+}[EventType];
 
 export interface RawChangeRequest {
   title: string;

@@ -134,7 +134,7 @@ describe("useEventStream", () => {
     });
 
     expect(result.current.toolCalls).toHaveLength(1);
-    expect(result.current.toolCalls[0].data.tool).toBe("read_file");
+    expect((result.current.toolCalls[0] as { data: { tool: string } }).data.tool).toBe("read_file");
   });
 
   it("tracks agent outputs", () => {

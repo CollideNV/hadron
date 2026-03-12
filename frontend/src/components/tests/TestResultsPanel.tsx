@@ -29,10 +29,10 @@ export default function TestResultsPanel({ testRuns }: TestResultsPanelProps) {
 
 function TestRunCard({ event }: { event: PipelineEvent }) {
   const [expanded, setExpanded] = useState(false);
-  const d = event.data;
-  const passed = d.passed as boolean;
-  const iteration = d.iteration as number;
-  const output = (d.output_tail as string) || "";
+
+  if (event.event_type !== "test_run") return null;
+  const { passed, iteration, output_tail, repo } = event.data;
+  const output = output_tail || "";
 
   return (
     <div
@@ -51,7 +51,7 @@ function TestRunCard({ event }: { event: PipelineEvent }) {
           </span>
           <span className="text-[11px] text-text-muted">
             Iteration {iteration}
-            {d.repo ? ` - ${String(d.repo)}` : ""}
+            {repo ? ` - ${repo}` : ""}
           </span>
         </div>
         {output && (

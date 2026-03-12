@@ -102,8 +102,8 @@ describe("summarizeEvent", () => {
   });
 
   it("returns event_type as default", () => {
-    const event = makeEvent({ event_type: "custom_event", data: {} });
-    expect(summarizeEvent(event)).toBe("custom_event");
+    const event = makeEvent({ event_type: "intervention_set", data: {} });
+    expect(summarizeEvent(event)).toBe("Intervention received");
   });
 });
 

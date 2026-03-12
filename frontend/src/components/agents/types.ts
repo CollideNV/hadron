@@ -1,12 +1,6 @@
-import type { PipelineEvent } from "../../api/types";
+import type { PipelineEvent, ModelBreakdownEntry } from "../../api/types";
 
-export interface ModelBreakdownEntry {
-  input_tokens: number;
-  output_tokens: number;
-  cost_usd: number;
-  throttle_count: number;
-  throttle_seconds: number;
-}
+export type { ModelBreakdownEntry } from "../../api/types";
 
 export interface AgentSession {
   role: string;
@@ -78,68 +72,65 @@ export function buildSessions(
   ].sort((a, b) => a.timestamp - b.timestamp);
 
   for (const e of allEvents) {
-    const role = (e.data.role as string) || "";
-    const repo = (e.data.repo as string) || "";
-
     if (e.event_type === "agent_started") {
-      const session = getSession(role, repo, e.stage);
-      session.model = (e.data.model as string) || undefined;
-      session.models = (e.data.models as string[]) || undefined;
-      session.allowedTools = (e.data.allowed_tools as string[]) || undefined;
+      const session = getSession(e.data.role || "", e.data.repo || "", e.stage);
+      session.model = e.data.model || undefined;
+      session.models = e.data.models || undefined;
+      session.allowedTools = e.data.allowed_tools || undefined;
     } else if (e.event_type === "agent_completed") {
-      const session = getSession(role, repo, e.stage);
+      const session = getSession(e.data.role || "", e.data.repo || "", e.stage);
       session.completed = true;
-      session.model = session.model || (e.data.model as string) || undefined;
-      session.inputTokens = (e.data.input_tokens as number) || 0;
-      session.outputTokens = (e.data.output_tokens as number) || 0;
-      session.costUsd = (e.data.cost_usd as number) || 0;
-      session.roundCount = (e.data.round_count as number) || 0;
-      session.conversationKey = (e.data.conversation_key as string) || undefined;
-      session.throttleCount = (e.data.throttle_count as number) || 0;
-      session.throttleSeconds = (e.data.throttle_seconds as number) || 0;
-      session.modelBreakdown = (e.data.model_breakdown as Record<string, ModelBreakdownEntry>) || {};
+      session.model = session.model || e.data.model || undefined;
+      session.inputTokens = e.data.input_tokens || 0;
+      session.outputTokens = e.data.output_tokens || 0;
+      session.costUsd = e.data.cost_usd || 0;
+      session.roundCount = e.data.round_count || 0;
+      session.conversationKey = e.data.conversation_key || undefined;
+      session.throttleCount = e.data.throttle_count || 0;
+      session.throttleSeconds = e.data.throttle_seconds || 0;
+      session.modelBreakdown = e.data.model_breakdown || {};
     } else if (e.event_type === "agent_output") {
-      const session = getSession(role, repo, e.stage);
+      const session = getSession(e.data.role || "", e.data.repo || "", e.stage);
       session.items.push({
         type: "output",
-        text: (e.data.text as string) || "",
-        round: (e.data.round as number) || 0,
+        text: e.data.text || "",
+        round: e.data.round || 0,
         ts: e.timestamp,
       });
     } else if (e.event_type === "agent_tool_call") {
-      const session = getSession(role, repo, e.stage);
-      const subtype = (e.data.type as string) || "";
+      const session = getSession(e.data.role || "", e.data.repo || "", e.stage);
+      const subtype = e.data.type || "";
       if (subtype === "result") {
         session.items.push({
           type: "tool_result",
-          tool: (e.data.tool as string) || "",
-          result: (e.data.result as string) || "",
-          round: (e.data.round as number) || 0,
+          tool: e.data.tool || "",
+          result: e.data.result || "",
+          round: e.data.round || 0,
           ts: e.timestamp,
         });
       } else {
         session.items.push({
           type: "tool_call",
-          tool: (e.data.tool as string) || "",
+          tool: e.data.tool || "",
           input: e.data.input || {},
-          round: (e.data.round as number) || 0,
+          round: e.data.round || 0,
           ts: e.timestamp,
         });
         if (e.data.result_snippet && !subtype) {
           session.items.push({
             type: "tool_result",
-            tool: (e.data.tool as string) || "",
-            result: (e.data.result_snippet as string) || "",
-            round: (e.data.round as number) || 0,
+            tool: e.data.tool || "",
+            result: e.data.result_snippet || "",
+            round: e.data.round || 0,
             ts: e.timestamp + 0.001,
           });
         }
       }
     } else if (e.event_type === "agent_nudge") {
-      const session = getSession(role, repo, e.stage);
+      const session = getSession(e.data.role || "", e.data.repo || "", e.stage);
       session.items.push({
         type: "nudge",
-        text: (e.data.text as string) || "",
+        text: e.data.text || "",
         ts: e.timestamp,
       });
     }

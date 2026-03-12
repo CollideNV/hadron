@@ -8,7 +8,6 @@ function subStageLabel(stage: string): string {
 }
 
 function summarize(event: PipelineEvent): string {
-  const d = event.data;
   switch (event.event_type) {
     case "stage_entered":
       return event.stage.includes(":")
@@ -19,17 +18,17 @@ function summarize(event: PipelineEvent): string {
         ? `Completed ${subStageLabel(event.stage)}`
         : `Completed ${event.stage}`;
     case "agent_started":
-      return `Agent ${d.role} started${d.repo ? ` (${d.repo})` : ""}`;
+      return `Agent ${event.data.role} started${event.data.repo ? ` (${event.data.repo})` : ""}`;
     case "agent_completed":
-      return `Agent ${d.role} completed${d.repo ? ` (${d.repo})` : ""}`;
+      return `Agent ${event.data.role} completed${event.data.repo ? ` (${event.data.repo})` : ""}`;
     case "agent_tool_call":
-      return `${d.role}: ${d.tool}(${JSON.stringify(d.input || {}).slice(0, 60)})`;
+      return `${event.data.role}: ${event.data.tool}(${JSON.stringify(event.data.input || {}).slice(0, 60)})`;
     case "test_run":
-      return `Tests ${d.passed ? "PASSED" : "FAILED"} (iter ${d.iteration})`;
+      return `Tests ${event.data.passed ? "PASSED" : "FAILED"} (iter ${event.data.iteration})`;
     case "review_finding":
-      return `[${d.severity}] ${d.message || "finding"}`;
+      return `[${event.data.severity}] ${event.data.message || "finding"}`;
     case "cost_update":
-      return `Cost: $${((d.total_cost_usd as number) || 0).toFixed(4)}`;
+      return `Cost: $${(event.data.total_cost_usd || 0).toFixed(4)}`;
     case "pipeline_started":
       return "Pipeline started";
     case "pipeline_resumed":
@@ -37,7 +36,7 @@ function summarize(event: PipelineEvent): string {
     case "pipeline_completed":
       return "Pipeline completed";
     case "pipeline_failed":
-      return `Pipeline failed: ${d.error || ""}`;
+      return `Pipeline failed: ${event.data.error || ""}`;
     case "pipeline_paused":
       return "Pipeline paused for intervention";
     default:
