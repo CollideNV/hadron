@@ -45,13 +45,16 @@ async def rebase_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
 
         conflict_files = await wm.get_conflict_files(ri.worktree_path)
 
-        # Pre-read conflicting files so the agent doesn't need to explore
+        # Pre-read conflicting files (capped per file to avoid bloating the prompt)
+        MAX_CONFLICT_FILE_CHARS = 10_000
         base = Path(ri.worktree_path)
         file_contents = ""
         for cf in conflict_files:
             cf_path = base / cf
             if cf_path.is_file():
                 content = cf_path.read_text(errors="replace")
+                if len(content) > MAX_CONFLICT_FILE_CHARS:
+                    content = content[:MAX_CONFLICT_FILE_CHARS] + f"\n\n... (truncated, use read_file for full content)"
                 file_contents += f"### {cf}\n\n```\n{content}\n```\n\n"
 
         composer = PromptComposer()

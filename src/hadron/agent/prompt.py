@@ -73,7 +73,7 @@ class PromptComposer:
             parts.append(f"### Languages: {', '.join(languages)}")
         if test_commands:
             cmds = ", ".join(f"`{c}`" for c in test_commands)
-            parts.append(f"### Test commands: {cmds}")
+            parts.append(f"### Test commands (use exactly as shown via run_command): {cmds}")
         if directory_tree:
             parts.append(f"### Directory Structure\n\n```\n{directory_tree}\n```")
         return "\n\n".join(parts)

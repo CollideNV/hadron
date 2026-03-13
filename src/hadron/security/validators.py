@@ -33,12 +33,31 @@ def _has_dangerous_find_flags(cmd: str) -> bool:
     return cmd.startswith("find ") and any(flag in cmd for flag in FIND_DANGEROUS_FLAGS)
 
 
+def _strip_cd_prefix(cmd: str) -> str | None:
+    """If cmd starts with ``cd <dir> && <rest>``, return <rest>.
+
+    Only strips a single ``cd`` prefix; nested chaining is rejected.
+    Returns None if there's no ``cd`` prefix (caller uses original cmd).
+    """
+    import re
+    m = re.match(r"^cd\s+\S+\s*&&\s*(.+)$", cmd)
+    return m.group(1).strip() if m else None
+
+
 def validate_agent_command(cmd: str) -> bool:
     """Check whether a command from an agent is allowed.
 
     Blocks shell metacharacters, chaining patterns, and unknown prefixes.
     Additional restrictions apply to ``find`` (dangerous flags).
+
+    Allows a single ``cd <dir> && <allowed_cmd>`` prefix as a safe pattern
+    for running commands in subdirectories (e.g. monorepo test commands).
     """
+    # Allow a single cd prefix — validate the inner command
+    inner = _strip_cd_prefix(cmd)
+    if inner is not None:
+        return validate_agent_command(inner)
+
     if _has_dangerous_shell_chars(cmd):
         return False
     if _has_dangerous_shell_patterns(cmd):

@@ -9,7 +9,7 @@ from hadron.agent.base import merge_model_breakdowns
 from hadron.agent.prompt import PromptComposer
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
-from hadron.pipeline.nodes import NodeContext, RepoInfo, gather_files, pipeline_node, run_agent
+from hadron.pipeline.nodes import NodeContext, RepoInfo, gather_changed_files, gather_files, pipeline_node, run_agent
 from hadron.pipeline.nodes.cr_format import format_cr_section
 from hadron.pipeline.testing import run_test_command
 
@@ -52,8 +52,9 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
             for f in rr["findings"]:
                 review_feedback += f"- [{f.get('severity', '')}] {f.get('message', '')} ({f.get('file', '')}:{f.get('line', 0)})\n"
 
-    # Gather feature files so the test_writer doesn't need to explore
-    feature_content = gather_files(ri.worktree_path, "features/**/*.feature")
+    # Gather only feature files written/modified by this CR's spec_writer,
+    # not unrelated pre-existing specs (e.g. infrastructure features).
+    feature_content = gather_changed_files(ri.worktree_path, "features/**/*.feature")
 
     # === RED PHASE: Write failing tests ===
     await ctx.event_bus.emit(PipelineEvent(
@@ -93,8 +94,8 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
     test_output = ""
     iteration = 0
 
-    # Gather test files so the code_writer knows exactly what to implement
-    test_content = gather_files(ri.worktree_path, "tests/**/test_*.py")
+    # Gather only test files written/modified by this CR's test_writer
+    test_content = gather_changed_files(ri.worktree_path, "tests/**/test_*.py")
 
     await ctx.event_bus.emit(PipelineEvent(
         cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="tdd:code_writer",
