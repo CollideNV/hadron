@@ -19,6 +19,7 @@ from hadron.pipeline.nodes.release import release_node
 from hadron.pipeline.nodes.repo_id import repo_id_node
 from hadron.pipeline.nodes.review import review_node
 from hadron.pipeline.nodes.implementation import implementation_node
+from hadron.pipeline.nodes.rework import rework_node
 from hadron.pipeline.nodes.worktree_setup import worktree_setup_node
 
 
@@ -49,6 +50,7 @@ def build_pipeline_graph() -> StateGraph:
     graph.add_node("translation", behaviour_translation_node)
     graph.add_node("verification", behaviour_verification_node)
     graph.add_node("implementation", implementation_node)
+    graph.add_node("rework", rework_node)
     graph.add_node("review", review_node)
     graph.add_node("rebase", rebase_node)
     graph.add_node("delivery", delivery_node)
@@ -71,12 +73,15 @@ def build_pipeline_graph() -> StateGraph:
 
     graph.add_edge("implementation", "review")
 
-    # Conditional: review → implementation (retry) | rebase (proceed) | paused (circuit breaker)
+    # Conditional: review → rework (retry) | rebase (proceed) | paused (circuit breaker)
     graph.add_conditional_edges(
         "review",
         after_review,
-        {"implementation": "implementation", "rebase": "rebase", "paused": "paused"},
+        {"rework": "rework", "rebase": "rebase", "paused": "paused"},
     )
+
+    # Rework always goes back to review
+    graph.add_edge("rework", "review")
 
     # Conditional: rebase → delivery (clean) | paused (conflicts)
     graph.add_conditional_edges(

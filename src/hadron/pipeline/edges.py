@@ -36,7 +36,7 @@ def after_review(state: PipelineState) -> str:
 
     Returns:
         "rebase" — review passed, proceed
-        "implementation" — review failed, loop back (within circuit breaker)
+        "rework" — review failed, loop back for targeted fixes (within circuit breaker)
         "paused" — circuit breaker tripped or node errored
     """
     # Stop immediately if the node errored (e.g. API failure)
@@ -54,7 +54,7 @@ def after_review(state: PipelineState) -> str:
     if state.get("review_loop_count", 0) >= max_loops:
         return "paused"
 
-    return "implementation"
+    return "rework"
 
 
 def after_rebase(state: PipelineState) -> str:

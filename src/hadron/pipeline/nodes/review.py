@@ -22,7 +22,7 @@ from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.diff_scope import analyse_diff_scope
 from hadron.pipeline.nodes import (
-    NodeContext, RepoInfo, emit_cost_update, gather_changed_files, pipeline_node,
+    NodeContext, RepoInfo, emit_cost_update, pipeline_node,
     run_agent,
 )
 from hadron.pipeline.nodes.review_exec import REVIEWER_REGISTRY, run_single_reviewer
@@ -62,11 +62,8 @@ async def review_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
     diff_section = format_diff_section(diff, ri.default_branch)
     scope_section = format_scope_section(scope_flags)
 
-    # Use cached feature content from behaviour verification if available,
-    # otherwise fall back to gathering from git.
+    # Use cached feature content from behaviour verification
     feature_content = state.get("feature_content") or ""
-    if not feature_content:
-        feature_content = gather_changed_files(ri.worktree_path, "features/**/*.feature", ri.default_branch)
     if feature_content:
         # Inject into behaviour_specs so format_repo_specs can find it
         for spec in behaviour_specs:

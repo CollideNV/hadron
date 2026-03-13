@@ -588,8 +588,8 @@ class TestImplementationNode:
         assert "CR-abc123" in call_args[0][1]  # commit message contains CR ID
 
     @pytest.mark.asyncio
-    async def test_initial_uses_implementation_role(self) -> None:
-        """First run (review_loop_count=0) uses 'implementation' role."""
+    async def test_always_uses_implementation_role(self) -> None:
+        """Implementation node always uses 'implementation' role."""
         from hadron.pipeline.nodes.implementation import implementation_node
 
         config = _make_config()
@@ -610,62 +610,6 @@ class TestImplementationNode:
             await implementation_node(state, config)
 
         assert roles_seen == ["implementation"]
-
-    @pytest.mark.asyncio
-    async def test_rework_uses_rework_role(self) -> None:
-        """On retry (review_loop_count>0) uses 'implementation_rework' role."""
-        from hadron.pipeline.nodes.implementation import implementation_node
-
-        config = _make_config()
-        state = _base_state(review_loop_count=1)
-
-        roles_seen = []
-
-        async def mock_run_agent(ctx, *, role, **kwargs):
-            roles_seen.append(role)
-            return _make_agent_run_result(output="done")
-
-        with (
-            patch("hadron.pipeline.nodes.implementation.run_agent", side_effect=mock_run_agent),
-            patch("hadron.pipeline.nodes.implementation.run_test_command", return_value=(True, "passed")),
-            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
-        ):
-            MockWM.return_value.commit = AsyncMock()
-            await implementation_node(state, config)
-
-        assert roles_seen == ["implementation_rework"]
-
-    @pytest.mark.asyncio
-    async def test_review_feedback_included(self) -> None:
-        """When review_results have findings, they are included in rework prompt."""
-        from hadron.pipeline.nodes.implementation import implementation_node
-
-        config = _make_config()
-        state = _base_state(
-            review_loop_count=1,
-            review_results=[{
-                "repo_name": "repo",
-                "findings": [{"severity": "major", "message": "SQL injection risk", "file": "auth.py", "line": 42}],
-                "review_passed": False,
-            }],
-        )
-
-        roles_seen = []
-
-        async def mock_run_agent(ctx, *, role, **kwargs):
-            roles_seen.append(role)
-            return _make_agent_run_result(output="done")
-
-        with (
-            patch("hadron.pipeline.nodes.implementation.run_agent", side_effect=mock_run_agent),
-            patch("hadron.pipeline.nodes.implementation.run_test_command", return_value=(True, "passed")),
-            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
-        ):
-            MockWM.return_value.commit = AsyncMock()
-            await implementation_node(state, config)
-
-        # Should use rework role when review_loop_count > 0
-        assert roles_seen == ["implementation_rework"]
 
     @pytest.mark.asyncio
     async def test_single_agent_call(self) -> None:
@@ -690,6 +634,155 @@ class TestImplementationNode:
             await implementation_node(state, config)
 
         assert call_count == 1
+
+
+# ===========================================================================
+# Rework Node
+# ===========================================================================
+
+
+class TestReworkNode:
+    """Tests for rework_node."""
+
+    @pytest.mark.asyncio
+    async def test_happy_path_tests_pass(self) -> None:
+        """Rework agent completes, tests pass."""
+        from hadron.pipeline.nodes.rework import rework_node
+
+        config = _make_config()
+        state = _base_state(
+            review_loop_count=1,
+            review_results=[{
+                "repo_name": "repo",
+                "findings": [{"severity": "major", "message": "SQL injection risk", "file": "auth.py", "line": 42}],
+                "review_passed": False,
+            }],
+        )
+
+        agent_result = _make_agent_run_result(output="Fixed", cost_usd=0.03, input_tokens=200, output_tokens=100)
+
+        with (
+            patch("hadron.pipeline.nodes.rework.run_agent", return_value=agent_result),
+            patch("hadron.pipeline.nodes.rework.run_test_command", return_value=(True, "All tests passed")),
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
+        ):
+            MockWM.return_value.commit = AsyncMock()
+            result = await rework_node(state, config)
+
+        assert result["dev_results"][0]["tests_passing"] is True
+        assert result["cost_usd"] == pytest.approx(0.03)
+        assert result["current_stage"] == "implementation"
+
+    @pytest.mark.asyncio
+    async def test_uses_rework_role(self) -> None:
+        """Rework node always uses 'implementation_rework' role."""
+        from hadron.pipeline.nodes.rework import rework_node
+
+        config = _make_config()
+        state = _base_state(review_loop_count=1)
+
+        roles_seen = []
+
+        async def mock_run_agent(ctx, *, role, **kwargs):
+            roles_seen.append(role)
+            return _make_agent_run_result(output="done")
+
+        with (
+            patch("hadron.pipeline.nodes.rework.run_agent", side_effect=mock_run_agent),
+            patch("hadron.pipeline.nodes.rework.run_test_command", return_value=(True, "passed")),
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
+        ):
+            MockWM.return_value.commit = AsyncMock()
+            await rework_node(state, config)
+
+        assert roles_seen == ["implementation_rework"]
+
+    @pytest.mark.asyncio
+    async def test_skips_explore_and_plan(self) -> None:
+        """Rework node passes empty explore_model and plan_model to skip those phases."""
+        from hadron.pipeline.nodes.rework import rework_node
+
+        config = _make_config()
+        state = _base_state(review_loop_count=1)
+
+        kwargs_seen = {}
+
+        async def mock_run_agent(ctx, *, role, **kwargs):
+            kwargs_seen.update(kwargs)
+            return _make_agent_run_result(output="done")
+
+        with (
+            patch("hadron.pipeline.nodes.rework.run_agent", side_effect=mock_run_agent),
+            patch("hadron.pipeline.nodes.rework.run_test_command", return_value=(True, "passed")),
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
+        ):
+            MockWM.return_value.commit = AsyncMock()
+            await rework_node(state, config)
+
+        assert kwargs_seen["explore_model"] == ""
+        assert kwargs_seen["plan_model"] == ""
+
+    @pytest.mark.asyncio
+    async def test_review_findings_in_payload(self) -> None:
+        """Review findings are included in the rework prompt."""
+        from hadron.pipeline.nodes.rework import rework_node
+
+        config = _make_config()
+        state = _base_state(
+            review_loop_count=1,
+            review_results=[{
+                "repo_name": "repo",
+                "findings": [{"severity": "major", "message": "SQL injection risk", "file": "auth.py", "line": 42}],
+                "review_passed": False,
+            }],
+        )
+
+        prompts_seen = {}
+
+        async def mock_run_agent(ctx, *, role, user_prompt, **kwargs):
+            prompts_seen["user_prompt"] = user_prompt
+            return _make_agent_run_result(output="done")
+
+        with (
+            patch("hadron.pipeline.nodes.rework.run_agent", side_effect=mock_run_agent),
+            patch("hadron.pipeline.nodes.rework.run_test_command", return_value=(True, "passed")),
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
+        ):
+            MockWM.return_value.commit = AsyncMock()
+            await rework_node(state, config)
+
+        assert "SQL injection risk" in prompts_seen["user_prompt"]
+
+    @pytest.mark.asyncio
+    async def test_minimal_payload_no_specs(self) -> None:
+        """Rework payload does NOT include feature specs or full CR description."""
+        from hadron.pipeline.nodes.rework import rework_node
+
+        config = _make_config()
+        state = _base_state(
+            review_loop_count=1,
+            feature_content="Feature: Login\n  Scenario: valid credentials",
+        )
+
+        prompts_seen = {}
+
+        async def mock_run_agent(ctx, *, role, user_prompt, **kwargs):
+            prompts_seen["user_prompt"] = user_prompt
+            return _make_agent_run_result(output="done")
+
+        with (
+            patch("hadron.pipeline.nodes.rework.run_agent", side_effect=mock_run_agent),
+            patch("hadron.pipeline.nodes.rework.run_test_command", return_value=(True, "passed")),
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
+        ):
+            MockWM.return_value.commit = AsyncMock()
+            await rework_node(state, config)
+
+        # Should NOT contain feature specs or full CR description
+        assert "Feature: Login" not in prompts_seen["user_prompt"]
+        assert "Add a login endpoint" not in prompts_seen["user_prompt"]
+        # Should contain CR title
+        assert "Login Feature" in prompts_seen["user_prompt"]
 
 
 # ===========================================================================

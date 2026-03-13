@@ -14,6 +14,7 @@ EXPECTED_NODES = {
     "translation",
     "verification",
     "implementation",
+    "rework",
     "review",
     "rebase",
     "delivery",
@@ -71,6 +72,9 @@ class TestLinearEdges:
 
     def test_implementation_to_review(self) -> None:
         assert ("implementation", "review") in self._get_plain_edges()
+
+    def test_rework_to_review(self) -> None:
+        assert ("rework", "review") in self._get_plain_edges()
 
     def test_delivery_to_release(self) -> None:
         assert ("delivery", "release") in self._get_plain_edges()

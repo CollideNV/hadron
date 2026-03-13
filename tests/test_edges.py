@@ -74,7 +74,7 @@ class TestAfterReview:
 
     def test_not_passed_below_max_returns_implementation(self) -> None:
         state = {"review_passed": False, "review_loop_count": 1}
-        assert after_review(state) == "implementation"
+        assert after_review(state) == "rework"
 
     def test_not_passed_at_max_returns_paused(self) -> None:
         state = {"review_passed": False, "review_loop_count": 3}
@@ -82,11 +82,11 @@ class TestAfterReview:
 
     def test_missing_review_passed_treated_as_falsy(self) -> None:
         state = {"review_loop_count": 1}
-        assert after_review(state) == "implementation"
+        assert after_review(state) == "rework"
 
     def test_missing_review_loop_count_defaults_to_zero(self) -> None:
         state = {"review_passed": False}
-        assert after_review(state) == "implementation"
+        assert after_review(state) == "rework"
 
     def test_custom_max_review_dev_loops(self) -> None:
         state = {
@@ -106,7 +106,7 @@ class TestAfterReview:
                 "pipeline": {"max_review_dev_loops": 5},
             },
         }
-        assert after_review(state) == "implementation"
+        assert after_review(state) == "rework"
 
     def test_paused_status_stops_loop(self) -> None:
         state = {"status": "paused", "review_passed": False, "review_loop_count": 0}
