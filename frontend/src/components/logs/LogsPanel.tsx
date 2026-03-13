@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { getWorkerLogs } from "../../api/client";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
+import { POLL_INTERVAL_MS } from "../../utils/constants";
 
 interface LogsPanelProps {
   crId: string;
@@ -38,7 +39,7 @@ export default function LogsPanel({ crId, pipelineStatus }: LogsPanelProps) {
       autoRefresh &&
       (pipelineStatus === "running" || pipelineStatus === "connecting")
     ) {
-      intervalRef.current = setInterval(fetchLogs, 5000);
+      intervalRef.current = setInterval(fetchLogs, POLL_INTERVAL_MS);
       return () => {
         if (intervalRef.current) clearInterval(intervalRef.current);
       };

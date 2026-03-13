@@ -9,7 +9,7 @@ from typing import Any, Callable, Awaitable
 import redis.asyncio as aioredis
 
 from hadron.agent.base import AgentResult, OnAgentEvent, OnToolCall
-from hadron.events.bus import EventBus
+from hadron.events.bus import REDIS_STREAM_PREFIX, EventBus
 from hadron.models.events import EventType, PipelineEvent
 
 
@@ -110,7 +110,7 @@ def make_nudge_poller(
     """Create an async callable that atomically gets+deletes a nudge for a specific agent role."""
 
     async def _poll() -> str | None:
-        key = f"hadron:cr:{cr_id}:nudge:{role}"
+        key = f"{REDIS_STREAM_PREFIX}:{cr_id}:nudge:{role}"
         pipe = redis_client.pipeline()
         pipe.get(key)
         pipe.delete(key)
@@ -132,7 +132,7 @@ async def store_conversation(
 ) -> str:
     """Store agent conversation in Redis with 7-day TTL. Returns the key."""
     ts = int(time.time())
-    key = f"hadron:cr:{cr_id}:conv:{role}:{repo}:{ts}"
+    key = f"{REDIS_STREAM_PREFIX}:{cr_id}:conv:{role}:{repo}:{ts}"
     await redis_client.set(key, json.dumps(conversation, default=str), ex=604800)
     return key
 

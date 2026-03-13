@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import redis.asyncio as aioredis
 
+from hadron.events.bus import REDIS_STREAM_PREFIX
+
 
 def _intervention_key(cr_id: str) -> str:
-    return f"hadron:cr:{cr_id}:intervention"
+    return f"{REDIS_STREAM_PREFIX}:{cr_id}:intervention"
 
 
 class InterventionManager:
@@ -37,12 +39,12 @@ class InterventionManager:
 
     async def set_nudge(self, cr_id: str, role: str, message: str) -> None:
         """Set an agent-level nudge (picked up between tool-use rounds)."""
-        key = f"hadron:cr:{cr_id}:nudge:{role}"
+        key = f"{REDIS_STREAM_PREFIX}:{cr_id}:nudge:{role}"
         await self._redis.set(key, message)
 
     async def poll_nudge(self, cr_id: str, role: str) -> str | None:
         """Atomically get+delete a nudge for a specific agent role."""
-        key = f"hadron:cr:{cr_id}:nudge:{role}"
+        key = f"{REDIS_STREAM_PREFIX}:{cr_id}:nudge:{role}"
         pipe = self._redis.pipeline()
         pipe.get(key)
         pipe.delete(key)

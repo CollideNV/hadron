@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from hadron.config.limits import TEST_OUTPUT_BRIEF_CHARS
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import NodeContext, RepoInfo, pipeline_node
@@ -36,7 +37,7 @@ async def delivery_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> d
 
     delivery_results = [{
         "repo_name": ri.repo_name,
-        "test_output": test_output[-2000:],
+        "test_output": test_output[-TEST_OUTPUT_BRIEF_CHARS:],
         "tests_passing": tests_passing,
         "branch_pushed": branch_pushed,
         "pr_url": "",

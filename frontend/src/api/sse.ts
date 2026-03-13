@@ -42,8 +42,8 @@ export function connectEventStream(
       try {
         const event: PipelineEvent = JSON.parse(e.data);
         onEvent(event);
-      } catch {
-        // ignore parse errors
+      } catch (err) {
+        console.warn("Failed to parse SSE event:", err, e.data);
       }
     });
   }

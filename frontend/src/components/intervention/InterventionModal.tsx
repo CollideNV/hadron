@@ -2,6 +2,7 @@ import { useState } from "react";
 import { sendIntervention } from "../../api/client";
 import Modal from "../shared/Modal";
 import { BTN_ACCENT, BTN_GHOST } from "../../utils/styles";
+import { MODAL_SUCCESS_DELAY_MS } from "../../utils/constants";
 
 interface InterventionModalProps {
   crId: string;
@@ -23,7 +24,7 @@ export default function InterventionModal({ crId }: InterventionModalProps) {
       setTimeout(() => {
         setOpen(false);
         setSent(false);
-      }, 1500);
+      }, MODAL_SUCCESS_DELAY_MS);
     } catch {
       // keep modal open on error
     } finally {

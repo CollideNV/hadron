@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import { getPipelineStatus } from "../api/client";
 import type { CRRunDetail, PipelineEvent } from "../api/types";
 import { useEventStream, type EventStreamState } from "./useEventStream";
+import { POLL_INTERVAL_MS } from "../utils/constants";
 
 export interface CRDetailState {
   crRun: CRRunDetail | null;
@@ -60,7 +61,7 @@ export function useCRDetail(crId: string | undefined): CRDetailState {
     if (stream.status !== "running") return;
     const interval = setInterval(() => {
       getPipelineStatus(crId).then(setCrRun).catch((err) => console.warn("Failed to fetch CR status:", err));
-    }, 5000);
+    }, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [crId, stream.status]);
 

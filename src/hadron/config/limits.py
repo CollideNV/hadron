@@ -20,6 +20,12 @@ MAX_CONTEXT_CHARS = 24_000  # ~6k tokens — keep injected context lean
 # --- Code review ---
 MAX_DIFF_CHARS = 30_000
 
+# --- Test output truncation ---
+TEST_OUTPUT_TAIL_CHARS = 3_000   # Last N chars of test output in TDD code-writer payload
+TEST_OUTPUT_BRIEF_CHARS = 2_000  # Abbreviated test output stored in dev/delivery results
+TEST_OUTPUT_EVENT_CHARS = 500    # Test output snippet emitted in pipeline events
+REBASE_OUTPUT_TAIL_CHARS = 500   # Post-rebase test failure log snippet
+
 # --- Conversation compaction ---
 # Compact conversation when a single round's input tokens exceed this threshold.
 COMPACT_INPUT_TOKEN_THRESHOLD = 80_000

@@ -9,6 +9,8 @@ import redis.asyncio as aioredis
 
 from hadron.models.events import PipelineEvent
 
+REDIS_STREAM_PREFIX = "hadron:cr"
+
 
 class EventBus(Protocol):
     """Protocol for event distribution."""
@@ -39,7 +41,7 @@ class NoOpEventBus:
 
 
 def _stream_key(cr_id: str) -> str:
-    return f"hadron:cr:{cr_id}:events"
+    return f"{REDIS_STREAM_PREFIX}:{cr_id}:events"
 
 
 class RedisEventBus:

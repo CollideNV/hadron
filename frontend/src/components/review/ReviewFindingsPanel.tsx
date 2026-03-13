@@ -1,14 +1,7 @@
 import type { PipelineEvent, PipelineEventMap } from "../../api/types";
+import { SEVERITY_STYLES } from "../../utils/constants";
 
 type ReviewFindingEvent = PipelineEvent & { event_type: "review_finding"; data: PipelineEventMap["review_finding"] };
-
-const SEVERITY_STYLES: Record<string, string> = {
-  critical:
-    "border-severity-critical/25 bg-severity-critical/8 text-severity-critical",
-  major: "border-severity-major/25 bg-severity-major/8 text-severity-major",
-  minor: "border-severity-minor/25 bg-severity-minor/8 text-severity-minor",
-  info: "border-severity-info/25 bg-severity-info/8 text-severity-info",
-};
 
 interface ReviewFindingsPanelProps {
   findings: PipelineEvent[];

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 from pathlib import Path
 
@@ -13,8 +14,9 @@ _PROMPTS_DIR = Path(__file__).parent.parent / "prompts" / "v1"
 _MAX_STATIC_CONTEXT_CHARS = 48_000  # ~12k tokens
 
 
+@functools.lru_cache(maxsize=None)
 def _load_template(role: str) -> str:
-    """Load a prompt template by role name."""
+    """Load a prompt template by role name (cached after first read)."""
     path = _PROMPTS_DIR / f"{role}.md"
     if not path.exists():
         raise FileNotFoundError(f"Prompt template not found: {path}")

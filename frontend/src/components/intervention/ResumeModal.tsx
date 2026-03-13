@@ -2,6 +2,7 @@ import { useState } from "react";
 import { resumePipeline } from "../../api/client";
 import Modal from "../shared/Modal";
 import { BTN_ACCENT, BTN_GHOST } from "../../utils/styles";
+import { MODAL_SUCCESS_DELAY_MS } from "../../utils/constants";
 
 interface ResumeModalProps {
   crId: string;
@@ -33,7 +34,7 @@ export default function ResumeModal({ crId, status }: ResumeModalProps) {
       setTimeout(() => {
         setOpen(false);
         setSent(false);
-      }, 1500);
+      }, MODAL_SUCCESS_DELAY_MS);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Resume failed");
     } finally {

@@ -10,6 +10,7 @@ from hadron.agent.prompt import PromptComposer
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import NodeContext, RepoInfo, gather_changed_files, gather_changed_files_multi, gather_files, pipeline_node, run_agent
+from hadron.config.limits import TEST_OUTPUT_BRIEF_CHARS, TEST_OUTPUT_EVENT_CHARS, TEST_OUTPUT_TAIL_CHARS
 from hadron.pipeline.nodes.cr_format import format_cr_section, format_cr_summary
 from hadron.pipeline.testing import run_test_command
 
@@ -119,7 +120,7 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
     for iteration in range(max_iterations):
         code_payload = code_payload_base
         if test_output:
-            code_payload += f"\n\n## Failing Test Output{' (iteration ' + str(iteration) + ')' if iteration > 0 else ''}\n\n```\n{test_output[-3000:]}\n```\n\nFix the implementation to make the failing tests pass."
+            code_payload += f"\n\n## Failing Test Output{' (iteration ' + str(iteration) + ')' if iteration > 0 else ''}\n\n```\n{test_output[-TEST_OUTPUT_TAIL_CHARS:]}\n```\n\nFix the implementation to make the failing tests pass."
 
         code_user = composer.compose_user_prompt(code_payload, review_feedback)
 
@@ -149,7 +150,7 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
                 "repo": ri.repo_name,
                 "passed": tests_passing,
                 "iteration": iteration,
-                "output_tail": test_output[-500:],
+                "output_tail": test_output[-TEST_OUTPUT_EVENT_CHARS:],
             },
         ))
 
@@ -174,7 +175,7 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
         "repo_name": ri.repo_name,
         "test_files": {},
         "code_files": {},
-        "test_output": test_output[-2000:],
+        "test_output": test_output[-TEST_OUTPUT_BRIEF_CHARS:],
         "tests_passing": tests_passing,
         "dev_iteration": iteration + 1,
     }

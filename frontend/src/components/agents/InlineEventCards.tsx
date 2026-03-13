@@ -1,4 +1,5 @@
 import type { PipelineEvent } from "../../api/types";
+import { SEVERITY_STYLES } from "../../utils/constants";
 
 export function InlineTestRun({ event }: { event: PipelineEvent }) {
   if (event.event_type !== "test_run") return null;
@@ -24,14 +25,8 @@ export function InlineFinding({ event }: { event: PipelineEvent }) {
   if (event.event_type !== "review_finding") return null;
   const { severity, message, file, line } = event.data;
   const sev = severity || "info";
-  const sevColors: Record<string, string> = {
-    critical: "text-severity-critical border-severity-critical/20 bg-severity-critical/8",
-    major: "text-severity-major border-severity-major/20 bg-severity-major/8",
-    minor: "text-severity-minor border-severity-minor/20 bg-severity-minor/8",
-    info: "text-severity-info border-severity-info/20 bg-severity-info/8",
-  };
   return (
-    <div className={`px-3 py-1.5 rounded-md text-xs border ${sevColors[sev] || sevColors.info}`}>
+    <div className={`px-3 py-1.5 rounded-md text-xs border ${SEVERITY_STYLES[sev] || SEVERITY_STYLES.info}`}>
       <div className="flex items-center gap-2">
         <span className="font-bold uppercase text-[9px] tracking-wider">{sev}</span>
         {file ? (

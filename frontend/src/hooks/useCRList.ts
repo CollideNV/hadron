@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { listPipelines } from "../api/client";
 import type { CRRun } from "../api/types";
+import { POLL_INTERVAL_MS } from "../utils/constants";
 
-export function useCRList(pollInterval = 5000) {
+export function useCRList(pollInterval = POLL_INTERVAL_MS) {
   const [runs, setRuns] = useState<CRRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

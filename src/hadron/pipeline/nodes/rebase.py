@@ -9,6 +9,7 @@ from typing import Any
 from hadron.agent.base import CostAccumulator
 from hadron.agent.prompt import PromptComposer
 from hadron.config.defaults import BRANCH_PREFIX
+from hadron.config.limits import REBASE_OUTPUT_TAIL_CHARS
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import NodeContext, RepoInfo, pipeline_node, run_agent
@@ -126,7 +127,7 @@ Resolve the conflict markers in each file and write the resolved versions.
     passed, output = await run_test_command(ri.worktree_path, ri.test_command, cr_id)
     test_passed = passed
     if not passed:
-        logger.warning("Post-rebase tests failed for %s: %s", ri.repo_name, output[-500:])
+        logger.warning("Post-rebase tests failed for %s: %s", ri.repo_name, output[-REBASE_OUTPUT_TAIL_CHARS:])
 
     await ctx.event_bus.emit(PipelineEvent(
         cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="rebase",
