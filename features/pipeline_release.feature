@@ -6,7 +6,7 @@ Feature: Release Gate and Release
   Scenario: Worker pushes PR and terminates
     Given the review stage has passed and rebase is clean
     When the worker completes delivery
-    Then it pushes the feature branch and opens a PR
+    Then it pushes the feature branch and generates a PR description
     And the worker terminates
 
   Scenario: Controller tracks worker completion

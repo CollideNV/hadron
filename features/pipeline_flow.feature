@@ -1,5 +1,5 @@
 Feature: Pipeline Flow
-  The pipeline executes 12 stages in sequence with conditional
+  The worker pipeline executes 10 stages in sequence with conditional
   routing at verification, review, and rebase boundaries. Feedback
   loops allow stages to retry before a circuit breaker pauses
   the pipeline.
@@ -7,8 +7,8 @@ Feature: Pipeline Flow
   Scenario: Execute full worker pipeline end-to-end
     Given a worker has been spawned for a repo
     When the worker pipeline runs without issues
-    Then it executes: intake, worktree_setup, behaviour_translation, behaviour_verification, tdd, review, rebase, delivery, retrospective
-    And the worker pushes a PR and terminates
+    Then it executes: intake, repo_id, worktree_setup, behaviour_translation, behaviour_verification, tdd, review, rebase, delivery, release
+    And the worker pushes the branch and terminates
 
   Scenario: Multi-repo CR completes end-to-end
     Given a CR has been triggered with 3 repo URLs

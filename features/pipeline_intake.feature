@@ -39,7 +39,7 @@ Feature: Pipeline Intake
     Given the intake parser agent returns malformed JSON
     When the intake node processes the response
     Then it falls back to a default StructuredCR with the raw title and description
-    And the pipeline continues without failure
+    And the pipeline pauses for human review
 
   Scenario: Reject duplicate external IDs
     Given a CRRun already exists with external_id "JIRA-123"

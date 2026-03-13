@@ -12,12 +12,12 @@ Feature: Three-phase agent execution
     And the act phase receives the plan and exploration summary in its user prompt
     And costs are aggregated across all three phases
 
-  Scenario: Reviewer uses explore-only
-    Given a security_reviewer agent task with explore_model configured but no plan_model
+  Scenario: Reviewers run single-phase with no explore or plan
+    Given a reviewer agent task (security, quality, or spec compliance)
     When the agent backend executes the task
-    Then phase 1 (Explore) runs with the explore model
-    And the plan phase is skipped
-    And the act phase uses the explore model since reviewers only read and output JSON
+    Then no explore or plan phases run (explore_model and plan_model are empty)
+    And the security reviewer runs single-phase on Sonnet
+    And quality and spec compliance reviewers run single-phase on Haiku
 
   Scenario: Phases skipped when models not configured
     Given an agent task with empty explore_model and empty plan_model

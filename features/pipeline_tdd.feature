@@ -32,7 +32,7 @@ Feature: TDD Development
     Given the Code Writer agent has written implementation code
     When the test suite is executed and all tests pass
     Then the GREEN phase completes successfully
-    And the changes are committed and pushed to the feature branch
+    And the changes are committed to the feature branch
 
   Scenario: Tests do not pass within iteration limit
     Given the TDD iteration count has reached the maximum of 5

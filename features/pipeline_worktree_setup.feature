@@ -31,6 +31,8 @@ Feature: Worktree Setup
     When the worktree setup node completes
     Then a directory tree of the repo is captured at 3 levels depth
     And hidden directories and common noise directories are excluded
+    And the directory tree is stored in the pipeline state
+    And it is included in repo context for subsequent agent prompts
 
   Scenario: Auto-detect Python project
     Given the repo contains a pyproject.toml or setup.py

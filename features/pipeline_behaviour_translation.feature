@@ -24,5 +24,5 @@ Feature: Behaviour Translation
 
   Scenario: Spec Writer has file system tools
     When the Spec Writer agent executes
-    Then it has access to read_file, write_file, list_directory, and run_command tools
+    Then it has access to read_file, write_file, and list_directory tools
     And it operates within the repo worktree directory

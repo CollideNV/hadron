@@ -5,7 +5,7 @@ Feature: Human Interventions
 
   Scenario: Set intervention on a running repo worker
     When a user sends a POST to "/api/pipeline/{cr_id}/intervene" with instructions and a repo name
-    Then the instructions are stored in Redis at "hadron:cr:{cr_id}:repo:{repo}:intervention"
+    Then the instructions are stored in Redis at "hadron:cr:{cr_id}:intervention"
     And the repo's worker picks up the intervention before the next node execution
 
   Scenario: Consume intervention atomically
