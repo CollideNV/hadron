@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hadron.config.defaults import BRANCH_PREFIX, get_config_snapshot
 from hadron.controller.dependencies import get_job_spawner, get_session_factory
+from hadron.controller.job_spawner import JobSpawner
 from hadron.db.models import CRRun, RepoRun
 from hadron.git.url import extract_repo_name
 from hadron.models.cr import RawChangeRequest
@@ -20,8 +21,8 @@ router = APIRouter(tags=["intake"])
 @router.post("/pipeline/trigger")
 async def trigger_pipeline(
     cr: RawChangeRequest,
-    session_factory: Any = Depends(get_session_factory),
-    spawner: Any = Depends(get_job_spawner),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+    spawner: JobSpawner = Depends(get_job_spawner),
 ) -> dict:
     """Accept a change request and spawn one worker per repo."""
     # Check for duplicate external_id

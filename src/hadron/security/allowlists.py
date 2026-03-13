@@ -16,7 +16,7 @@ import re
 
 TEST_RUNNER_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"^pytest(\s|$)"),
-    re.compile(r"^((/[\w./-]+/)?python3?|python3?)\s+-m\s+pytest(\s|$)"),
+    re.compile(r"^((/[\w./-]+/)?python[\d.]*|python[\d.]*)\s+-m\s+pytest(\s|$)"),
     re.compile(r"^npm\s+(test|run\s+test)(\s|$)"),
     re.compile(r"^npx\s+(jest|vitest|mocha)(\s|$)"),
     re.compile(r"^cargo\s+test(\s|$)"),

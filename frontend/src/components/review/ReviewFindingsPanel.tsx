@@ -1,5 +1,5 @@
 import type { PipelineEvent, PipelineEventMap } from "../../api/types";
-import { SEVERITY_STYLES } from "../../utils/constants";
+import { SEVERITY_STYLES, SEVERITY_ORDER } from "../../utils/constants";
 
 type ReviewFindingEvent = PipelineEvent & { event_type: "review_finding"; data: PipelineEventMap["review_finding"] };
 
@@ -17,7 +17,7 @@ export default function ReviewFindingsPanel({
     (grouped[sev] ??= []).push(rf);
   }
 
-  const order = ["critical", "major", "minor", "info"];
+  const order = SEVERITY_ORDER;
 
   return (
     <div className="flex flex-col h-full">

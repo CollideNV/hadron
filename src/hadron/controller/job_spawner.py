@@ -57,7 +57,7 @@ class SubprocessJobSpawner:
                 try:
                     await self._redis.delete(redis_key)
                 except Exception:
-                    pass
+                    logger.warning("Failed to clear stale worker log in Redis for %s", worker_key, exc_info=True)
 
             async for raw_line in proc.stdout:
                 line = raw_line.decode(errors="replace").rstrip("\n")
@@ -68,7 +68,7 @@ class SubprocessJobSpawner:
                         await self._redis.append(redis_key, line + "\n")
                         await self._redis.expire(redis_key, 86400)
                     except Exception:
-                        pass
+                        logger.debug("Failed to write worker log line to Redis for %s", worker_key, exc_info=True)
 
             await proc.wait()
             logger.info("Worker %s exited with code %s", worker_key, proc.returncode)

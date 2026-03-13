@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from hadron.agent.base import CostAccumulator
-from hadron.agent.prompt import PromptComposer
 from hadron.config.defaults import BRANCH_PREFIX
 from hadron.config.limits import REBASE_OUTPUT_TAIL_CHARS
 from hadron.models.events import EventType, PipelineEvent
@@ -53,7 +52,7 @@ async def rebase_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
                     content = content[:MAX_CONFLICT_FILE_CHARS] + f"\n\n... (truncated, use read_file for full content)"
                 file_contents += f"### {cf}\n\n```\n{content}\n```\n\n"
 
-        composer = PromptComposer()
+        composer = ctx.prompt_composer
         system_prompt = composer.compose_system_prompt("conflict_resolver")
         task_payload = f"""## Merge Conflict Resolution
 

@@ -111,6 +111,7 @@ async def worktree_setup_node(state: PipelineState, ctx: NodeContext, cr_id: str
 
     return {
         "repo": updated_repo,
+        "directory_tree": dir_tree,
         "current_stage": "worktree_setup",
         "stage_history": [{"stage": "worktree_setup", "status": "completed"}],
     }

@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from hadron.agent.prompt import PromptComposer
 from hadron.config.defaults import DEFAULT_EXPLORE_MODEL
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
@@ -18,8 +17,7 @@ logger = logging.getLogger(__name__)
 @pipeline_node("intake")
 async def intake_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[str, Any]:
     """Parse raw CR text into a structured change request."""
-    composer = PromptComposer()
-    system_prompt = composer.compose_system_prompt("intake_parser")
+    system_prompt = ctx.prompt_composer.compose_system_prompt("intake_parser")
     user_prompt = format_cr_section({
         "title": state.get("raw_cr_title", ""),
         "description": state.get("raw_cr_text", ""),

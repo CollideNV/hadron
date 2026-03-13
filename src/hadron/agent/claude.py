@@ -32,6 +32,60 @@ from hadron.agent.cost import _MODEL_COSTS, _DEFAULT_COST, register_model_cost  
 logger = logging.getLogger(__name__)
 
 
+class _ResultAccumulator:
+    """Accumulates stats across explore/plan/act phases."""
+
+    __slots__ = (
+        "input_tokens", "output_tokens", "cost", "tool_calls", "conversations",
+        "rounds", "throttle_count", "throttle_seconds",
+        "cache_creation", "cache_read", "breakdown",
+    )
+
+    def __init__(self) -> None:
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.cost = 0.0
+        self.tool_calls: list[dict[str, Any]] = []
+        self.conversations: list[dict[str, Any]] = []
+        self.rounds = 0
+        self.throttle_count = 0
+        self.throttle_seconds = 0.0
+        self.cache_creation = 0
+        self.cache_read = 0
+        self.breakdown: dict[str, ModelStats] = {}
+
+    def add(self, result: _PhaseResult, model: str) -> None:
+        self.input_tokens += result.input_tokens
+        self.output_tokens += result.output_tokens
+        self.cost += result.cost_usd
+        self.tool_calls.extend(result.tool_calls)
+        self.conversations.extend(result.conversation)
+        self.rounds += result.round_count
+        self.throttle_count += result.throttle_count
+        self.throttle_seconds += result.throttle_seconds
+        self.cache_creation += result.cache_creation_tokens
+        self.cache_read += result.cache_read_tokens
+        stats = result.to_model_stats()
+        self.breakdown[model] = self.breakdown.get(model, ModelStats()).merge(stats)
+
+    def to_result(self, output: str, model: str) -> AgentResult:
+        return AgentResult(
+            output=output,
+            input_tokens=self.input_tokens,
+            output_tokens=self.output_tokens,
+            cost_usd=self.cost,
+            tool_calls=self.tool_calls,
+            conversation=self.conversations,
+            round_count=self.rounds,
+            model=model,
+            throttle_count=self.throttle_count,
+            throttle_seconds=self.throttle_seconds,
+            cache_creation_tokens=self.cache_creation,
+            cache_read_tokens=self.cache_read,
+            model_breakdown={m: s.to_dict() for m, s in self.breakdown.items()},
+        )
+
+
 class ClaudeAgentBackend:
     """Agent backend using the Anthropic Messages API with a tool-use loop.
 
@@ -55,134 +109,95 @@ class ClaudeAgentBackend:
 
         If neither is set, falls back to the original single-phase behaviour.
         """
-        total_input = 0
-        total_output = 0
-        total_cost = 0.0
-        all_tool_calls: list[dict[str, Any]] = []
-        all_conversations: list[dict[str, Any]] = []
-        total_rounds = 0
-        total_throttle_count = 0
-        total_throttle_seconds = 0.0
-        total_cache_creation = 0
-        total_cache_read = 0
-        breakdown: dict[str, ModelStats] = {}
-        exploration_summary = ""
-        plan_text = ""
+        acc = _ResultAccumulator()
 
         # Emit the task prompt so the frontend can display it
         if task.on_event:
             await task.on_event("prompt", {"text": task.user_prompt})
 
-        # --- PHASE 1: Explore (read-only tools, typically Haiku) ---
-        if task.explore_model:
-            if task.on_event:
-                await task.on_event("phase_started", {
-                    "phase": "explore", "model": task.explore_model,
-                })
+        exploration_summary = await self._run_explore_phase(task, acc) if task.explore_model else ""
+        plan_text = await self._run_plan_phase(task, acc, exploration_summary) if task.plan_model else ""
+        act_result = await self._run_act_phase(task, acc, exploration_summary, plan_text)
 
-            explore_result = await self._run_tool_loop(ToolLoopConfig(
-                model=task.explore_model,
-                system_prompt=self._prompts.build_explore_system(task),
-                user_prompt=task.user_prompt,
-                tools=make_tools(task.explore_tools, task.working_directory),
-                working_dir=task.working_directory or ".",
-                max_rounds=task.explore_max_rounds,
-                max_tokens=task.max_tokens,
-                on_event=task.on_event,
-                phase="explore",
-            ))
-            exploration_summary = explore_result.output
-            total_input += explore_result.input_tokens
-            total_output += explore_result.output_tokens
-            total_cost += explore_result.cost_usd
-            all_tool_calls.extend(explore_result.tool_calls)
-            all_conversations.extend(explore_result.conversation)
-            total_rounds += explore_result.round_count
-            total_throttle_count += explore_result.throttle_count
-            total_throttle_seconds += explore_result.throttle_seconds
-            total_cache_creation += explore_result.cache_creation_tokens
-            total_cache_read += explore_result.cache_read_tokens
-            stats = explore_result.to_model_stats()
-            breakdown[task.explore_model] = breakdown.get(task.explore_model, ModelStats()).merge(stats)
+        return acc.to_result(act_result.output, task.model)
 
-            if task.on_event:
-                await task.on_event("phase_completed", {
-                    "phase": "explore",
-                    "model": task.explore_model,
-                    "summary_length": len(exploration_summary),
-                    "rounds": explore_result.round_count,
-                    "input_tokens": explore_result.input_tokens,
-                    "output_tokens": explore_result.output_tokens,
-                    "cost_usd": explore_result.cost_usd,
-                    "throttle_count": explore_result.throttle_count,
-                    "throttle_seconds": explore_result.throttle_seconds,
-                    "cache_read_tokens": explore_result.cache_read_tokens,
-                })
+    async def _run_explore_phase(self, task: AgentTask, acc: _ResultAccumulator) -> str:
+        """Phase 1: Read-only tool loop to gather codebase context (typically Haiku)."""
+        if task.on_event:
+            await task.on_event("phase_started", {"phase": "explore", "model": task.explore_model})
 
-            logger.info(
-                "Explore phase complete: %d rounds, %d input tokens, summary=%d chars",
-                explore_result.round_count, explore_result.input_tokens,
-                len(exploration_summary),
-            )
+        result = await self._run_tool_loop(ToolLoopConfig(
+            model=task.explore_model,
+            system_prompt=self._prompts.build_explore_system(task),
+            user_prompt=task.user_prompt,
+            tools=make_tools(task.explore_tools, task.working_directory),
+            working_dir=task.working_directory or ".",
+            max_rounds=task.explore_max_rounds,
+            max_tokens=task.max_tokens,
+            on_event=task.on_event,
+            phase="explore",
+        ))
+        acc.add(result, task.explore_model)
 
-        # --- PHASE 2: Plan (single call, no tools, typically Opus) ---
-        if task.plan_model:
-            if task.on_event:
-                await task.on_event("phase_started", {
-                    "phase": "plan", "model": task.plan_model,
-                })
-
-            plan_result = await self._run_plan_call(
-                model=task.plan_model,
-                system_prompt=self._prompts.build_plan_system(task),
-                user_prompt=self._prompts.build_plan_user(task, exploration_summary),
-                max_tokens=task.max_tokens,
-            )
-            plan_text = plan_result.output
-            total_input += plan_result.input_tokens
-            total_output += plan_result.output_tokens
-            total_cost += plan_result.cost_usd
-            all_conversations.extend(plan_result.conversation)
-            total_throttle_count += plan_result.throttle_count
-            total_throttle_seconds += plan_result.throttle_seconds
-            total_cache_creation += plan_result.cache_creation_tokens
-            total_cache_read += plan_result.cache_read_tokens
-            stats = plan_result.to_model_stats()
-            breakdown[task.plan_model] = breakdown.get(task.plan_model, ModelStats()).merge(stats)
-
-            # Emit the plan output so the frontend can display it
-            if task.on_event and plan_text:
-                await task.on_event("output", {"text": plan_text, "round": 0})
-
-            if task.on_event:
-                await task.on_event("phase_completed", {
-                    "phase": "plan",
-                    "model": task.plan_model,
-                    "plan_length": len(plan_text),
-                    "rounds": 1,
-                    "input_tokens": plan_result.input_tokens,
-                    "output_tokens": plan_result.output_tokens,
-                    "cost_usd": plan_result.cost_usd,
-                    "throttle_count": plan_result.throttle_count,
-                    "throttle_seconds": plan_result.throttle_seconds,
-                    "cache_read_tokens": plan_result.cache_read_tokens,
-                })
-
-            logger.info(
-                "Plan phase complete: %d input tokens, plan=%d chars",
-                plan_result.input_tokens, len(plan_text),
-            )
-
-        # --- PHASE 3: Act (full tools, typically Sonnet) ---
-        if task.on_event and (task.explore_model or task.plan_model):
-            await task.on_event("phase_started", {
-                "phase": "act", "model": task.model,
+        if task.on_event:
+            await task.on_event("phase_completed", {
+                "phase": "explore", "model": task.explore_model,
+                "summary_length": len(result.output),
+                "rounds": result.round_count,
+                "input_tokens": result.input_tokens, "output_tokens": result.output_tokens,
+                "cost_usd": result.cost_usd,
+                "throttle_count": result.throttle_count, "throttle_seconds": result.throttle_seconds,
+                "cache_read_tokens": result.cache_read_tokens,
             })
+        logger.info(
+            "Explore phase complete: %d rounds, %d input tokens, summary=%d chars",
+            result.round_count, result.input_tokens, len(result.output),
+        )
+        return result.output
+
+    async def _run_plan_phase(self, task: AgentTask, acc: _ResultAccumulator, exploration_summary: str) -> str:
+        """Phase 2: Single API call to produce an implementation plan (typically Opus)."""
+        if task.on_event:
+            await task.on_event("phase_started", {"phase": "plan", "model": task.plan_model})
+
+        result = await self._run_plan_call(
+            model=task.plan_model,
+            system_prompt=self._prompts.build_plan_system(task),
+            user_prompt=self._prompts.build_plan_user(task, exploration_summary),
+            max_tokens=task.max_tokens,
+        )
+        acc.add(result, task.plan_model)
+
+        if task.on_event and result.output:
+            await task.on_event("output", {"text": result.output, "round": 0})
+        if task.on_event:
+            await task.on_event("phase_completed", {
+                "phase": "plan", "model": task.plan_model,
+                "plan_length": len(result.output), "rounds": 1,
+                "input_tokens": result.input_tokens, "output_tokens": result.output_tokens,
+                "cost_usd": result.cost_usd,
+                "throttle_count": result.throttle_count, "throttle_seconds": result.throttle_seconds,
+                "cache_read_tokens": result.cache_read_tokens,
+            })
+        logger.info(
+            "Plan phase complete: %d input tokens, plan=%d chars",
+            result.input_tokens, len(result.output),
+        )
+        return result.output
+
+    async def _run_act_phase(
+        self, task: AgentTask, acc: _ResultAccumulator, exploration_summary: str, plan_text: str,
+    ) -> _PhaseResult:
+        """Phase 3: Full tool loop to execute the plan (typically Sonnet)."""
+        is_multiphase = bool(task.explore_model or task.plan_model)
+        if task.on_event and is_multiphase:
+            await task.on_event("phase_started", {"phase": "act", "model": task.model})
 
         act_user_prompt = self._prompts.build_act_user(task, exploration_summary, plan_text)
         if task.on_event and act_user_prompt != task.user_prompt:
             await task.on_event("prompt", {"text": act_user_prompt})
-        act_result = await self._run_tool_loop(ToolLoopConfig(
+
+        result = await self._run_tool_loop(ToolLoopConfig(
             model=task.model,
             system_prompt=task.system_prompt,
             user_prompt=act_user_prompt,
@@ -195,47 +210,18 @@ class ClaudeAgentBackend:
             nudge_poll=task.nudge_poll,
             phase="act",
         ))
-        total_input += act_result.input_tokens
-        total_output += act_result.output_tokens
-        total_cost += act_result.cost_usd
-        all_tool_calls.extend(act_result.tool_calls)
-        all_conversations.extend(act_result.conversation)
-        total_rounds += act_result.round_count
-        total_throttle_count += act_result.throttle_count
-        total_throttle_seconds += act_result.throttle_seconds
-        total_cache_creation += act_result.cache_creation_tokens
-        total_cache_read += act_result.cache_read_tokens
-        act_stats = act_result.to_model_stats()
-        breakdown[task.model] = breakdown.get(task.model, ModelStats()).merge(act_stats)
+        acc.add(result, task.model)
 
-        if task.on_event and (task.explore_model or task.plan_model):
+        if task.on_event and is_multiphase:
             await task.on_event("phase_completed", {
-                "phase": "act",
-                "model": task.model,
-                "rounds": act_result.round_count,
-                "input_tokens": act_result.input_tokens,
-                "output_tokens": act_result.output_tokens,
-                "cost_usd": act_result.cost_usd,
-                "throttle_count": act_result.throttle_count,
-                "throttle_seconds": act_result.throttle_seconds,
-                "cache_read_tokens": act_result.cache_read_tokens,
+                "phase": "act", "model": task.model,
+                "rounds": result.round_count,
+                "input_tokens": result.input_tokens, "output_tokens": result.output_tokens,
+                "cost_usd": result.cost_usd,
+                "throttle_count": result.throttle_count, "throttle_seconds": result.throttle_seconds,
+                "cache_read_tokens": result.cache_read_tokens,
             })
-
-        return AgentResult(
-            output=act_result.output,
-            input_tokens=total_input,
-            output_tokens=total_output,
-            cost_usd=total_cost,
-            tool_calls=all_tool_calls,
-            conversation=all_conversations,
-            round_count=total_rounds,
-            model=task.model,
-            throttle_count=total_throttle_count,
-            throttle_seconds=total_throttle_seconds,
-            cache_creation_tokens=total_cache_creation,
-            cache_read_tokens=total_cache_read,
-            model_breakdown={m: s.to_dict() for m, s in breakdown.items()},
-        )
+        return result
 
     # ------------------------------------------------------------------
     # Delegation to extracted modules

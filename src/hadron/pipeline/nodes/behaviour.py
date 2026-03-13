@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from hadron.agent.prompt import PromptComposer
 from hadron.config.defaults import DEFAULT_EXPLORE_MODEL
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
@@ -20,12 +19,13 @@ logger = logging.getLogger(__name__)
 @pipeline_node("behaviour_translation")
 async def behaviour_translation_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[str, Any]:
     """Spec Writer agent writes Gherkin .feature files for each repo."""
-    composer = PromptComposer()
+    composer = ctx.prompt_composer
     structured_cr = state.get("structured_cr", {})
     ri = RepoInfo.from_state(state)
 
     repo_context = composer.build_repo_context(
         agents_md=ri.agents_md,
+        directory_tree=state.get("directory_tree", ""),
         languages=ri.languages,
         test_commands=ri.test_commands,
     )
@@ -86,7 +86,7 @@ async def behaviour_translation_node(state: PipelineState, ctx: NodeContext, cr_
 @pipeline_node("behaviour_verification")
 async def behaviour_verification_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[str, Any]:
     """Verifier agent checks completeness and consistency of specs."""
-    composer = PromptComposer()
+    composer = ctx.prompt_composer
     structured_cr = state.get("structured_cr", {})
 
     ri = RepoInfo.from_state(state)

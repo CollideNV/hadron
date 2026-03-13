@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import AsyncIterator, Protocol
 
@@ -33,7 +34,9 @@ class NoOpEventBus:
         pass
 
     async def subscribe(self, cr_id: str, last_id: str = "0") -> AsyncIterator[tuple[PipelineEvent, str]]:
-        return
+        # Block forever (like RedisEventBus) so callers don't busy-loop.
+        await asyncio.Event().wait()
+        return  # pragma: no cover — unreachable, satisfies generator protocol
         yield  # pragma: no cover — makes this a proper async generator
 
     async def replay(self, cr_id: str, from_id: str = "0") -> tuple[list[tuple[PipelineEvent, str]], str]:

@@ -6,7 +6,6 @@ import logging
 from typing import Any
 
 from hadron.agent.base import CostAccumulator
-from hadron.agent.prompt import PromptComposer
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import NodeContext, RepoInfo, gather_changed_files, gather_changed_files_multi, gather_files, pipeline_node, run_agent
@@ -26,7 +25,7 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
     pipeline_config = state.get("config_snapshot", {}).get("pipeline", {})
     max_iterations = pipeline_config.get("max_tdd_iterations", 5)
 
-    composer = PromptComposer()
+    composer = ctx.prompt_composer
     structured_cr = state.get("structured_cr", {})
     costs = CostAccumulator()
 
@@ -35,6 +34,7 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
 
     repo_context = composer.build_repo_context(
         agents_md=ri.agents_md,
+        directory_tree=state.get("directory_tree", ""),
         languages=ri.languages,
         test_commands=ri.test_commands,
     )

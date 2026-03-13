@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable
 
-from hadron.agent.prompt import PromptComposer
 from hadron.config.defaults import DEFAULT_EXPLORE_MODEL
 from hadron.models.events import EventType, PipelineEvent
 from hadron.pipeline.nodes import NodeContext, extract_json, run_agent
@@ -42,9 +41,8 @@ async def run_single_reviewer(
     """Run a single reviewer agent and return parsed results + cost info."""
     sub_stage = f"review:{role}"
 
-    composer = PromptComposer()
-    system_prompt = composer.compose_system_prompt(role)
-    user_prompt = composer.compose_user_prompt(task_payload)
+    system_prompt = ctx.prompt_composer.compose_system_prompt(role)
+    user_prompt = ctx.prompt_composer.compose_user_prompt(task_payload)
 
     await ctx.event_bus.emit(PipelineEvent(
         cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage=sub_stage,

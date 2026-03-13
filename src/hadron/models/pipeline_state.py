@@ -103,6 +103,9 @@ class PipelineState(TypedDict, total=False):
     # --- Repo Context (one per worker) ---
     repo: RepoContext
 
+    # --- Repo Discovery ---
+    directory_tree: str  # cached worktree directory tree (set once by worktree_setup)
+
     # --- Behaviour ---
     behaviour_specs: list[BehaviourSpec]
     behaviour_verified: bool

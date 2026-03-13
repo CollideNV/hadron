@@ -1,6 +1,7 @@
 import type { PipelineEvent, PipelineEventMap, ModelBreakdownEntry } from "../../api/types";
 import type { AgentSession } from "../agents/types";
 import { getStageColor } from "../../utils/stages";
+import { SEVERITY_BADGE_CLASSES, SEVERITY_ORDER } from "../../utils/constants";
 import { formatDuration, formatModelName, formatTokenPair, formatCost } from "../../utils/format";
 
 export { getStageColor } from "../../utils/stages";
@@ -157,20 +158,12 @@ export default function StageSummaryCard({
           <div className="flex items-center justify-between">
             <span className="text-text-dim">Findings</span>
             <div className="flex items-center gap-1.5">
-              {["critical", "major", "minor", "info"].map(
+              {SEVERITY_ORDER.map(
                 (sev) =>
                   sevCounts[sev] && (
                     <span
                       key={sev}
-                      className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${
-                        sev === "critical"
-                          ? "bg-severity-critical/10 text-severity-critical"
-                          : sev === "major"
-                            ? "bg-severity-major/10 text-severity-major"
-                            : sev === "minor"
-                              ? "bg-severity-minor/10 text-severity-minor"
-                              : "bg-severity-info/10 text-severity-info"
-                      }`}
+                      className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${SEVERITY_BADGE_CLASSES[sev] || SEVERITY_BADGE_CLASSES.info}`}
                     >
                       {sevCounts[sev]} {sev}
                     </span>

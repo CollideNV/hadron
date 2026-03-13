@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from langgraph.types import RunnableConfig
 
+from hadron.agent.prompt import PromptComposer
 from hadron.config.defaults import DEFAULT_MODEL, DEFAULT_WORKSPACE_DIR
 from hadron.events.bus import EventBus, NoOpEventBus
 from hadron.git.worktree import WorktreeManager
@@ -36,6 +37,7 @@ class NodeContext:
     explore_model: str
     plan_model: str
     intervention_mgr: InterventionManager | None
+    prompt_composer: PromptComposer
 
     @classmethod
     def from_config(cls, config: RunnableConfig) -> NodeContext:
@@ -53,4 +55,5 @@ class NodeContext:
             explore_model=configurable.get("explore_model", ""),
             plan_model=configurable.get("plan_model", ""),
             intervention_mgr=configurable.get("intervention_manager"),
+            prompt_composer=configurable.get("prompt_composer") or PromptComposer(),
         )

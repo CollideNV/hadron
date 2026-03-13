@@ -122,7 +122,7 @@ export default function RichConversationView({
           </p>
         )}
         {timeline.map((entry, idx) => (
-          <TimelineEntry key={`${entry.kind}-${entry.ts}-${idx}`} entry={entry} idx={idx} selectedPhase={selectedPhase} />
+          <TimelineEntry key={entry.id} entry={entry} idx={idx} selectedPhase={selectedPhase} />
         ))}
       </div>
 
