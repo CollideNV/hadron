@@ -24,7 +24,7 @@ from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.diff_scope import ScopeFlag, analyse_diff_scope
 from hadron.pipeline.nodes import (
-    NodeContext, RepoInfo, emit_cost_update, extract_json, pipeline_node, run_agent,
+    NodeContext, RepoInfo, emit_cost_update, extract_json, gather_changed_files, pipeline_node, run_agent,
 )
 from hadron.pipeline.nodes.cr_format import format_cr_section
 
@@ -51,12 +51,18 @@ def _format_diff_section(diff: str, default_branch: str) -> str:
 
 def _format_repo_specs(behaviour_specs: list[dict[str, Any]], repo_name: str) -> str:
     """Format Gherkin spec content for a specific repo."""
-    text = ""
     for spec in behaviour_specs:
         if spec.get("repo_name") == repo_name:
+            # Prefer content gathered from disk (spec writer writes to disk, not state)
+            if spec.get("feature_content_from_disk"):
+                return spec["feature_content_from_disk"]
+            # Fallback to feature_files dict (if populated)
+            text = ""
             for fname, content in spec.get("feature_files", {}).items():
                 text += f"\n### {fname}\n```gherkin\n{content}\n```\n"
-    return text
+            if text:
+                return text
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -96,9 +102,18 @@ def _build_quality_payload(
     diff: str,
     structured_cr: dict[str, Any],
     default_branch: str,
+    behaviour_specs: list[dict[str, Any]],
+    repo_name: str,
 ) -> str:
     """Build the task payload for the Quality Reviewer."""
-    return format_cr_section(structured_cr) + "\n" + _format_diff_section(diff, default_branch)
+    spec_text = _format_repo_specs(behaviour_specs, repo_name)
+    return (
+        format_cr_section(structured_cr)
+        + "\n## Behaviour Specs\n\n"
+        + (spec_text if spec_text else "_No behaviour specs available for this repo._")
+        + "\n\n"
+        + _format_diff_section(diff, default_branch)
+    )
 
 
 def _build_spec_compliance_payload(
@@ -137,6 +152,7 @@ async def _run_single_reviewer(
     cr_id: str,
     repo_name: str,
     worktree_path: str,
+    loop_iteration: int = 0,
 ) -> dict[str, Any]:
     """Run a single reviewer agent and return parsed results + cost info."""
     sub_stage = f"review:{role}"
@@ -162,6 +178,7 @@ async def _run_single_reviewer(
         model=DEFAULT_EXPLORE_MODEL,  # Diff analysis + JSON output — Haiku suffices
         explore_model="",
         plan_model="",
+        loop_iteration=loop_iteration,
     )
     result = agent_run.result
 
@@ -203,6 +220,7 @@ async def review_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
     total_model_breakdown: dict[str, dict[str, Any]] = {}
 
     ri = RepoInfo.from_state(state)
+    review_loop = state.get("review_loop_count", 0)
 
     # 1. Get diff
     diff = await ctx.worktree_manager.get_diff(ri.worktree_path, ri.default_branch)
@@ -210,20 +228,29 @@ async def review_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
     # 2. Deterministic diff scope analysis (no LLM)
     scope_flags = analyse_diff_scope(diff)
 
+    # 2b. Gather feature files from disk (behaviour_specs[].feature_files is always
+    # empty because the spec writer writes to disk, not to state)
+    feature_content = gather_changed_files(ri.worktree_path, "features/**/*.feature", ri.default_branch)
+    if feature_content:
+        # Inject into behaviour_specs so payload builders can use _format_repo_specs
+        for spec in behaviour_specs:
+            if spec.get("repo_name") == ri.repo_name and not spec.get("feature_files"):
+                spec["feature_content_from_disk"] = feature_content
+
     # 3. Build payloads for each reviewer
     security_payload = _build_security_payload(
         diff, structured_cr, ri.default_branch, scope_flags, behaviour_specs, ri.repo_name,
     )
-    quality_payload = _build_quality_payload(diff, structured_cr, ri.default_branch)
+    quality_payload = _build_quality_payload(diff, structured_cr, ri.default_branch, behaviour_specs, ri.repo_name)
     spec_payload = _build_spec_compliance_payload(
         diff, structured_cr, ri.default_branch, behaviour_specs, ri.repo_name,
     )
 
     # 4. Run all 3 reviewers in parallel
     security_result, quality_result, spec_result = await asyncio.gather(
-        _run_single_reviewer("security_reviewer", security_payload, ctx, cr_id, ri.repo_name, ri.worktree_path),
-        _run_single_reviewer("quality_reviewer", quality_payload, ctx, cr_id, ri.repo_name, ri.worktree_path),
-        _run_single_reviewer("spec_compliance_reviewer", spec_payload, ctx, cr_id, ri.repo_name, ri.worktree_path),
+        _run_single_reviewer("security_reviewer", security_payload, ctx, cr_id, ri.repo_name, ri.worktree_path, review_loop),
+        _run_single_reviewer("quality_reviewer", quality_payload, ctx, cr_id, ri.repo_name, ri.worktree_path, review_loop),
+        _run_single_reviewer("spec_compliance_reviewer", spec_payload, ctx, cr_id, ri.repo_name, ri.worktree_path, review_loop),
     )
 
     # 5. Merge findings and costs

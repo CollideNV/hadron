@@ -7,9 +7,9 @@ For MVP, they're frozen here and snapshotted into PipelineState at intake.
 from __future__ import annotations
 
 # Canonical constants — import these instead of hardcoding strings.
-DEFAULT_MODEL = "claude-sonnet-4-6-20250627"
+DEFAULT_MODEL = "claude-sonnet-4-6"
 DEFAULT_EXPLORE_MODEL = "claude-haiku-4-5-20251001"
-DEFAULT_PLAN_MODEL = "claude-opus-4-6-20250827"
+DEFAULT_PLAN_MODEL = "claude-opus-4-6"
 DEFAULT_WORKSPACE_DIR = "/tmp/hadron-workspace"
 BRANCH_PREFIX = "ai/cr-"
 

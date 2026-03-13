@@ -446,6 +446,7 @@ async def run_agent(
     explore_model: str | None = None,
     plan_model: str | None = None,
     prior_cost: float = 0.0,
+    loop_iteration: int = 0,
 ) -> AgentRunResult:
     """Run an agent with full event emission, cost tracking, and conversation storage.
 
@@ -492,6 +493,7 @@ async def run_agent(
                 "plan_model": effective_plan,
                 "models": models_used,
                 "allowed_tools": allowed_tools,
+                "loop_iteration": loop_iteration,
             },
         ))
 
@@ -514,6 +516,7 @@ async def run_agent(
                 "tool_calls_count": len(result.tool_calls),
                 "round_count": result.round_count,
                 "conversation_key": conv_key,
+                "loop_iteration": loop_iteration,
                 "throttle_count": result.throttle_count,
                 "throttle_seconds": result.throttle_seconds,
                 "model_breakdown": result.model_breakdown,

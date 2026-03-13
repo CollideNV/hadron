@@ -304,6 +304,7 @@ describe("buildSessions", () => {
         cost_usd: 0.03,
         throttle_count: 0,
         throttle_seconds: 0,
+        api_calls: 0,
       },
       "claude-3-haiku-20240307": {
         input_tokens: 2000,
@@ -311,6 +312,7 @@ describe("buildSessions", () => {
         cost_usd: 0.002,
         throttle_count: 1,
         throttle_seconds: 3.5,
+        api_calls: 0,
       },
     };
     const events = [

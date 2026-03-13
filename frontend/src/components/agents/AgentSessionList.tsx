@@ -16,7 +16,7 @@ export default function AgentSessionList({
     <div className="border-r border-border-subtle overflow-y-auto">
       {sessions.map((session, i) => (
         <button
-          key={`${session.stage}:${session.role}:${session.repo}`}
+          key={`${session.stage}:${session.role}:${session.repo}:${session.loopIteration}`}
           onClick={() => onSelect(i)}
           className={`w-full text-left px-3 py-2 border-b border-border-subtle cursor-pointer bg-transparent border-x-0 border-t-0 transition-colors ${
             i === selectedIndex
@@ -34,6 +34,9 @@ export default function AgentSessionList({
             />
             <span className="text-[11px] font-medium text-text truncate">
               {session.role.replace(/_/g, " ")}
+              {session.loopIteration > 0 && (
+                <span className="text-text-dim ml-1 font-normal">#{session.loopIteration + 1}</span>
+              )}
             </span>
           </div>
           {(session.repo || session.model) && (

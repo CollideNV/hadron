@@ -141,22 +141,30 @@ class WorktreeManager:
         )
         return worktree_path
 
-    async def commit_and_push(
-        self, worktree_path: str | Path, message: str
-    ) -> None:
-        """Stage all changes, commit, and push the current branch."""
+    async def commit(self, worktree_path: str | Path, message: str) -> None:
+        """Stage all changes and commit (no push)."""
         wt = Path(worktree_path)
         await _run_git("add", "-A", cwd=wt)
 
-        # Check if there's anything to commit
         status = await _run_git("status", "--porcelain", cwd=wt)
         if not status:
             logger.info("Nothing to commit in %s", wt)
             return
 
         await _run_git("commit", "-m", message, cwd=wt)
+
+    async def push(self, worktree_path: str | Path) -> None:
+        """Push the current branch to origin."""
+        wt = Path(worktree_path)
         branch = await _run_git("rev-parse", "--abbrev-ref", "HEAD", cwd=wt)
         await _run_git("push", "origin", branch, cwd=wt)
+
+    async def commit_and_push(
+        self, worktree_path: str | Path, message: str
+    ) -> None:
+        """Stage all changes, commit, and push the current branch."""
+        await self.commit(worktree_path, message)
+        await self.push(worktree_path)
 
     async def recover_from_remote(
         self, repo_url: str, repo_name: str, cr_id: str

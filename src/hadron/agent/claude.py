@@ -27,9 +27,9 @@ logger = logging.getLogger(__name__)
 _MODEL_COSTS: dict[str, tuple[float, float]] = {
     "claude-haiku-4-5-20251001": (0.80, 4.00),
     "claude-sonnet-4-20250514": (3.00, 15.00),
-    "claude-sonnet-4-6-20250627": (3.00, 15.00),
+    "claude-sonnet-4-6": (3.00, 15.00),
     "claude-opus-4-20250514": (15.00, 75.00),
-    "claude-opus-4-6-20250827": (15.00, 75.00),
+    "claude-opus-4-6": (15.00, 75.00),
 }
 # Fallback for unknown models (use Sonnet pricing)
 _DEFAULT_COST = (3.00, 15.00)
@@ -291,6 +291,8 @@ class ClaudeAgentBackend:
             })
 
         act_user_prompt = self._prompts.build_act_user(task, exploration_summary, plan_text)
+        if task.on_event and act_user_prompt != task.user_prompt:
+            await task.on_event("prompt", {"text": act_user_prompt})
         act_result = await self._run_tool_loop(ToolLoopConfig(
             model=task.model,
             system_prompt=task.system_prompt,

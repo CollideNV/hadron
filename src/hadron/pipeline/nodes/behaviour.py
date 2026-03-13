@@ -41,6 +41,7 @@ async def behaviour_translation_node(state: PipelineState, ctx: NodeContext, cr_
     task_payload = format_cr_section(structured_cr)
     user_prompt = composer.compose_user_prompt(task_payload, feedback)
 
+    verification_loop = state.get("verification_loop_count", 0)
     agent_run = await run_agent(
         ctx,
         role="spec_writer",
@@ -53,6 +54,7 @@ async def behaviour_translation_node(state: PipelineState, ctx: NodeContext, cr_
         allowed_tools=["read_file", "write_file", "list_directory"],
         explore_model="",  # No explore — spec_writer works from CR, not code
         plan_model="",
+        loop_iteration=verification_loop,
     )
     result = agent_run.result
 
@@ -103,6 +105,7 @@ Verify the above specifications against the CR.
 """
     user_prompt = composer.compose_user_prompt(task_payload)
 
+    verification_loop = state.get("verification_loop_count", 0)
     agent_run = await run_agent(
         ctx,
         role="spec_verifier",
@@ -116,6 +119,7 @@ Verify the above specifications against the CR.
         model=DEFAULT_EXPLORE_MODEL,  # Structured comparison — Haiku suffices
         explore_model="",
         plan_model="",
+        loop_iteration=verification_loop,
     )
     result = agent_run.result
 

@@ -312,11 +312,14 @@ class TestCommitAndPush:
         with patch("hadron.git.worktree._run_git", side_effect=mock_run_git) as mock_git:
             await wm.commit_and_push(wt, "feat: nothing")
 
-        # Should only call add and status, not commit or push
+        # Should call add + status (skipping commit), then push
         calls = [c[0] for c in mock_git.call_args_list]
-        assert len(calls) == 2
+        assert len(calls) == 4
         assert calls[0] == ("add", "-A")
         assert calls[1] == ("status", "--porcelain")
+        # No commit call — skipped because nothing to commit
+        assert calls[2] == ("rev-parse", "--abbrev-ref", "HEAD")
+        assert calls[3] == ("push", "origin", "")
 
 
 # ---------------------------------------------------------------------------

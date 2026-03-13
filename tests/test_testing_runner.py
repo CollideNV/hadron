@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 from hadron.pipeline.testing import run_test_command
+
+# Use the current interpreter's pytest to avoid PATH issues in subprocess shells.
+_PYTEST_CMD = f"{sys.executable} -m pytest"
 
 
 class TestRunTestCommand:
@@ -13,7 +18,7 @@ class TestRunTestCommand:
         # Create a trivial test file so pytest succeeds
         (tmp_path / "test_ok.py").write_text("def test_pass(): pass\n")
         passed, output = await run_test_command(
-            str(tmp_path), "pytest -x", "CR-abc123"
+            str(tmp_path), f"{_PYTEST_CMD} -x", "CR-abc123"
         )
         assert passed is True
 
@@ -21,7 +26,7 @@ class TestRunTestCommand:
     async def test_failing_pytest(self, tmp_path) -> None:
         (tmp_path / "test_fail.py").write_text("def test_fail(): assert False\n")
         passed, output = await run_test_command(
-            str(tmp_path), "pytest -x", "CR-abc"
+            str(tmp_path), f"{_PYTEST_CMD} -x", "CR-abc"
         )
         assert passed is False
         assert "FAILED" in output or "failed" in output.lower()
@@ -57,7 +62,7 @@ class TestRunTestCommand:
             "import time\ndef test_slow(): time.sleep(30)\n"
         )
         passed, output = await run_test_command(
-            str(tmp_path), "pytest -x", "CR-abc",
+            str(tmp_path), f"{_PYTEST_CMD} -x", "CR-abc",
             timeout=1,
         )
         assert passed is False

@@ -35,6 +35,7 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
     total_model_breakdown: dict[str, dict[str, Any]] = {}
 
     ri = RepoInfo.from_state(state)
+    review_loop = state.get("review_loop_count", 0)
 
     repo_context = composer.build_repo_context(
         agents_md=ri.agents_md,
@@ -76,6 +77,7 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
         stage="tdd:test_writer",
         repo_name=ri.repo_name,
         working_directory=ri.worktree_path,
+        loop_iteration=review_loop,
         # Haiku explores repo structure, Sonnet writes tests
     )
     total_cost += test_run.result.cost_usd
@@ -133,6 +135,7 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
             repo_name=ri.repo_name,
             working_directory=ri.worktree_path,
             prior_cost=total_cost,
+            loop_iteration=review_loop,
             # Haiku explores repo structure, Sonnet writes code
         )
         total_cost += code_run.result.cost_usd
@@ -168,8 +171,8 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
         data={"tests_passing": tests_passing, "iterations": iteration + 1},
     ))
 
-    # Commit the work
-    await ctx.worktree_manager.commit_and_push(
+    # Commit locally — push happens in delivery stage
+    await ctx.worktree_manager.commit(
         ri.worktree_path,
         f"feat: TDD implementation for {cr_id} ({'green' if tests_passing else 'red'})",
     )

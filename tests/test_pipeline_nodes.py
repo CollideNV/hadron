@@ -547,7 +547,7 @@ class TestTddNode:
             patch("hadron.pipeline.nodes.tdd.run_test_command", return_value=(True, "All 5 tests passed")),
             patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
-            MockWM.return_value.commit_and_push = AsyncMock()
+            MockWM.return_value.commit = AsyncMock()
             result = await tdd_node(state, config)
 
         assert result["dev_results"][0]["tests_passing"] is True
@@ -578,7 +578,10 @@ class TestTddNode:
         async def mock_run_test(*args, **kwargs):
             nonlocal test_call_count
             test_call_count += 1
-            if test_call_count == 1:
+            # Call 1: initial test run (before code writer loop)
+            # Call 2: after code writer iteration 0
+            # Call 3: after code writer iteration 1
+            if test_call_count <= 2:
                 return (False, "FAILED: test_login")
             return (True, "All tests passed")
 
@@ -587,7 +590,7 @@ class TestTddNode:
             patch("hadron.pipeline.nodes.tdd.run_test_command", side_effect=mock_run_test),
             patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
-            MockWM.return_value.commit_and_push = AsyncMock()
+            MockWM.return_value.commit = AsyncMock()
             result = await tdd_node(state, config)
 
         assert result["dev_results"][0]["tests_passing"] is True
@@ -610,7 +613,7 @@ class TestTddNode:
             patch("hadron.pipeline.nodes.tdd.run_test_command", return_value=(False, "FAILED")),
             patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
-            MockWM.return_value.commit_and_push = AsyncMock()
+            MockWM.return_value.commit = AsyncMock()
             result = await tdd_node(state, config)
 
         assert result["dev_results"][0]["tests_passing"] is False
@@ -633,7 +636,7 @@ class TestTddNode:
             patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             commit_mock = AsyncMock()
-            MockWM.return_value.commit_and_push = commit_mock
+            MockWM.return_value.commit = commit_mock
             await tdd_node(state, config)
 
         commit_mock.assert_awaited_once()
@@ -665,7 +668,7 @@ class TestTddNode:
             patch("hadron.pipeline.nodes.tdd.run_test_command", return_value=(True, "passed")),
             patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
-            MockWM.return_value.commit_and_push = AsyncMock()
+            MockWM.return_value.commit = AsyncMock()
             await tdd_node(state, config)
 
         # The run_agent calls should have happened
@@ -1205,7 +1208,7 @@ class TestNodeContext:
         assert isinstance(ctx.event_bus, NoOpEventBus)
         assert ctx.agent_backend is None
         assert ctx.redis is None
-        assert ctx.model == "claude-sonnet-4-20250514"
+        assert ctx.model == "claude-sonnet-4-6"
         assert ctx.workspace_dir == "/tmp/hadron-workspace"
 
     def test_from_config_empty(self) -> None:
@@ -1214,7 +1217,7 @@ class TestNodeContext:
         ctx = NodeContext.from_config({})
         from hadron.events.bus import NoOpEventBus
         assert isinstance(ctx.event_bus, NoOpEventBus)
-        assert ctx.model == "claude-sonnet-4-20250514"
+        assert ctx.model == "claude-sonnet-4-6"
 
 
 # ===========================================================================

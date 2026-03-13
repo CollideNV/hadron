@@ -23,13 +23,13 @@ Implement code to make the failing tests pass (green phase). Write clean, correc
 3. Implement code to make tests pass
 4. Run the test suite to verify tests pass
 5. If tests fail, read the error output and fix the implementation
-6. Commit with message "feat: implement code for CR (green phase)"
 
 ## Important
 
 - Do NOT explore the full codebase — the tests tell you exactly which files to read and modify
 - Start from the test imports to find the files you need to change
 - Only read additional files if a test failure points you to them
+- Do NOT run git commands (add, commit, push) — the pipeline handles version control automatically
 
 ## Output
 
