@@ -54,7 +54,7 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
 
     # Gather only feature files written/modified by this CR's spec_writer,
     # not unrelated pre-existing specs (e.g. infrastructure features).
-    feature_content = gather_changed_files(ri.worktree_path, "features/**/*.feature")
+    feature_content = gather_changed_files(ri.worktree_path, "features/**/*.feature", ri.default_branch)
 
     # === RED PHASE: Write failing tests ===
     await ctx.event_bus.emit(PipelineEvent(
@@ -95,7 +95,7 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
     iteration = 0
 
     # Gather only test files written/modified by this CR's test_writer
-    test_content = gather_changed_files(ri.worktree_path, "tests/**/test_*.py")
+    test_content = gather_changed_files(ri.worktree_path, "tests/**/test_*.py", ri.default_branch)
 
     await ctx.event_bus.emit(PipelineEvent(
         cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="tdd:code_writer",

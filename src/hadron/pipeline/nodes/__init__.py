@@ -195,27 +195,49 @@ def gather_files(worktree: str, pattern: str) -> str:
     return "\n\n".join(parts)
 
 
-def gather_changed_files(worktree: str, pattern: str) -> str:
-    """Read files matching glob pattern that were added or modified in the worktree.
+def gather_changed_files(worktree: str, pattern: str, default_branch: str = "main") -> str:
+    """Read files matching glob pattern that were added or modified in this branch.
 
-    Uses ``git diff`` to scope to files changed in this branch, avoiding
-    injection of unrelated pre-existing files (e.g. infrastructure specs
-    when only the CR's feature file is relevant).
+    Uses ``git diff`` against the merge-base with the default branch to scope
+    to files changed by this CR, avoiding injection of unrelated pre-existing
+    files. Also includes uncommitted (staged + unstaged) changes.
     """
     import subprocess
     base = Path(worktree)
+    changed: set[str] = set()
     try:
-        result = subprocess.run(
-            ["git", "diff", "--name-only", "--diff-filter=ACMR", "HEAD~10", "--", pattern],
+        # Find merge base with default branch
+        merge_base = subprocess.run(
+            ["git", "merge-base", default_branch, "HEAD"],
             cwd=worktree, capture_output=True, text=True, timeout=10,
         )
-        changed = {line.strip() for line in result.stdout.splitlines() if line.strip()}
+        if merge_base.returncode == 0 and merge_base.stdout.strip():
+            # Committed changes since branching from default
+            committed = subprocess.run(
+                ["git", "diff", "--name-only", "--diff-filter=ACMR",
+                 merge_base.stdout.strip(), "HEAD", "--", pattern],
+                cwd=worktree, capture_output=True, text=True, timeout=10,
+            )
+            changed.update(line.strip() for line in committed.stdout.splitlines() if line.strip())
+
+        # Also include uncommitted changes (staged + unstaged)
+        uncommitted = subprocess.run(
+            ["git", "diff", "--name-only", "--diff-filter=ACMR", "HEAD", "--", pattern],
+            cwd=worktree, capture_output=True, text=True, timeout=10,
+        )
+        changed.update(line.strip() for line in uncommitted.stdout.splitlines() if line.strip())
+
+        # And untracked new files matching the pattern
+        untracked = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard", "--", pattern],
+            cwd=worktree, capture_output=True, text=True, timeout=10,
+        )
+        changed.update(line.strip() for line in untracked.stdout.splitlines() if line.strip())
+
     except (subprocess.SubprocessError, OSError):
-        # Fall back to all files if git fails
         return gather_files(worktree, pattern)
 
     if not changed:
-        # Nothing changed — fall back to all (first run or no commits yet)
         return gather_files(worktree, pattern)
 
     parts: list[str] = []

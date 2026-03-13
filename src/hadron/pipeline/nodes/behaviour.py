@@ -92,7 +92,7 @@ async def behaviour_verification_node(state: PipelineState, ctx: NodeContext, cr
     system_prompt = composer.compose_system_prompt("spec_verifier")
 
     # Gather only feature files written/modified by this CR's spec_writer
-    feature_content = gather_changed_files(ri.worktree_path, "features/**/*.feature")
+    feature_content = gather_changed_files(ri.worktree_path, "features/**/*.feature", ri.default_branch)
 
     task_payload = format_cr_section(structured_cr) + f"""
 ## Feature Specifications
