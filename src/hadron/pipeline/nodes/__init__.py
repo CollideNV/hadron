@@ -202,10 +202,10 @@ def gather_changed_files(worktree: str, pattern: str, default_branch: str = "mai
     to files changed by this CR, avoiding injection of unrelated pre-existing
     files.  Also includes uncommitted (staged + unstaged + untracked) changes.
 
-    Git pathspec globs (``**``) are unreliable across git versions, so all git
-    commands fetch full file lists and we filter with pathlib in Python.
+    Uses two passes: (1) git to get all changed/untracked files, (2) pathlib
+    glob to get files matching the pattern, then intersects the two sets so
+    only changed files that match the pattern are included.
     """
-    import fnmatch
     import subprocess
 
     base = Path(worktree)
@@ -213,9 +213,6 @@ def gather_changed_files(worktree: str, pattern: str, default_branch: str = "mai
 
     def _lines(result: subprocess.CompletedProcess[str]) -> list[str]:
         return [l.strip() for l in result.stdout.splitlines() if l.strip()]
-
-    def _match(paths: list[str]) -> set[str]:
-        return {p for p in paths if fnmatch.fnmatch(p, pattern)}
 
     try:
         # 1. Committed changes since branching from default branch
@@ -229,21 +226,21 @@ def gather_changed_files(worktree: str, pattern: str, default_branch: str = "mai
                  merge_base.stdout.strip(), "HEAD"],
                 cwd=worktree, capture_output=True, text=True, timeout=10,
             )
-            changed.update(_match(_lines(committed)))
+            changed.update(_lines(committed))
 
         # 2. Uncommitted changes to tracked files (staged + unstaged)
         uncommitted = subprocess.run(
             ["git", "diff", "--name-only", "--diff-filter=ACMR", "HEAD"],
             cwd=worktree, capture_output=True, text=True, timeout=10,
         )
-        changed.update(_match(_lines(uncommitted)))
+        changed.update(_lines(uncommitted))
 
         # 3. Untracked new files (written by agent but never committed)
         untracked = subprocess.run(
             ["git", "ls-files", "--others", "--exclude-standard"],
             cwd=worktree, capture_output=True, text=True, timeout=10,
         )
-        changed.update(_match(_lines(untracked)))
+        changed.update(_lines(untracked))
 
     except (subprocess.SubprocessError, OSError):
         logger.warning("git commands failed in gather_changed_files; returning empty")
@@ -252,9 +249,16 @@ def gather_changed_files(worktree: str, pattern: str, default_branch: str = "mai
     if not changed:
         return ""
 
+    # Use pathlib glob (handles ** correctly) then intersect with changed set
+    matching = {str(p.relative_to(base)) for p in base.glob(pattern) if p.is_file()}
+    matched = sorted(changed & matching)
+
+    if not matched:
+        return ""
+
     parts: list[str] = []
     total = 0
-    for rel in sorted(changed):
+    for rel in matched:
         path = base / rel
         if not path.is_file():
             continue
