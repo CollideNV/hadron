@@ -15,10 +15,8 @@ CR_RESPONSE=$(curl -s -X POST "$CONTROLLER_URL/api/pipeline/trigger" \
   "title": "Add a GET /health endpoint",
   "description": "Add a GET /health endpoint that returns {\"status\": \"ok\", \"version\": \"0.1.0\"}. The endpoint should be accessible without authentication. Include appropriate tests.",
   "source": "api",
-  "repo_url": "$REPO_URL",
-  "repo_default_branch": "main",
-  "test_command": "pytest tests/ -v",
-  "language": "python"
+  "repo_urls": ["$REPO_URL"],
+  "repo_default_branch": "main"
 }
 EOF
 )
