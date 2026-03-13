@@ -996,6 +996,53 @@ class TestRebaseNode:
         assert result["rebase_clean"] is True
 
     @pytest.mark.asyncio
+    async def test_no_conflict_files_skips_agent(self) -> None:
+        """Rebase non-clean but no conflict files -> skip agent, try continue/abort."""
+        from hadron.pipeline.nodes.rebase import rebase_node
+
+        config = _make_config()
+        state = _base_state()
+
+        with (
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.rebase.run_agent") as mock_run_agent,
+            patch("hadron.pipeline.nodes.rebase.run_test_command", return_value=(True, "passed")),
+        ):
+            wm = MockWM.return_value
+            wm.rebase_keep_conflicts = AsyncMock(return_value=False)
+            wm.get_conflict_files = AsyncMock(return_value=[])
+            wm.continue_rebase = AsyncMock(return_value=True)
+            result = await rebase_node(state, config)
+
+        # Agent should NOT have been invoked
+        mock_run_agent.assert_not_called()
+        assert result["rebase_clean"] is True
+
+    @pytest.mark.asyncio
+    async def test_no_conflict_files_abort_on_continue_failure(self) -> None:
+        """Rebase non-clean, no conflict files, continue fails -> abort, rebase_clean=False."""
+        from hadron.pipeline.nodes.rebase import rebase_node
+
+        config = _make_config()
+        state = _base_state()
+
+        with (
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.rebase.run_agent") as mock_run_agent,
+            patch("hadron.pipeline.nodes.rebase.run_test_command", return_value=(True, "passed")),
+        ):
+            wm = MockWM.return_value
+            wm.rebase_keep_conflicts = AsyncMock(return_value=False)
+            wm.get_conflict_files = AsyncMock(return_value=[])
+            wm.continue_rebase = AsyncMock(return_value=False)
+            wm.abort_rebase = AsyncMock()
+            result = await rebase_node(state, config)
+
+        mock_run_agent.assert_not_called()
+        wm.abort_rebase.assert_called_once()
+        assert result["rebase_clean"] is False
+
+    @pytest.mark.asyncio
     async def test_post_rebase_test_failure(self) -> None:
         """Clean rebase but tests fail afterward."""
         from hadron.pipeline.nodes.rebase import rebase_node

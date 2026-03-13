@@ -111,6 +111,7 @@ export interface ReviewFindingData {
   message: string;
   file?: string;
   line?: number;
+  review_round?: number;
 }
 export interface InterventionSetData {}
 export interface CostUpdateData {

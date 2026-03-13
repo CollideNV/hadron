@@ -57,7 +57,7 @@ class AgentTask:
     # Execution
     working_directory: str | None = None
     allowed_tools: list[str] = field(default_factory=lambda: [
-        "read_file", "write_file", "list_directory", "run_command"
+        "read_file", "write_file", "delete_file", "list_directory", "run_command"
     ])
     model: str = DEFAULT_MODEL
     max_tokens: int = 16384

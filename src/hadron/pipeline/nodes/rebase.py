@@ -35,10 +35,20 @@ async def rebase_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
         clean = True
 
     if not clean:
+        conflict_files = await wm.get_conflict_files(ri.worktree_path)
+
+        if not conflict_files:
+            # Rebase failed but no conflict markers — likely a non-conflict error.
+            # Try to continue or abort gracefully.
+            logger.warning("Rebase returned non-clean but no conflict files found for %s — attempting continue", ri.repo_name)
+            continued = await wm.continue_rebase(ri.worktree_path)
+            if not continued:
+                await wm.abort_rebase(ri.worktree_path)
+                rebase_clean = False
+
+    if not clean and conflict_files:
         logger.info("Rebase conflicts detected in %s — invoking conflict resolver agent", ri.repo_name)
         had_conflicts = True
-
-        conflict_files = await wm.get_conflict_files(ri.worktree_path)
 
         # Pre-read conflicting files (capped per file to avoid bloating the prompt)
         MAX_CONFLICT_FILE_CHARS = 10_000

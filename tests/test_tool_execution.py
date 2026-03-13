@@ -120,6 +120,36 @@ class TestWriteFile:
 
 
 # ---------------------------------------------------------------------------
+# _execute_tool — delete_file
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteFile:
+    @pytest.mark.asyncio
+    async def test_delete_existing_file(self, tmp_workdir: Path) -> None:
+        assert (tmp_workdir / "hello.txt").exists()
+        result = await _execute_tool(
+            "delete_file", {"path": "hello.txt"}, str(tmp_workdir)
+        )
+        assert "File deleted" in result
+        assert not (tmp_workdir / "hello.txt").exists()
+
+    @pytest.mark.asyncio
+    async def test_delete_nonexistent_file(self, tmp_workdir: Path) -> None:
+        result = await _execute_tool(
+            "delete_file", {"path": "nope.txt"}, str(tmp_workdir)
+        )
+        assert "File not found" in result
+
+    @pytest.mark.asyncio
+    async def test_delete_traversal_blocked(self, tmp_workdir: Path) -> None:
+        result = await _execute_tool(
+            "delete_file", {"path": "../../evil.txt"}, str(tmp_workdir)
+        )
+        assert "Path escapes working directory" in result
+
+
+# ---------------------------------------------------------------------------
 # _execute_tool — list_directory
 # ---------------------------------------------------------------------------
 

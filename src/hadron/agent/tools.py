@@ -82,6 +82,17 @@ _ALL_TOOL_DEFS: dict[str, dict[str, Any]] = {
             "required": ["command"],
         },
     },
+    "delete_file": {
+        "name": "delete_file",
+        "description": "Delete a file within the working directory. Path is relative to the working directory.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "File path to delete"},
+            },
+            "required": ["path"],
+        },
+    },
 }
 
 
@@ -243,11 +254,21 @@ async def _execute_run_command(working_dir: str, input_data: dict[str, Any]) -> 
     return f"Exit code: {proc.returncode}\n{output}"
 
 
+def _execute_delete_file(working_dir: str, input_data: dict[str, Any]) -> str:
+    """Delete a file within the working directory."""
+    path = safe_resolve(working_dir, input_data["path"])
+    if not path.is_file():
+        return f"Error: File not found: {input_data['path']}"
+    path.unlink()
+    return f"File deleted: {input_data['path']}"
+
+
 _TOOL_DISPATCH: dict[str, Any] = {
     "read_file": _execute_read_file,
     "write_file": _execute_write_file,
     "list_directory": _execute_list_directory,
     "run_command": _execute_run_command,
+    "delete_file": _execute_delete_file,
 }
 
 

@@ -132,4 +132,112 @@ describe("StageDetailView", () => {
     );
     expect(screen.getByText("1 critical")).toBeInTheDocument();
   });
+
+  it("shows review round tabs when multiple rounds exist", () => {
+    const events = [
+      makeEvent({
+        event_type: "agent_started",
+        stage: "review:security_reviewer",
+        data: { role: "security_reviewer", repo: "hadron", loop_iteration: 0 },
+        timestamp: 1700000000,
+      }),
+      makeEvent({
+        event_type: "agent_completed",
+        stage: "review:security_reviewer",
+        data: { role: "security_reviewer", repo: "hadron", input_tokens: 100, output_tokens: 50, cost_usd: 0.01, loop_iteration: 0 },
+        timestamp: 1700000010,
+      }),
+      makeEvent({
+        event_type: "agent_started",
+        stage: "review:security_reviewer",
+        data: { role: "security_reviewer", repo: "hadron", loop_iteration: 1 },
+        timestamp: 1700000020,
+      }),
+      makeEvent({
+        event_type: "agent_completed",
+        stage: "review:security_reviewer",
+        data: { role: "security_reviewer", repo: "hadron", input_tokens: 100, output_tokens: 50, cost_usd: 0.01, loop_iteration: 1 },
+        timestamp: 1700000030,
+      }),
+    ];
+    const findings = [
+      makeEvent({
+        event_type: "review_finding",
+        stage: "review",
+        data: { severity: "major", message: "Round 1 issue", review_round: 0 },
+      }),
+      makeEvent({
+        event_type: "review_finding",
+        stage: "review",
+        data: { severity: "info", message: "Round 2 note", review_round: 1 },
+      }),
+    ];
+    renderWithContext(
+      { stageName: "review", onBack: vi.fn() },
+      { events, findings },
+    );
+    expect(screen.getByText("Review 1")).toBeInTheDocument();
+    expect(screen.getByText("Review 2")).toBeInTheDocument();
+  });
+
+  it("filters findings when a review round is selected", () => {
+    const events = [
+      makeEvent({
+        event_type: "agent_started",
+        stage: "review:security_reviewer",
+        data: { role: "security_reviewer", repo: "hadron", loop_iteration: 0 },
+        timestamp: 1700000000,
+      }),
+      makeEvent({
+        event_type: "agent_started",
+        stage: "review:security_reviewer",
+        data: { role: "security_reviewer", repo: "hadron", loop_iteration: 1 },
+        timestamp: 1700000020,
+      }),
+    ];
+    const findings = [
+      makeEvent({
+        event_type: "review_finding",
+        stage: "review",
+        data: { severity: "major", message: "Round 1 issue", review_round: 0 },
+      }),
+      makeEvent({
+        event_type: "review_finding",
+        stage: "review",
+        data: { severity: "info", message: "Round 2 note", review_round: 1 },
+      }),
+    ];
+    renderWithContext(
+      { stageName: "review", onBack: vi.fn() },
+      { events, findings },
+    );
+
+    // Click "Review 1" to filter
+    fireEvent.click(screen.getByText("Review 1"));
+    // Should show 1 major finding only
+    expect(screen.getByText("1 major")).toBeInTheDocument();
+    expect(screen.queryByText("1 info")).not.toBeInTheDocument();
+  });
+
+  it("does not show round tabs for non-review stages", () => {
+    renderWithContext(
+      { stageName: "implementation", onBack: vi.fn() },
+    );
+    expect(screen.queryByText("Review 1")).not.toBeInTheDocument();
+  });
+
+  it("does not show round tabs for single review round", () => {
+    const findings = [
+      makeEvent({
+        event_type: "review_finding",
+        stage: "review",
+        data: { severity: "minor", message: "Single round", review_round: 0 },
+      }),
+    ];
+    renderWithContext(
+      { stageName: "review", onBack: vi.fn() },
+      { findings },
+    );
+    expect(screen.queryByText("Review 1")).not.toBeInTheDocument();
+  });
 });

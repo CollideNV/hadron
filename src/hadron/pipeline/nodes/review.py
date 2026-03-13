@@ -108,7 +108,7 @@ async def review_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
     for finding in all_findings:
         await ctx.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.REVIEW_FINDING, stage="review",
-            data={"repo": ri.repo_name, **finding},
+            data={"repo": ri.repo_name, "review_round": review_loop, **finding},
         ))
 
     # 7. Determine pass/fail — only block on critical/major from ANY reviewer
