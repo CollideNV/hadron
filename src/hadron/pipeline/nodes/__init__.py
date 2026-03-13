@@ -494,6 +494,10 @@ async def run_agent(
                 "allowed_tools": allowed_tools,
             },
         ))
+    await ctx.event_bus.emit(PipelineEvent(
+            cr_id=cr_id, event_type=EventType.AGENT_PROMPT, stage=stage,
+            data={"role": role, "repo": repo_name, "text": user_prompt[:8000]},
+        ))
 
     result = await ctx.agent_backend.execute(task)
     await emit_cost_update(ctx.event_bus, cr_id, stage, result, prior_cost)

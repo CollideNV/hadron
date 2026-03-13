@@ -153,12 +153,47 @@ def _execute_read_file(working_dir: str, input_data: dict[str, Any]) -> str:
     return truncate(content, MAX_READ_FILE_CHARS)
 
 
-def _execute_write_file(working_dir: str, input_data: dict[str, Any]) -> str:
-    """Write content to a file, creating parent directories as needed."""
+_INSTALL_TRIGGERS: dict[str, list[str]] = {
+    "package.json": ["npm", "install"],
+    "pyproject.toml": ["pip", "install", "-e", ".[dev]", "--quiet"],
+    "requirements.txt": ["pip", "install", "-r", "requirements.txt", "--quiet"],
+}
+
+
+async def _execute_write_file(working_dir: str, input_data: dict[str, Any]) -> str:
+    """Write content to a file, creating parent directories as needed.
+
+    Auto-runs dependency install when a manifest file is written.
+    """
     path = safe_resolve(working_dir, input_data["path"])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(input_data["content"])
-    return f"File written: {input_data['path']}"
+    msg = f"File written: {input_data['path']}"
+
+    filename = path.name
+    if filename in _INSTALL_TRIGGERS:
+        install_cmd = _INSTALL_TRIGGERS[filename]
+        install_dir = str(path.parent)
+        logger.info("Auto-installing deps after %s write in %s", filename, install_dir)
+        proc = await asyncio.create_subprocess_exec(
+            *install_cmd,
+            cwd=install_dir,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        try:
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
+            if proc.returncode == 0:
+                msg += f"\n(auto-installed {filename} dependencies)"
+            else:
+                output = stdout.decode(errors="replace")[-300:]
+                msg += f"\n(dependency install failed, exit {proc.returncode}: {output})"
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            msg += "\n(dependency install timed out)"
+
+    return msg
 
 
 def _execute_list_directory(working_dir: str, input_data: dict[str, Any]) -> str:
@@ -179,12 +214,22 @@ async def _execute_run_command(working_dir: str, input_data: dict[str, Any]) -> 
     cmd = input_data["command"]
     if not validate_agent_command(cmd):
         return f"Error: Command rejected by safety filter: {cmd!r}"
+    env = {**scrubbed_env(), "PYTHONDONTWRITEBYTECODE": "1"}
+    # Ensure node_modules/.bin is in PATH so npm scripts find binaries like vitest
+    node_bin = os.path.join(working_dir, "node_modules", ".bin")
+    if os.path.isdir(node_bin):
+        env["PATH"] = node_bin + os.pathsep + env.get("PATH", "")
+    # Also check common subdirs (e.g. frontend/)
+    for child in ("frontend", "client", "web", "app"):
+        child_bin = os.path.join(working_dir, child, "node_modules", ".bin")
+        if os.path.isdir(child_bin):
+            env["PATH"] = child_bin + os.pathsep + env.get("PATH", "")
     proc = await asyncio.create_subprocess_shell(
         cmd,
         cwd=working_dir,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
-        env={**scrubbed_env(), "PYTHONDONTWRITEBYTECODE": "1"},
+        env=env,
     )
     try:
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)

@@ -1,13 +1,15 @@
 """Worktree Setup node — clone repo and create feature branch worktree.
 
 Each worker handles exactly one repo. This node clones the repo,
-creates a worktree, reads AGENTS.md/CLAUDE.md, and auto-detects
-languages and test commands from marker files.
+creates a worktree, installs dependencies, reads AGENTS.md/CLAUDE.md,
+and auto-detects languages and test commands from marker files.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from pathlib import Path
 from typing import Any
 
 from hadron.git.detect import detect_languages_and_tests
@@ -17,6 +19,44 @@ from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import NodeContext, pipeline_node
 
 logger = logging.getLogger(__name__)
+
+
+async def _install_dependencies(worktree_path: Path) -> None:
+    """Install project dependencies if lock files are present."""
+    installs: list[tuple[str, list[str]]] = []
+
+    # Python
+    if (worktree_path / "pyproject.toml").exists() or (worktree_path / "requirements.txt").exists():
+        if (worktree_path / "pyproject.toml").exists():
+            installs.append(("python", ["pip", "install", "-e", ".[dev]", "--quiet"]))
+        else:
+            installs.append(("python", ["pip", "install", "-r", "requirements.txt", "--quiet"]))
+
+    # Node — check root and common subdirs
+    for subdir in [".", "frontend", "client", "web", "app"]:
+        pkg = worktree_path / subdir / "package.json"
+        if pkg.exists():
+            lock = worktree_path / subdir / "package-lock.json"
+            cmd = ["npm", "ci", "--prefix", str(worktree_path / subdir)] if lock.exists() else \
+                  ["npm", "install", "--prefix", str(worktree_path / subdir)]
+            installs.append((f"node ({subdir})", cmd))
+
+    for label, cmd in installs:
+        logger.info("Installing %s dependencies: %s", label, " ".join(cmd))
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=str(worktree_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=300)
+        if proc.returncode != 0:
+            logger.warning(
+                "Dependency install failed for %s (exit %d): %s",
+                label, proc.returncode, stdout.decode(errors="replace")[-500:],
+            )
+        else:
+            logger.info("Installed %s dependencies successfully", label)
 
 
 @pipeline_node("worktree_setup")
@@ -40,6 +80,9 @@ async def worktree_setup_node(state: PipelineState, ctx: NodeContext, cr_id: str
         if agents_path.exists():
             agents_md = agents_path.read_text()
             break
+
+    # Install dependencies before detection (so test commands work)
+    await _install_dependencies(worktree_path)
 
     # Auto-detect languages and test commands (AGENTS.md overrides marker files)
     languages, test_commands = detect_languages_and_tests(
