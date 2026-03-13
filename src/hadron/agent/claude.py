@@ -27,7 +27,9 @@ logger = logging.getLogger(__name__)
 _MODEL_COSTS: dict[str, tuple[float, float]] = {
     "claude-haiku-4-5-20251001": (0.80, 4.00),
     "claude-sonnet-4-20250514": (3.00, 15.00),
+    "claude-sonnet-4-6-20250627": (3.00, 15.00),
     "claude-opus-4-20250514": (15.00, 75.00),
+    "claude-opus-4-6-20250827": (15.00, 75.00),
 }
 # Fallback for unknown models (use Sonnet pricing)
 _DEFAULT_COST = (3.00, 15.00)
