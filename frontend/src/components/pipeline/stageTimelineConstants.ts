@@ -42,7 +42,7 @@ export const STAGE_META: Record<
   worktree_setup: { label: "Worktree", icon: "WT", group: "Understand" },
   behaviour_translation: { label: "Translate", icon: "BT", group: "Specify" },
   behaviour_verification: { label: "Verify", icon: "BV", group: "Specify" },
-  tdd: { label: "TDD", icon: "TD", group: "Build" },
+  implementation: { label: "Implement", icon: "IM", group: "Build" },
   review: { label: "Review", icon: "RV", group: "Validate" },
   rebase: { label: "Rebase", icon: "RB", group: "Validate" },
   delivery: { label: "Deliver", icon: "DL", group: "Ship" },
@@ -57,7 +57,7 @@ export const FEEDBACK_LOOPS: {
   from: Stage;
   to: Stage;
   label: string;
-  countKey: "behaviour_translation" | "tdd";
+  countKey: "behaviour_translation" | "implementation";
 }[] = [
   {
     from: "behaviour_verification",
@@ -67,9 +67,9 @@ export const FEEDBACK_LOOPS: {
   },
   {
     from: "review",
-    to: "tdd",
+    to: "implementation",
     label: "review retry",
-    countKey: "tdd",
+    countKey: "implementation",
   },
 ];
 

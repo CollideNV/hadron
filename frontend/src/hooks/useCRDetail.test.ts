@@ -120,10 +120,10 @@ describe("useCRDetail", () => {
 
   describe("filterByStage", () => {
     it("returns all events when stage is null", () => {
-      const ev1 = makeEvent({ event_type: "agent_started", stage: "tdd" });
+      const ev1 = makeEvent({ event_type: "agent_started", stage: "implementation" });
       const ev2 = makeEvent({ event_type: "agent_started", stage: "review" });
       mockStream.events = [ev1, ev2];
-      mockStream.toolCalls = [makeEvent({ event_type: "agent_tool_call", stage: "tdd" })];
+      mockStream.toolCalls = [makeEvent({ event_type: "agent_tool_call", stage: "implementation" })];
 
       const { result } = renderHook(() => useCRDetail("cr-1"));
       const filtered = result.current.filterByStage(null);
@@ -134,33 +134,33 @@ describe("useCRDetail", () => {
     it("filters events by stage with pipeline-level events included", () => {
       const events = [
         makeEvent({ event_type: "pipeline_started", stage: "" }),
-        makeEvent({ event_type: "agent_started", stage: "tdd" }),
+        makeEvent({ event_type: "agent_started", stage: "implementation" }),
         makeEvent({ event_type: "agent_started", stage: "review" }),
       ];
       mockStream.events = events;
 
       const { result } = renderHook(() => useCRDetail("cr-1"));
-      const filtered = result.current.filterByStage("tdd");
-      expect(filtered.events).toHaveLength(2); // pipeline_started + tdd event
+      const filtered = result.current.filterByStage("implementation");
+      expect(filtered.events).toHaveLength(2); // pipeline_started + implementation event
     });
 
     it("includes sub-stage events with prefix matching for toolCalls", () => {
       const toolCalls = [
-        makeEvent({ event_type: "agent_tool_call", stage: "tdd" }),
-        makeEvent({ event_type: "agent_tool_call", stage: "tdd:red" }),
+        makeEvent({ event_type: "agent_tool_call", stage: "implementation" }),
+        makeEvent({ event_type: "agent_tool_call", stage: "implementation:red" }),
         makeEvent({ event_type: "agent_tool_call", stage: "review" }),
       ];
       mockStream.toolCalls = toolCalls;
 
       const { result } = renderHook(() => useCRDetail("cr-1"));
-      const filtered = result.current.filterByStage("tdd");
-      expect(filtered.toolCalls).toHaveLength(2); // tdd + tdd:red
+      const filtered = result.current.filterByStage("implementation");
+      expect(filtered.toolCalls).toHaveLength(2); // implementation + implementation:red
     });
 
     it("uses exact match for testRuns and findings", () => {
       mockStream.testRuns = [
-        makeEvent({ event_type: "test_run", stage: "tdd", data: { passed: true } }),
-        makeEvent({ event_type: "test_run", stage: "tdd:red", data: { passed: false } }),
+        makeEvent({ event_type: "test_run", stage: "implementation", data: { passed: true } }),
+        makeEvent({ event_type: "test_run", stage: "implementation:red", data: { passed: false } }),
       ];
       mockStream.reviewFindings = [
         makeEvent({ event_type: "review_finding", stage: "review" }),
@@ -169,8 +169,8 @@ describe("useCRDetail", () => {
 
       const { result } = renderHook(() => useCRDetail("cr-1"));
 
-      const tddFiltered = result.current.filterByStage("tdd");
-      expect(tddFiltered.testRuns).toHaveLength(1); // exact match only
+      const implFiltered = result.current.filterByStage("implementation");
+      expect(implFiltered.testRuns).toHaveLength(1); // exact match only
 
       const reviewFiltered = result.current.filterByStage("review");
       expect(reviewFiltered.findings).toHaveLength(1); // exact match only

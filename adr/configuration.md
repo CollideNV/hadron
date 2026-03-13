@@ -178,7 +178,7 @@ agents:
   default_chain: ["anthropic", "openai"]
   roles:
     spec_writer:          { chain: ["anthropic"], model_tier: "premium" }
-    code_writer:          { chain: ["anthropic", "openai"] }
+    implementation:       { chain: ["anthropic", "openai"] }
     merge_conflict_agent: { chain: ["anthropic"], model_tier: "premium" }
   health:
     degraded_error_rate_pct: 20

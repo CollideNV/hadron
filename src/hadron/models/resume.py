@@ -13,7 +13,7 @@ OVERRIDE_NODE_MAP: dict[str, str] = {
 # Pipeline node execution order (used to pick the latest node from multiple overrides).
 PIPELINE_NODE_ORDER: list[str] = [
     "intake", "repo_id", "worktree_setup", "translation", "verification",
-    "tdd", "review", "rebase", "delivery", "release",
+    "implementation", "review", "rebase", "delivery", "release",
 ]
 
 

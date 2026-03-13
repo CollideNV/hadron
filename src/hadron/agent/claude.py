@@ -193,13 +193,14 @@ class ClaudeAgentBackend:
         if task.on_event and is_multiphase:
             await task.on_event("phase_started", {"phase": "act", "model": task.model})
 
+        act_system_prompt = self._prompts.build_act_system(task, has_plan=bool(plan_text))
         act_user_prompt = self._prompts.build_act_user(task, exploration_summary, plan_text)
         if task.on_event and act_user_prompt != task.user_prompt:
             await task.on_event("prompt", {"text": act_user_prompt})
 
         result = await self._run_tool_loop(ToolLoopConfig(
             model=task.model,
-            system_prompt=task.system_prompt,
+            system_prompt=act_system_prompt,
             user_prompt=act_user_prompt,
             tools=make_tools(task.allowed_tools, task.working_directory),
             working_dir=task.working_directory or ".",

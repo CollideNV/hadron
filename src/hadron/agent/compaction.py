@@ -82,10 +82,12 @@ async def compact_messages(
     try:
         summary_response = await client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=4096,
+            max_tokens=8192,
             system="Summarize the following agent conversation history concisely. "
-                   "Preserve: key decisions made, files read/written, commands run and their "
-                   "outcomes, current progress, and any errors encountered. "
+                   "You MUST preserve: (1) every file path that was read or written, "
+                   "(2) every command that was run and whether it succeeded or failed, "
+                   "(3) the current progress status and what has been accomplished, "
+                   "(4) any errors encountered and how they were resolved. "
                    "Drop: verbatim file contents, full command outputs, and redundant details.",
             messages=[{"role": "user", "content": middle_text}],
         )
@@ -97,7 +99,7 @@ async def compact_messages(
     compacted = [
         original_user,
         {"role": "assistant", "content": f"[Conversation compacted — summary of {len(middle)} prior messages]\n\n{summary}"},
-        {"role": "user", "content": "Continue from where you left off."},
+        {"role": "user", "content": "Continue from where you left off. Do NOT re-explore the codebase or restart your work — pick up from the progress described in the summary above."},
         *tail,
     ]
 

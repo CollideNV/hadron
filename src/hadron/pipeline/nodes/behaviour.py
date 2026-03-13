@@ -150,7 +150,7 @@ Verify the above specifications against the CR.
         "verification_iteration": state.get("verification_loop_count", 0) + 1,
     }]
 
-    # Cache feature content in state so downstream nodes (TDD, review) can skip
+    # Cache feature content in state so downstream nodes (implementation, review) can skip
     # expensive git operations to re-gather the same files.
     cached_feature_content = feature_content or ""
 

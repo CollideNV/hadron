@@ -13,9 +13,9 @@ from hadron.pipeline.edges import after_verification, after_review, after_rebase
 
 
 class TestAfterVerification:
-    def test_verified_returns_tdd(self) -> None:
+    def test_verified_returns_implementation(self) -> None:
         state = {"behaviour_verified": True, "verification_loop_count": 0}
-        assert after_verification(state) == "tdd"
+        assert after_verification(state) == "implementation"
 
     def test_not_verified_below_max_returns_translation(self) -> None:
         state = {"behaviour_verified": False, "verification_loop_count": 1}
@@ -72,9 +72,9 @@ class TestAfterReview:
         state = {"review_passed": True, "review_loop_count": 0}
         assert after_review(state) == "rebase"
 
-    def test_not_passed_below_max_returns_tdd(self) -> None:
+    def test_not_passed_below_max_returns_implementation(self) -> None:
         state = {"review_passed": False, "review_loop_count": 1}
-        assert after_review(state) == "tdd"
+        assert after_review(state) == "implementation"
 
     def test_not_passed_at_max_returns_paused(self) -> None:
         state = {"review_passed": False, "review_loop_count": 3}
@@ -82,11 +82,11 @@ class TestAfterReview:
 
     def test_missing_review_passed_treated_as_falsy(self) -> None:
         state = {"review_loop_count": 1}
-        assert after_review(state) == "tdd"
+        assert after_review(state) == "implementation"
 
     def test_missing_review_loop_count_defaults_to_zero(self) -> None:
         state = {"review_passed": False}
-        assert after_review(state) == "tdd"
+        assert after_review(state) == "implementation"
 
     def test_custom_max_review_dev_loops(self) -> None:
         state = {
@@ -106,7 +106,7 @@ class TestAfterReview:
                 "pipeline": {"max_review_dev_loops": 5},
             },
         }
-        assert after_review(state) == "tdd"
+        assert after_review(state) == "implementation"
 
     def test_paused_status_stops_loop(self) -> None:
         state = {"status": "paused", "review_passed": False, "review_loop_count": 0}

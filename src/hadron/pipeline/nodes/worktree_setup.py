@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -28,9 +29,9 @@ async def _install_dependencies(worktree_path: Path) -> None:
     # Python
     if (worktree_path / "pyproject.toml").exists() or (worktree_path / "requirements.txt").exists():
         if (worktree_path / "pyproject.toml").exists():
-            installs.append(("python", ["pip", "install", "-e", ".[dev]", "--quiet"]))
+            installs.append(("python", [sys.executable, "-m", "pip", "install", "-e", ".[dev]", "--quiet"]))
         else:
-            installs.append(("python", ["pip", "install", "-r", "requirements.txt", "--quiet"]))
+            installs.append(("python", [sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "--quiet"]))
 
     # Node — check root and common subdirs
     for subdir in [".", "frontend", "client", "web", "app"]:

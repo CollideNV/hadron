@@ -11,15 +11,15 @@ describe("buildSessions", () => {
     const events = [
       makeEvent({
         event_type: "agent_started",
-        stage: "tdd",
-        data: { role: "tdd_developer", repo: "backend", model: "claude-3-5-sonnet-20241022" },
+        stage: "implementation",
+        data: { role: "developer", repo: "backend", model: "claude-3-5-sonnet-20241022" },
       }),
     ];
     const sessions = buildSessions(events, [], [], []);
     expect(sessions).toHaveLength(1);
-    expect(sessions[0].role).toBe("tdd_developer");
+    expect(sessions[0].role).toBe("developer");
     expect(sessions[0].repo).toBe("backend");
-    expect(sessions[0].stage).toBe("tdd");
+    expect(sessions[0].stage).toBe("implementation");
     expect(sessions[0].model).toBe("claude-3-5-sonnet-20241022");
     expect(sessions[0].completed).toBe(false);
   });
@@ -28,14 +28,14 @@ describe("buildSessions", () => {
     const events = [
       makeEvent({
         event_type: "agent_started",
-        stage: "tdd",
-        data: { role: "tdd_developer", repo: "" },
+        stage: "implementation",
+        data: { role: "developer", repo: "" },
         timestamp: 1700000000,
       }),
       makeEvent({
         event_type: "agent_completed",
-        stage: "tdd",
-        data: { role: "tdd_developer", repo: "", input_tokens: 5000, output_tokens: 2000, cost_usd: 0 },
+        stage: "implementation",
+        data: { role: "developer", repo: "", input_tokens: 5000, output_tokens: 2000, cost_usd: 0 },
         timestamp: 1700000010,
       }),
     ];
@@ -48,15 +48,15 @@ describe("buildSessions", () => {
     const events = [
       makeEvent({
         event_type: "agent_started",
-        stage: "tdd",
-        data: { role: "tdd_developer", repo: "" },
+        stage: "implementation",
+        data: { role: "developer", repo: "" },
       }),
     ];
     const outputs = [
       makeEvent({
         event_type: "agent_output",
-        stage: "tdd",
-        data: { role: "tdd_developer", repo: "", text: "Analyzing code", round: 1 },
+        stage: "implementation",
+        data: { role: "developer", repo: "", text: "Analyzing code", round: 1 },
       }),
     ];
     const sessions = buildSessions(events, [], outputs, []);
@@ -69,16 +69,16 @@ describe("buildSessions", () => {
     const events = [
       makeEvent({
         event_type: "agent_started",
-        stage: "tdd",
-        data: { role: "tdd_developer", repo: "" },
+        stage: "implementation",
+        data: { role: "developer", repo: "" },
       }),
     ];
     const toolCalls = [
       makeEvent({
         event_type: "agent_tool_call",
-        stage: "tdd",
+        stage: "implementation",
         data: {
-          role: "tdd_developer",
+          role: "developer",
           repo: "",
           tool: "read_file",
           input: { path: "src/main.py" },
@@ -97,16 +97,16 @@ describe("buildSessions", () => {
     const events = [
       makeEvent({
         event_type: "agent_started",
-        stage: "tdd",
-        data: { role: "tdd_developer", repo: "" },
+        stage: "implementation",
+        data: { role: "developer", repo: "" },
       }),
     ];
     const toolCalls = [
       makeEvent({
         event_type: "agent_tool_call",
-        stage: "tdd",
+        stage: "implementation",
         data: {
-          role: "tdd_developer",
+          role: "developer",
           repo: "",
           tool: "read_file",
           result: "file contents here",
@@ -125,16 +125,16 @@ describe("buildSessions", () => {
     const events = [
       makeEvent({
         event_type: "agent_started",
-        stage: "tdd",
-        data: { role: "tdd_developer", repo: "" },
+        stage: "implementation",
+        data: { role: "developer", repo: "" },
       }),
     ];
     const toolCalls = [
       makeEvent({
         event_type: "agent_tool_call",
-        stage: "tdd",
+        stage: "implementation",
         data: {
-          role: "tdd_developer",
+          role: "developer",
           repo: "",
           tool: "read_file",
           input: { path: "src/main.py" },
@@ -175,14 +175,14 @@ describe("buildSessions", () => {
     const events = [
       makeEvent({
         event_type: "agent_started",
-        stage: "tdd",
-        data: { role: "tdd_developer", repo: "backend" },
+        stage: "implementation",
+        data: { role: "developer", repo: "backend" },
         timestamp: 1700000000,
       }),
       makeEvent({
         event_type: "agent_started",
-        stage: "tdd",
-        data: { role: "tdd_developer", repo: "frontend" },
+        stage: "implementation",
+        data: { role: "developer", repo: "frontend" },
         timestamp: 1700000001,
       }),
     ];
@@ -196,22 +196,22 @@ describe("buildSessions", () => {
     const events = [
       makeEvent({
         event_type: "agent_started",
-        stage: "tdd",
-        data: { role: "tdd_developer", repo: "" },
+        stage: "implementation",
+        data: { role: "developer", repo: "" },
         timestamp: 1700000000,
       }),
     ];
     const outputs = [
       makeEvent({
         event_type: "agent_output",
-        stage: "tdd",
-        data: { role: "tdd_developer", repo: "", text: "second", round: 2 },
+        stage: "implementation",
+        data: { role: "developer", repo: "", text: "second", round: 2 },
         timestamp: 1700000002,
       }),
       makeEvent({
         event_type: "agent_output",
-        stage: "tdd",
-        data: { role: "tdd_developer", repo: "", text: "first", round: 1 },
+        stage: "implementation",
+        data: { role: "developer", repo: "", text: "first", round: 1 },
         timestamp: 1700000001,
       }),
     ];
@@ -224,15 +224,15 @@ describe("buildSessions", () => {
     const events = [
       makeEvent({
         event_type: "agent_started",
-        stage: "tdd",
-        data: { role: "tdd_developer", repo: "" },
+        stage: "implementation",
+        data: { role: "developer", repo: "" },
         timestamp: 1700000000,
       }),
       makeEvent({
         event_type: "agent_completed",
-        stage: "tdd",
+        stage: "implementation",
         data: {
-          role: "tdd_developer",
+          role: "developer",
           repo: "",
           input_tokens: 5000,
           output_tokens: 2000,
@@ -257,9 +257,9 @@ describe("buildSessions", () => {
     const events = [
       makeEvent({
         event_type: "agent_completed",
-        stage: "tdd",
+        stage: "implementation",
         data: {
-          role: "tdd_developer",
+          role: "developer",
           repo: "",
           input_tokens: 1000,
           output_tokens: 500,
@@ -277,14 +277,14 @@ describe("buildSessions", () => {
     const events = [
       makeEvent({
         event_type: "agent_started",
-        stage: "tdd",
+        stage: "implementation",
         data: { role: "", repo: "" },
       }),
     ];
     const outputs = [
       makeEvent({
         event_type: "agent_output",
-        stage: "tdd",
+        stage: "implementation",
         data: { role: "", text: "" },
       }),
     ];
@@ -318,15 +318,15 @@ describe("buildSessions", () => {
     const events = [
       makeEvent({
         event_type: "agent_started",
-        stage: "tdd",
-        data: { role: "tdd_developer", repo: "" },
+        stage: "implementation",
+        data: { role: "developer", repo: "" },
         timestamp: 1700000000,
       }),
       makeEvent({
         event_type: "agent_completed",
-        stage: "tdd",
+        stage: "implementation",
         data: {
-          role: "tdd_developer",
+          role: "developer",
           repo: "",
           input_tokens: 5000,
           output_tokens: 2000,
@@ -347,15 +347,15 @@ describe("buildSessions", () => {
     const events = [
       makeEvent({
         event_type: "agent_started",
-        stage: "tdd",
-        data: { role: "tdd_developer", repo: "" },
+        stage: "implementation",
+        data: { role: "developer", repo: "" },
         timestamp: 1700000000,
       }),
       makeEvent({
         event_type: "agent_completed",
-        stage: "tdd",
+        stage: "implementation",
         data: {
-          role: "tdd_developer",
+          role: "developer",
           repo: "",
           input_tokens: 1000,
           output_tokens: 500,
@@ -372,9 +372,9 @@ describe("buildSessions", () => {
     const events = [
       makeEvent({
         event_type: "agent_started",
-        stage: "tdd",
+        stage: "implementation",
         data: {
-          role: "tdd_developer",
+          role: "developer",
           repo: "",
           models: ["claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"],
         },
@@ -388,15 +388,15 @@ describe("buildSessions", () => {
     const events = [
       makeEvent({
         event_type: "agent_started",
-        stage: "tdd",
-        data: { role: "tdd_developer", repo: "" },
+        stage: "implementation",
+        data: { role: "developer", repo: "" },
       }),
     ];
     const nudges = [
       makeEvent({
         event_type: "agent_nudge",
-        stage: "tdd",
-        data: { role: "tdd_developer", repo: "", text: "focus on edge cases" },
+        stage: "implementation",
+        data: { role: "developer", repo: "", text: "focus on edge cases" },
       }),
     ];
     const sessions = buildSessions(events, [], [], nudges);

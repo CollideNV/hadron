@@ -12,7 +12,7 @@ function makeTestRun(
   return {
     cr_id: "cr-1",
     event_type: "test_run",
-    stage: "tdd",
+    stage: "implementation",
     data: { passed, iteration, output_tail: output },
     timestamp: 1700000000,
   };

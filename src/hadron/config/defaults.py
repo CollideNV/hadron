@@ -17,7 +17,6 @@ PIPELINE_DEFAULTS: dict = {
     # Circuit breakers
     "max_verification_loops": 3,
     "max_review_dev_loops": 3,
-    "max_tdd_iterations": 5,
     "max_cost_usd": 10.0,
     # Agent models (three-phase execution)
     "default_model": DEFAULT_MODEL,

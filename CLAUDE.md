@@ -49,11 +49,11 @@ hadron/
 
 ### Pipeline Stages
 
-**Per-worker (one repo):** Intake → Worktree Setup (+ auto-detect) → Behaviour Translation (Gherkin) → Behaviour Verification → TDD Development (red/green/refactor) → Code Review (security + quality + spec compliance) → Rebase & Conflict Resolution → Delivery (push PR) → Retrospective
+**Per-worker (one repo):** Intake → Worktree Setup (+ auto-detect) → Behaviour Translation (Gherkin) → Behaviour Verification → Implementation (single agent: tests + code + verify) → Code Review (security + quality + spec compliance) → Rebase & Conflict Resolution → Delivery (push PR) → Retrospective
 
 **Controller-level:** Repo Identification (spawn workers) → Track worker completion → Release Gate (human approval, all repos) → Merge all PRs
 
-Key feedback loops: Verification↔Translation, Review↔TDD, CI↔TDD.
+Key feedback loops: Verification↔Translation, Review↔Implementation, CI↔Implementation.
 
 ### Three Process Types
 
@@ -93,7 +93,7 @@ Single installation serves multiple tenants on shared infrastructure. OIDC handl
 The roadmap in `adr/roadmap.md` §22 defines 8 phases:
 
 1. **Foundation (Wk 1-2):** Project skeleton (LangGraph + FastAPI), runtime config, PipelineState, WorktreeManager, agent backend interface, event bus, intervention manager, prompt templates
-2. **Core Stages (Wk 3-5):** All agent prompts, intake, multi-repo worker spawning, Behaviour Translation/Verification, TDD, Code Review, feedback loops
+2. **Core Stages (Wk 3-5):** All agent prompts, intake, multi-repo worker spawning, Behaviour Translation/Verification, Implementation, Code Review, feedback loops
 3. **Delivery + CI (Wk 6-7):** Delivery strategies, checkpoint-and-terminate, CI webhooks, release gate, retrospective agent
 4. **Control Room (Wk 8-9):** SSE events, dashboard, interventions, circuit breakers, settings UI
 5. **Auth & Multi-Tenancy (Wk 10-11):** OIDC, internal authorization, tenant management, audit trail, notifications
@@ -118,6 +118,6 @@ The roadmap in `adr/roadmap.md` §22 defines 8 phases:
 - **Database-driven runtime config** — all settings editable via dashboard/API without redeployment
 - **AGENTS.md convention** — repos include an `AGENTS.md` (or `CLAUDE.md`) with instructions for AI agents; this is the primary lever for controlling agent behaviour
 - **Behaviour specs as firewall** — code agents work from Gherkin specs, not raw CR text
-- **Graduated test scope in TDD** — narrow tests for fast iteration, full suite before review gate
+- **Graduated test scope in implementation** — narrow tests for fast iteration, full suite before review gate
 - **Pipeline never auto-deletes artifacts** — human always decides cleanup via guided wizard
 - **Pipeline never silently fails** — always pauses with a decision screen for the human

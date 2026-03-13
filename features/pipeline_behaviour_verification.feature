@@ -13,7 +13,7 @@ Feature: Behaviour Verification
   Scenario: Specs pass verification
     Given the Spec Verifier returns verified as true
     When the verification routing decision is made
-    Then the pipeline proceeds to the TDD stage
+    Then the pipeline proceeds to the implementation stage
 
   Scenario: Specs fail verification with retries remaining
     Given the Spec Verifier returns verified as false

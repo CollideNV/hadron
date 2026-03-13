@@ -66,12 +66,12 @@ When the pipeline pauses due to a problem (circuit breaker, max retries, unresol
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  CR-142: Add password reset flow                         [PAUSED ⏸]    │
-│  Source: Jira PROJ-1234 │ Paused at: TDD Development │ Cost: $8.40    │
+│  Source: Jira PROJ-1234 │ Paused at: Implementation │ Cost: $8.40    │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  ⚠ Circuit breaker: dev ↔ review loop exceeded 3 iterations            │
 │                                                                         │
-│  auth-service: Code Writer stuck on token expiry edge case.             │
+│  auth-service: Implementation agent stuck on token expiry edge case.             │
 │  Review keeps finding the same issue. Last review feedback:             │
 │  "Token refresh logic doesn't handle concurrent sessions."              │
 │                                                                         │
@@ -153,7 +153,7 @@ The pipeline works from a **snapshot** of the CR taken at intake — it never au
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  CR-142: Add password reset flow                         [PAUSED ⏸]    │
-│  Source: Jira PROJ-1234 │ Paused at: TDD Development │ Cost: $4.10    │
+│  Source: Jira PROJ-1234 │ Paused at: Implementation │ Cost: $4.10    │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  ⚠ Source issue was updated while pipeline is running.                  │
@@ -203,7 +203,7 @@ If one repo's worker fails (circuit breaker, unresolvable conflict, etc.), the C
 ```
 CR-142: Add password reset flow
   auth-service:   PR #42 ready ✓
-  api-gateway:    PAUSED — circuit breaker at TDD (review loop exceeded 3 iterations)
+  api-gateway:    PAUSED — circuit breaker at Implementation (review loop exceeded 3 iterations)
   email-service:  PR #18 ready ✓
 ```
 

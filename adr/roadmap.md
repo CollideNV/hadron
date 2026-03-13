@@ -28,7 +28,7 @@
 - [ ] Intake node (structured output + source reporting + input risk screening)
 - [ ] Multi-repo: Controller spawns one worker per repo, tracks completion
 - [ ] Behaviour Translation + Verification subgraphs (with cross-repo consistency, spec firewall design)
-- [ ] TDD Development subgraph (with intervention checks, per-repo parallelism)
+- [ ] Implementation subgraph (with intervention checks, per-repo parallelism)
 - [ ] Code Review subgraph (per-repo parallelism, cross-repo spec compliance, adversarial Security Reviewer prompt)
 - [ ] Diff scope analyser (deterministic pre-pass before Code Review)
 - [ ] Conditional edges, feedback loops
@@ -80,7 +80,7 @@
 
 ### Phase 6 — Kubernetes Deployment (Weeks 11–12)
 - [ ] Controller Deployment + Service + Ingress manifests
-- [ ] Worker Job template + stage-aware NetworkPolicy (egress-locked TDD → full egress after review)
+- [ ] Worker Job template + stage-aware NetworkPolicy (egress-locked Implementation → full egress after review)
 - [ ] Ephemeral test infrastructure: sidecar container injection from repo config / test-compose.yaml
 - [ ] Dynamic worker sizing: Job Spawner calculates pod resources from per-repo weight
 - [ ] Agent command boundaries: non-root user, seccomp profile, filesystem permissions, command allowlist
@@ -125,10 +125,10 @@
 |------|------------|
 | Agent loops indefinitely | Circuit breakers → auto-pause → human decides |
 | Agent going wrong direction | Real-time events in control room; redirect early |
-| Incorrect code passes review | TDD + multi-reviewer + CI + human gate (5 layers) |
+| Incorrect code passes review | Implementation + multi-reviewer + CI + human gate (5 layers) |
 | Token costs spiral | Per-call tracking, running total in dashboard, auto-pause at threshold |
 | Cross-repo conflicts | Controller validates cross-repo consistency at release gate + CI integration tests |
-| Cross-repo dependency during TDD | CR description provides shared context. Controller can inject cross-repo spec summaries into worker context |
+| Cross-repo dependency during Implementation | CR description provides shared context. Controller can inject cross-repo spec summaries into worker context |
 | CI webhook never arrives | Controller polls CI API as fallback after timeout |
 | Worker pod dies mid-pipeline | K8s Job restart; resume from PostgreSQL checkpoint + git remote |
 | Worker pod idle during CI wait | Checkpoint-and-terminate releases pod; new pod resumes on webhook |
@@ -145,7 +145,7 @@
 | LLM suggests wrong repos | Human confirmation in Phase 2; feedback improves accuracy |
 | Unauthorised release approval | OIDC + Approver role required; audit trail records who approved |
 | Stale approval: main moved after approval | Atomic Merge Check auto-rebases and re-tests before merge. No manual re-approval unless tests fail |
-| AI-generated code exfiltrates data via network | Egress-locked during TDD — only LLM APIs and git allowed. Full egress after Security Review pass |
+| AI-generated code exfiltrates data via network | Egress-locked during Implementation — only LLM APIs and git allowed. Full egress after Security Review pass |
 | Test infrastructure leaks to shared staging | Infrastructure-as-a-Sidecar enforced — only ephemeral pod sidecars. NetworkPolicy blocks external DB access |
 | Small CRs waste cluster resources | Dynamic worker sizing — each repo's pod sized to its needs |
 | Human manually breaks code, AI continues blindly | Sync Node diffs changes, updates specs, re-runs full test suite before AI resumes. Pipeline re-pauses if tests fail |
@@ -162,7 +162,7 @@
 | Prompt injection via CR description (low sophistication) | Input Screener flags suspicious patterns at intake. High-risk detections auto-pause for operator review before agents see the input |
 | Prompt injection via CR description (medium sophistication) | Behaviour spec firewall: code agents work from specs, not raw CR text. Adversarial Security Reviewer flags code that doesn't match specs |
 | Prompt injection via CR description (high sophistication) | Diff scope analysis catches out-of-scope changes. Runtime containment limits blast radius. Optional human PR review as final check. Transparent about limits — see §12.9 |
-| Malicious code written that passes AI review | Egress lock prevents exfiltration during TDD. Agent command boundaries prevent secret access. Human PR review catches what AI misses for critical repos |
+| Malicious code written that passes AI review | Egress lock prevents exfiltration during Implementation. Agent command boundaries prevent secret access. Human PR review catches what AI misses for critical repos |
 | Security Reviewer itself is prompt-injected | Reviewer context is isolated: receives diff + specs + risk flags. CR description is marked "untrusted." Different system prompt than code-writing agents |
 | Duplicate CR processed | External ID dedup check before spawning worker |
 | Tenant data leaks across tenants | Tenant ID on every DB row + every Redis key prefix; Controller scopes all queries by active tenant from X-Tenant-ID header; user's tenant membership verified on every request |
@@ -175,7 +175,7 @@
 | Fallback provider produces lower quality | Prompt variants per provider; quality metrics tracked per provider; operator can force primary-only for critical CRs |
 | Provider cost varies after failover | Cost tracking uses actual model pricing regardless of which provider handled the call |
 | Concurrent CRs conflict on same repo | Rebase before delivery catches conflicts early; Merge Conflict Agent resolves automatically; human take-over for complex cases |
-| Merge conflict resolution introduces regression | Full test re-run after resolution; failure loops back to TDD Development |
+| Merge conflict resolution introduces regression | Full test re-run after resolution; failure loops back to Implementation |
 | CR cancelled but artifacts left behind | Cleanup wizard guides operator; can be revisited later. Stale branches visible in dashboard |
 | Source issue changed mid-pipeline | Substantive changes (description, criteria) auto-pause pipeline with decision screen. Non-substantive changes notify only |
 | Failed CR re-run conflicts with old branch | Re-run uses new branch suffix (`-r2`); old artifacts preserved for reference |

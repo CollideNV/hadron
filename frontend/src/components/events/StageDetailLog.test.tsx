@@ -12,18 +12,18 @@ beforeEach(() => {
 describe("StageDetailLog", () => {
   it("shows stage name in header", () => {
     render(
-      <StageDetailLog events={[]} stageName="tdd" onBack={vi.fn()} />,
+      <StageDetailLog events={[]} stageName="implementation" onBack={vi.fn()} />,
     );
-    expect(screen.getByText("tdd Log")).toBeInTheDocument();
+    expect(screen.getByText("implementation Log")).toBeInTheDocument();
   });
 
   it("shows event count", () => {
     const events = [
       makeEvent({ event_type: "stage_entered" }),
-      makeEvent({ event_type: "agent_started", data: { role: "tdd_dev", repo: "" } }),
+      makeEvent({ event_type: "agent_started", data: { role: "developer", repo: "" } }),
     ];
     render(
-      <StageDetailLog events={events} stageName="tdd" onBack={vi.fn()} />,
+      <StageDetailLog events={events} stageName="implementation" onBack={vi.fn()} />,
     );
     expect(screen.getByText("2 events")).toBeInTheDocument();
   });
@@ -31,7 +31,7 @@ describe("StageDetailLog", () => {
   it("shows 1 event (singular)", () => {
     const events = [makeEvent({ event_type: "stage_entered" })];
     render(
-      <StageDetailLog events={events} stageName="tdd" onBack={vi.fn()} />,
+      <StageDetailLog events={events} stageName="implementation" onBack={vi.fn()} />,
     );
     expect(screen.getByText("1 event")).toBeInTheDocument();
   });
@@ -40,7 +40,7 @@ describe("StageDetailLog", () => {
     const user = userEvent.setup();
     const onBack = vi.fn();
     render(
-      <StageDetailLog events={[]} stageName="tdd" onBack={onBack} />,
+      <StageDetailLog events={[]} stageName="implementation" onBack={onBack} />,
     );
 
     const backButton = screen.getByText(/all stages/i);
@@ -57,7 +57,7 @@ describe("StageDetailLog", () => {
       }),
     ];
     render(
-      <StageDetailLog events={events} stageName="tdd" onBack={vi.fn()} />,
+      <StageDetailLog events={events} stageName="implementation" onBack={vi.fn()} />,
     );
     expect(screen.getByText("Pipeline started")).toBeInTheDocument();
     expect(screen.getByText(/Tests PASSED/)).toBeInTheDocument();

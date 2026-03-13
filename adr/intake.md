@@ -79,7 +79,7 @@ repos:
 
 ### 6.3 Stage Handoff
 
-Every stage works on the same worktree directory. Behaviour Translation writes `.feature` files → commits. TDD finds them → writes tests and code → commits. Review reads full state. No file copying, no artifact passing — just git. Branches are pushed to the remote after every stage, ensuring all work survives pod failure and enabling human take-over via `git clone`.
+Every stage works on the same worktree directory. Behaviour Translation writes `.feature` files → commits. Implementation finds them → writes tests and code → commits. Review reads full state. No file copying, no artifact passing — just git. Branches are pushed to the remote after every stage, ensuring all work survives pod failure and enabling human take-over via `git clone`.
 
 ### 6.4 Monorepo Support
 

@@ -203,7 +203,7 @@ export const STAGES = [
   "worktree_setup",
   "behaviour_translation",
   "behaviour_verification",
-  "tdd",
+  "implementation",
   "review",
   "rebase",
   "delivery",

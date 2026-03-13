@@ -634,7 +634,7 @@ class TestConversationCompaction:
         # Should keep original user, add summary, continue prompt, and tail
         assert result[0] == messages[0]  # Original user preserved
         assert "[Conversation compacted" in result[1]["content"]  # Summary block
-        assert result[2]["content"] == "Continue from where you left off."
+        assert "Continue from where you left off" in result[2]["content"]
         assert result[-2:] == messages[-2:]  # Tail preserved
         assert len(result) < len(messages)
 

@@ -6,9 +6,9 @@ import type { AgentSession } from "../agents/types";
 
 function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return {
-    role: "tdd_developer",
+    role: "developer",
     repo: "",
-    stage: "tdd",
+    stage: "implementation",
     completed: false,
     items: [],
     inputTokens: 0,
@@ -41,18 +41,18 @@ describe("StageSummaryCard", () => {
     const events = [
       makeEvent({
         event_type: "stage_entered",
-        stage: "tdd",
+        stage: "implementation",
         timestamp: 1700000000,
       }),
       makeEvent({
         event_type: "stage_completed",
-        stage: "tdd",
+        stage: "implementation",
         timestamp: 1700000075,
       }),
     ];
     render(
       <StageSummaryCard
-        stageName="tdd"
+        stageName="implementation"
         events={events}
         sessions={[]}
         testRuns={[]}
@@ -66,13 +66,13 @@ describe("StageSummaryCard", () => {
     const events = [
       makeEvent({
         event_type: "stage_entered",
-        stage: "tdd",
+        stage: "implementation",
         timestamp: 1700000000,
       }),
     ];
     render(
       <StageSummaryCard
-        stageName="tdd"
+        stageName="implementation"
         events={events}
         sessions={[]}
         testRuns={[]}
@@ -85,7 +85,7 @@ describe("StageSummaryCard", () => {
   it("hides duration when no stage events", () => {
     render(
       <StageSummaryCard
-        stageName="tdd"
+        stageName="implementation"
         events={[]}
         sessions={[]}
         testRuns={[]}
@@ -102,7 +102,7 @@ describe("StageSummaryCard", () => {
     ];
     render(
       <StageSummaryCard
-        stageName="tdd"
+        stageName="implementation"
         events={[]}
         sessions={sessions}
         testRuns={[]}
@@ -120,7 +120,7 @@ describe("StageSummaryCard", () => {
     ];
     render(
       <StageSummaryCard
-        stageName="tdd"
+        stageName="implementation"
         events={[]}
         sessions={[]}
         testRuns={testRuns}
@@ -167,7 +167,7 @@ describe("StageSummaryCard", () => {
     ];
     render(
       <StageSummaryCard
-        stageName="tdd"
+        stageName="implementation"
         events={[]}
         sessions={sessions}
         testRuns={[]}
@@ -188,14 +188,14 @@ describe("StageSummaryCard", () => {
   it("handles empty arrays for all props", () => {
     const { container } = render(
       <StageSummaryCard
-        stageName="tdd"
+        stageName="implementation"
         events={[]}
         sessions={[]}
         testRuns={[]}
         findings={[]}
       />,
     );
-    expect(screen.getByText("tdd")).toBeInTheDocument();
+    expect(screen.getByText("implementation")).toBeInTheDocument();
     expect(screen.queryByText("Duration")).not.toBeInTheDocument();
     expect(screen.queryByText("Cost")).not.toBeInTheDocument();
     expect(screen.queryByText("Tests")).not.toBeInTheDocument();

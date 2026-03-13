@@ -10,7 +10,7 @@ def after_verification(state: PipelineState) -> str:
 
     Returns:
         "translation" — specs rejected, loop back (within circuit breaker)
-        "tdd" — specs verified, proceed
+        "implementation" — specs verified, proceed
         "paused" — circuit breaker tripped or node errored
     """
     # Stop immediately if the node errored (e.g. API failure)
@@ -18,7 +18,7 @@ def after_verification(state: PipelineState) -> str:
         return "paused"
 
     if state.get("behaviour_verified"):
-        return "tdd"
+        return "implementation"
 
     max_loops = (
         state.get("config_snapshot", {})
@@ -36,7 +36,7 @@ def after_review(state: PipelineState) -> str:
 
     Returns:
         "rebase" — review passed, proceed
-        "tdd" — review failed, loop back (within circuit breaker)
+        "implementation" — review failed, loop back (within circuit breaker)
         "paused" — circuit breaker tripped or node errored
     """
     # Stop immediately if the node errored (e.g. API failure)
@@ -54,7 +54,7 @@ def after_review(state: PipelineState) -> str:
     if state.get("review_loop_count", 0) >= max_loops:
         return "paused"
 
-    return "tdd"
+    return "implementation"
 
 
 def after_rebase(state: PipelineState) -> str:

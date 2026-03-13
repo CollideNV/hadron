@@ -5,9 +5,9 @@ import type { AgentSession } from "./types";
 
 function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return {
-    role: "tdd_developer",
+    role: "developer",
     repo: "",
-    stage: "tdd",
+    stage: "implementation",
     completed: false,
     items: [],
     inputTokens: 0,

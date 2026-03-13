@@ -197,10 +197,8 @@ async def run_tool_loop(
             break
 
         # Compact conversation if input tokens are growing too large
-        # or we just got rate-limited (which suggests high token throughput)
         should_compact = (
             response.usage.input_tokens >= COMPACT_INPUT_TOKEN_THRESHOLD
-            or retry_result.throttle_count > 0
         )
         if should_compact and len(messages) >= 5:
             messages = await compact_messages(

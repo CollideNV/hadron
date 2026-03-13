@@ -50,7 +50,7 @@ CR description (untrusted)
          │
     ┌────▼──────────────────────────────────┐
     │  Layer 5: Runtime Containment          │  Even if malicious code is written,
-    │  (egress lock, command boundaries)    │  it can't exfiltrate during TDD
+    │  (egress lock, command boundaries)    │  it can't exfiltrate during Implementation
     └────┬──────────────────────────────────┘
          │
     ┌────▼──────────────────────────────────┐
@@ -90,12 +90,12 @@ The behaviour specs (§8.4–8.5) serve as a **sanitised intermediary** between 
 CR description (untrusted) ──▶ Spec Writer ──▶ Behaviour Specs (structured, testable)
                                                          │
                                                          ▼
-                                                  Code Writer works
-                                                  from SPECS, not
+                                                  Implementation agent
+                                                  works from SPECS, not
                                                   from raw CR text
 ```
 
-**The key principle:** The Code Writer and Test Writer agents receive the behaviour specs as their primary input — not the raw CR description. The CR description is available as reference context (for understanding intent), but the agents are prompted to treat the specs as the authoritative definition of what to build.
+**The key principle:** The Implementation agent receives the behaviour specs as its primary input — not the raw CR description. The CR description is available as reference context (for understanding intent), but the agents are prompted to treat the specs as the authoritative definition of what to build.
 
 This means a malicious instruction in the CR description has to survive two stages to affect code:
 1. The Spec Writer would need to translate "add a /debug/env endpoint" into a Gherkin scenario
@@ -112,7 +112,7 @@ The current Security Reviewer (§8.7) checks for vulnerabilities. For prompt inj
 | Agent | Trust assumption about the CR |
 |-------|------------------------------|
 | Spec Writer | Trusts the CR as input. Translates requirements into specs. |
-| Code Writer | Trusts the specs. Implements what they describe. |
+| Implementation Agent | Trusts the specs. Implements what they describe. |
 | **Security Reviewer** | **Distrusts everything.** Assumes the CR may be adversarial. Evaluates the code independent of what the CR asked for. |
 
 The Security Reviewer's system prompt includes:
@@ -141,7 +141,7 @@ A structural (non-LLM) check that the generated code only touches files and crea
 | **Dependency scope** | Parse package manifest changes. Flag new dependencies not referenced in the code or tests. | Unexpected new dependencies |
 | **Config scope** | Flag changes to CI/CD files, Dockerfiles, infrastructure-as-code, deployment configs, `.env` files. | Infrastructure files modified by a feature CR |
 
-This is deterministic — no LLM involved, so it can't be prompt-injected. It runs after the Code Writer and before the Security Reviewer, surfacing flags for the reviewer to evaluate.
+This is deterministic — no LLM involved, so it can't be prompt-injected. It runs after the Implementation agent and before the Security Reviewer, surfacing flags for the reviewer to evaluate.
 
 These checks produce **warnings**, not hard blocks. A legitimate CR might need to modify a Dockerfile (adding a system dependency for a new feature). The Security Reviewer makes the judgment call. But the flags force explicit attention to out-of-scope changes.
 
@@ -151,7 +151,7 @@ Even if all prompt-level defenses fail and malicious code is written, the runtim
 
 | Containment | What it prevents | Reference |
 |-------------|-----------------|-----------|
-| Egress lock during TDD | Code can't call external services, exfiltrate data, or download payloads during test execution | §7.4 |
+| Egress lock during Implementation | Code can't call external services, exfiltrate data, or download payloads during test execution | §7.4 |
 | Agent command boundaries | Agents can't inspect environment variables, access secrets, or run network tools | §7.6 |
 | Credential isolation | LLM API keys and git tokens are not in the agent's shell scope — malicious code can't read them | §7.6 |
 | Ephemeral infrastructure | Test databases are sidecars with no real data — there's nothing valuable to steal | §7.3 |
@@ -192,7 +192,7 @@ security:
     enabled: true
     auto_pause_on_high_risk: true         # false = warn only, don't pause
   spec_firewall:
-    strict_mode: true                     # Code Writer gets specs only, CR as minimal reference
+    strict_mode: true                     # Implementation agent gets specs only, CR as minimal reference
   adversarial_review:
     enabled: true                         # Security Reviewer uses adversarial prompt
     cr_description_in_review: "marked"    # "marked" (included but flagged), "excluded", "full"

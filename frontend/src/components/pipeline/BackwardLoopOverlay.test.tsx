@@ -84,7 +84,7 @@ describe("BackwardLoopOverlay", () => {
 
   it("returns null when stage refs are missing", () => {
     const loops: LoopArc[] = [
-      { from: "review", to: "tdd", count: 1, label: "review retry" },
+      { from: "review", to: "implementation", count: 1, label: "review retry" },
     ];
 
     // Create refs with no matching stage elements
@@ -113,10 +113,10 @@ describe("BackwardLoopOverlay", () => {
 
   it("renders SVG paths when refs are available", () => {
     const loops: LoopArc[] = [
-      { from: "review", to: "tdd", count: 2, label: "review retry" },
+      { from: "review", to: "implementation", count: 2, label: "review retry" },
     ];
 
-    const { container } = setup(loops, ["review", "tdd"]);
+    const { container } = setup(loops, ["review", "implementation"]);
 
     const svg = container.querySelector("svg");
     expect(svg).not.toBeNull();
@@ -128,10 +128,10 @@ describe("BackwardLoopOverlay", () => {
 
   it("active arcs (count > 0) have count badge text", () => {
     const loops: LoopArc[] = [
-      { from: "review", to: "tdd", count: 3, label: "review retry" },
+      { from: "review", to: "implementation", count: 3, label: "review retry" },
     ];
 
-    const { container } = setup(loops, ["review", "tdd"]);
+    const { container } = setup(loops, ["review", "implementation"]);
 
     const texts = container.querySelectorAll("text");
     const badgeTexts = Array.from(texts).map((t) => t.textContent);
@@ -156,10 +156,10 @@ describe("BackwardLoopOverlay", () => {
 
   it("ResizeObserver is connected on mount and disconnected on unmount", () => {
     const loops: LoopArc[] = [
-      { from: "review", to: "tdd", count: 1, label: "review retry" },
+      { from: "review", to: "implementation", count: 1, label: "review retry" },
     ];
 
-    const result = setup(loops, ["review", "tdd"]);
+    const result = setup(loops, ["review", "implementation"]);
 
     // Observer was created
     expect(resizeObserverInstances.length).toBeGreaterThanOrEqual(1);

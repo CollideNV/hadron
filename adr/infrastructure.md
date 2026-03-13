@@ -89,7 +89,7 @@
  4. Controller creates one K8s Job per repo (Worker pod per repo)
  5. Each Worker independently:
     a. Clones its repo, creates worktree, auto-detects languages/test tooling
-    b. Runs full LangGraph pipeline: translate → verify → TDD → review → rebase → push PR
+    b. Runs full LangGraph pipeline: translate → verify → implement → review → rebase → push PR
     c. Each agent call emits events → Redis Streams
     d. Between agent calls, checks Redis for interventions
     e. Each stage pushes commits to git remote

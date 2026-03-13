@@ -14,7 +14,7 @@
 | **Subgraph** | Which agent, what iteration | Subgraph node events |
 | **Agent** | Tool calls, file edits, reasoning, test results | Agent backend `stream()` |
 
-All three are essential. Level 1 alone just says "TDD for 8 minutes" — you need Level 3 to know if the agent is stuck.
+All three are essential. Level 1 alone just says "Implementation for 8 minutes" — you need Level 3 to know if the agent is stuck.
 
 ### 14.2 Event System
 
@@ -49,10 +49,10 @@ The dashboard writes intervention requests to Redis. Worker pods poll for interv
 
 For `push_and_wait` delivery, each repo's worker pod terminates after pushing its PR and triggering CI — no resources are wasted while waiting. CI results arrive via two mechanisms:
 
-- **Webhook (primary):** External CI sends results to the Controller per repo. When a repo's CI completes, the Controller can spawn a new worker for that repo to resume if needed (e.g. CI failure → loop back to TDD).
+- **Webhook (primary):** External CI sends results to the Controller per repo. When a repo's CI completes, the Controller can spawn a new worker for that repo to resume if needed (e.g. CI failure → loop back to Implementation).
 - **Polling (fallback):** If no webhook arrives within the configured timeout, the Controller polls the CI system's API for status.
 
-If CI passes, the repo's PR is ready for the release gate. If CI fails, the Controller spawns a new worker for that repo to loop back to TDD Development with the failure logs as context.
+If CI passes, the repo's PR is ready for the release gate. If CI fails, the Controller spawns a new worker for that repo to loop back to Implementation with the failure logs as context.
 
 ### 14.6 Circuit Breakers
 
@@ -76,8 +76,8 @@ Circuit breakers **pause** (not fail, not abort). The operator sees the failure 
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  ┌─ auth-service (worker hadron-cr-142-auth) ─────────────────────┐    │
-│  │  ✅ Intake ── ✅ Worktree ── ✅ Behaviour ── ● TDD Dev          │    │
-│  │  Code Writer (iter 2/5)                                    [●]  │    │
+│  │  ✅ Intake ── ✅ Worktree ── ✅ Behaviour ── ● Implementation          │    │
+│  │  Implementation (iter 2/5)                                    [●]  │    │
 │  │  ► Edited src/auth/reset.ts                                     │    │
 │  │  ► npm test → ✅ 14 ❌ 2                                       │    │
 │  │  ► Thinking: "Two tests..."                                     │    │
@@ -85,8 +85,8 @@ Circuit breakers **pause** (not fail, not abort). The operator sees the failure 
 │  └─────────────────────────────────────────────────────────────────┘    │
 │                                                                         │
 │  ┌─ api-gateway (worker hadron-cr-142-apigw) ─────────────────────┐    │
-│  │  ✅ Intake ── ✅ Worktree ── ✅ Behaviour ── ● TDD Dev          │    │
-│  │  Code Writer (iter 1/5)                                    [●]  │    │
+│  │  ✅ Intake ── ✅ Worktree ── ✅ Behaviour ── ● Implementation          │    │
+│  │  Implementation (iter 1/5)                                    [●]  │    │
 │  │  ► Reading routes/auth.ts                                       │    │
 │  │  ► Adding /auth/reset route                                     │    │
 │  │  [⏸ Pause]  [💬 Redirect]  [⏭ Skip Stage]  [🛑 Abort]         │    │

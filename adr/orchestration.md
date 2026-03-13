@@ -65,7 +65,7 @@ State is checkpointed to PostgreSQL after every node completes.
          └── issues ─────┘        │ verified
                                   │
          ┌────────────────────────▼──────────────────────┐
-    ┌───▶│  TDD Development                              │◀── CI failure
+    ┌───▶│  Implementation                                │◀── CI failure
     │    └────────────────────────┬───────────────────────┘
     │    ┌────────────────────────▼──────────────────────┐
     │    │  Code Review                                  │
@@ -84,7 +84,7 @@ State is checkpointed to PostgreSQL after every node completes.
                           │          │ Re-run tests │   │ Pause → human   │
                           │          └──┬──────┬───┘   │ takes over      │
                           │        pass │      │ fail  └─────────────────┘
-                          ◄─────────────┘      └──────▶ loop to TDD Dev
+                          ◄─────────────┘      └──────▶ loop to Implementation
                           │
                    ┌──────▼────────────────────────────────────┐
                    │  Delivery (strategy-dependent)             │
@@ -112,4 +112,4 @@ State is checkpointed to PostgreSQL after every node completes.
                               └────────────────────┘
 ```
 
-**Conditional edges:** Behaviour Verification loops back to Translation on issues. Code Review loops back to TDD Development on critical findings. Rebase routes to Merge Conflict Agent on conflicts, which loops back to TDD Development if resolution breaks tests, or pauses for human take-over if unresolvable. Delivery loops back to TDD Development on CI failure. Release Gate routes to Release on approval or back to Cleanup on rejection. After approval, the Atomic Merge Check loops back to Rebase if `main` has moved since the last test cycle. After Release (or failure), the Retrospective Agent distils learnings into the Knowledge Store.
+**Conditional edges:** Behaviour Verification loops back to Translation on issues. Code Review loops back to Implementation on critical findings. Rebase routes to Merge Conflict Agent on conflicts, which loops back to Implementation if resolution breaks tests, or pauses for human take-over if unresolvable. Delivery loops back to Implementation on CI failure. Release Gate routes to Release on approval or back to Cleanup on rejection. After approval, the Atomic Merge Check loops back to Rebase if `main` has moved since the last test cycle. After Release (or failure), the Retrospective Agent distils learnings into the Knowledge Store.

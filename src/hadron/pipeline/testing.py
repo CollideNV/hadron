@@ -1,4 +1,4 @@
-"""Shared test runner used by TDD, Rebase, and Delivery nodes."""
+"""Shared test runner used by Implementation, Rebase, and Delivery nodes."""
 
 from __future__ import annotations
 

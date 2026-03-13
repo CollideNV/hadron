@@ -32,7 +32,7 @@ describe("StageTimeline", () => {
     expect(screen.getByText("Worktree")).toBeInTheDocument();
     expect(screen.getByText("Translate")).toBeInTheDocument();
     expect(screen.getByText("Verify")).toBeInTheDocument();
-    expect(screen.getByText("TDD")).toBeInTheDocument();
+    expect(screen.getByText("Implement")).toBeInTheDocument();
     expect(screen.getByText("Review")).toBeInTheDocument();
     expect(screen.getByText("Rebase")).toBeInTheDocument();
     expect(screen.getByText("Deliver")).toBeInTheDocument();
@@ -44,7 +44,7 @@ describe("StageTimeline", () => {
   it("shows checkmark for completed stages", () => {
     const { container } = render(
       <StageTimeline
-        currentStage="tdd"
+        currentStage="implementation"
         completedStages={new Set(["intake", "repo_id", "worktree_setup"])}
         status="running"
       />,
@@ -59,13 +59,13 @@ describe("StageTimeline", () => {
   it("shows icon text for current non-completed stage", () => {
     render(
       <StageTimeline
-        currentStage="tdd"
+        currentStage="implementation"
         completedStages={new Set()}
         status="running"
       />,
     );
-    // TDD stage should show "TD" icon text (not a checkmark)
-    expect(screen.getByText("TD")).toBeInTheDocument();
+    // Implementation stage should show "IM" icon text (not a checkmark)
+    expect(screen.getByText("IM")).toBeInTheDocument();
   });
 
   it("calls onSelectStage when a stage is clicked", async () => {
@@ -73,7 +73,7 @@ describe("StageTimeline", () => {
     const user = userEvent.setup();
     render(
       <StageTimeline
-        currentStage="tdd"
+        currentStage="implementation"
         completedStages={new Set(["intake"])}
         status="running"
         onSelectStage={onSelectStage}
@@ -87,7 +87,7 @@ describe("StageTimeline", () => {
   it("shows X icon for failed current stage", () => {
     const { container } = render(
       <StageTimeline
-        currentStage="tdd"
+        currentStage="implementation"
         completedStages={new Set()}
         status="failed"
       />,

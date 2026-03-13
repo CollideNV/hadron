@@ -27,10 +27,10 @@ describe("buildStageInfos", () => {
 
   it("tracks agent lifecycle", () => {
     const events = [
-      makeEvent({ event_type: "stage_entered", stage: "tdd", timestamp: 100 }),
-      makeEvent({ event_type: "agent_started", stage: "tdd", timestamp: 110, data: { role: "developer", repo: "myrepo" } }),
-      makeEvent({ event_type: "agent_tool_call", stage: "tdd", timestamp: 120, data: { role: "developer", repo: "myrepo", tool: "read_file" } }),
-      makeEvent({ event_type: "agent_completed", stage: "tdd", timestamp: 130, data: { role: "developer", repo: "myrepo", input_tokens: 0, output_tokens: 0, cost_usd: 0 } }),
+      makeEvent({ event_type: "stage_entered", stage: "implementation", timestamp: 100 }),
+      makeEvent({ event_type: "agent_started", stage: "implementation", timestamp: 110, data: { role: "developer", repo: "myrepo" } }),
+      makeEvent({ event_type: "agent_tool_call", stage: "implementation", timestamp: 120, data: { role: "developer", repo: "myrepo", tool: "read_file" } }),
+      makeEvent({ event_type: "agent_completed", stage: "implementation", timestamp: 130, data: { role: "developer", repo: "myrepo", input_tokens: 0, output_tokens: 0, cost_usd: 0 } }),
     ];
     const result = buildStageInfos(events);
     expect(result[0].agents).toHaveLength(1);
@@ -60,12 +60,12 @@ describe("buildStageInfos", () => {
 
   it("preserves pipeline stage order", () => {
     const events = [
-      makeEvent({ event_type: "stage_entered", stage: "tdd", timestamp: 200 }),
+      makeEvent({ event_type: "stage_entered", stage: "implementation", timestamp: 200 }),
       makeEvent({ event_type: "stage_entered", stage: "intake", timestamp: 100 }),
     ];
     const result = buildStageInfos(events);
     expect(result[0].stage).toBe("intake");
-    expect(result[1].stage).toBe("tdd");
+    expect(result[1].stage).toBe("implementation");
   });
 
   it("filters out stages with no activity", () => {

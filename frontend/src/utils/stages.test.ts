@@ -6,8 +6,8 @@ describe("getStageColor", () => {
     expect(getStageColor("intake")).toBe(GROUP_ACCENT.Understand);
   });
 
-  it("returns correct color for tdd stage", () => {
-    expect(getStageColor("tdd")).toBe(GROUP_ACCENT.Build);
+  it("returns correct color for implementation stage", () => {
+    expect(getStageColor("implementation")).toBe(GROUP_ACCENT.Build);
   });
 
   it("returns correct color for review stage", () => {
@@ -19,7 +19,7 @@ describe("getStageColor", () => {
   });
 
   it("handles stage:repo format by extracting base stage", () => {
-    expect(getStageColor("tdd:backend")).toBe(GROUP_ACCENT.Build);
+    expect(getStageColor("implementation:backend")).toBe(GROUP_ACCENT.Build);
   });
 
   it("returns Build color for unknown stage", () => {
@@ -36,7 +36,7 @@ describe("STAGE_GROUP", () => {
     const expectedStages = [
       "intake", "repo_id", "worktree_setup",
       "behaviour_translation", "behaviour_verification",
-      "tdd", "review", "rebase",
+      "implementation", "review", "rebase",
       "delivery", "release_gate", "release", "retrospective",
     ];
     for (const stage of expectedStages) {

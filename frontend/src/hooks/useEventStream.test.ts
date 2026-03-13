@@ -101,11 +101,11 @@ describe("useEventStream", () => {
 
     act(() => {
       capturedOnEvent!(
-        makeEvent({ event_type: "stage_entered", stage: "tdd" }),
+        makeEvent({ event_type: "stage_entered", stage: "implementation" }),
       );
     });
 
-    expect(result.current.currentStage).toBe("tdd");
+    expect(result.current.currentStage).toBe("implementation");
     expect(result.current.status).toBe("running"); // auto-transitions from connecting
   });
 
@@ -340,12 +340,12 @@ describe("useEventStream", () => {
         makeEvent({ event_type: "stage_completed", stage: "intake" }),
       );
       capturedOnEvent!(
-        makeEvent({ event_type: "stage_entered", stage: "tdd" }),
+        makeEvent({ event_type: "stage_entered", stage: "implementation" }),
       );
     });
 
     expect(result.current.events).toHaveLength(4);
-    expect(result.current.currentStage).toBe("tdd");
+    expect(result.current.currentStage).toBe("implementation");
     expect(result.current.completedStages.has("intake")).toBe(true);
   });
 });

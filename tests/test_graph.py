@@ -13,7 +13,7 @@ EXPECTED_NODES = {
     "worktree_setup",
     "translation",
     "verification",
-    "tdd",
+    "implementation",
     "review",
     "rebase",
     "delivery",
@@ -69,8 +69,8 @@ class TestLinearEdges:
     def test_translation_to_verification(self) -> None:
         assert ("translation", "verification") in self._get_plain_edges()
 
-    def test_tdd_to_review(self) -> None:
-        assert ("tdd", "review") in self._get_plain_edges()
+    def test_implementation_to_review(self) -> None:
+        assert ("implementation", "review") in self._get_plain_edges()
 
     def test_delivery_to_release(self) -> None:
         assert ("delivery", "release") in self._get_plain_edges()

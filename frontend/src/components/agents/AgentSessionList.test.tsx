@@ -6,9 +6,9 @@ import type { AgentSession } from "./types";
 
 function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return {
-    role: "tdd_developer",
+    role: "developer",
     repo: "",
-    stage: "tdd",
+    stage: "implementation",
     completed: false,
     items: [],
     inputTokens: 0,
@@ -25,11 +25,11 @@ function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
 
 describe("AgentSessionList", () => {
   it("renders session role names formatted (underscores to spaces)", () => {
-    const sessions = [makeSession({ role: "tdd_developer" })];
+    const sessions = [makeSession({ role: "developer" })];
     render(
       <AgentSessionList sessions={sessions} selectedIndex={0} onSelect={() => {}} />,
     );
-    expect(screen.getByText("tdd developer")).toBeInTheDocument();
+    expect(screen.getByText("developer")).toBeInTheDocument();
   });
 
   it("calls onSelect with correct index when clicked", async () => {
@@ -37,19 +37,19 @@ describe("AgentSessionList", () => {
     const onSelect = vi.fn();
     const sessions = [
       makeSession({ role: "spec_writer" }),
-      makeSession({ role: "tdd_developer" }),
+      makeSession({ role: "developer" }),
     ];
     render(
       <AgentSessionList sessions={sessions} selectedIndex={0} onSelect={onSelect} />,
     );
-    await user.click(screen.getByText("tdd developer"));
+    await user.click(screen.getByText("developer"));
     expect(onSelect).toHaveBeenCalledWith(1);
   });
 
   it("shows completion indicator (completed vs active)", () => {
     const sessions = [
       makeSession({ role: "spec_writer", completed: true }),
-      makeSession({ role: "tdd_developer", completed: false }),
+      makeSession({ role: "developer", completed: false }),
     ];
     const { container } = render(
       <AgentSessionList sessions={sessions} selectedIndex={0} onSelect={() => {}} />,
@@ -85,7 +85,7 @@ describe("AgentSessionList", () => {
   it("highlights selected session with bg-accent/10 class", () => {
     const sessions = [
       makeSession({ role: "spec_writer" }),
-      makeSession({ role: "tdd_developer" }),
+      makeSession({ role: "developer" }),
     ];
     const { container } = render(
       <AgentSessionList sessions={sessions} selectedIndex={1} onSelect={() => {}} />,

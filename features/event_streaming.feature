@@ -30,7 +30,7 @@ Feature: Event Streaming
     And an agent completed event is emitted when the agent finishes
 
   Scenario: Test and review events
-    When tests are executed during TDD
+    When tests are executed during implementation
     Then test run events are emitted with pass/fail status
     When review findings are produced
     Then review finding events may be emitted

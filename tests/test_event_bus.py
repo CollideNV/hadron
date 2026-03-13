@@ -117,12 +117,12 @@ class TestReplay:
     @pytest.mark.asyncio
     async def test_emit_then_replay_returns_events_and_last_id(self, bus: RedisEventBus) -> None:
         await bus.emit(_make_event(stage="intake"))
-        await bus.emit(_make_event(stage="tdd"))
+        await bus.emit(_make_event(stage="implementation"))
 
         pairs, last_id = await bus.replay("cr-1")
         assert len(pairs) == 2
         assert pairs[0][0].stage == "intake"
-        assert pairs[1][0].stage == "tdd"
+        assert pairs[1][0].stage == "implementation"
         assert last_id == "0-2"  # second message
 
     @pytest.mark.asyncio

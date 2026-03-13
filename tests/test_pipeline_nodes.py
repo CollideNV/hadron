@@ -113,7 +113,7 @@ def _base_state(**overrides: Any) -> dict[str, Any]:
         },
         "behaviour_specs": [],
         "review_results": [],
-        "config_snapshot": {"pipeline": {"max_tdd_iterations": 5}},
+        "config_snapshot": {"pipeline": {}},
         "verification_loop_count": 0,
         "dev_loop_count": 0,
         "review_loop_count": 0,
@@ -515,40 +515,30 @@ class TestBehaviourVerificationNode:
 
 
 # ===========================================================================
-# TDD Node
+# Implementation Node
 # ===========================================================================
 
 
-class TestTddNode:
-    """Tests for tdd_node."""
+class TestImplementationNode:
+    """Tests for implementation_node."""
 
     @pytest.mark.asyncio
-    async def test_happy_path_tests_pass_first_try(self) -> None:
-        """Test writer + code writer succeed, tests pass on first iteration."""
-        from hadron.pipeline.nodes.tdd import tdd_node
+    async def test_happy_path_tests_pass(self) -> None:
+        """Single agent completes, tests pass."""
+        from hadron.pipeline.nodes.implementation import implementation_node
 
         config = _make_config()
         state = _base_state()
 
-        test_writer_result = _make_agent_run_result(output="Tests written", cost_usd=0.02, input_tokens=200, output_tokens=100)
-        code_writer_result = _make_agent_run_result(output="Code implemented", cost_usd=0.03, input_tokens=300, output_tokens=150)
-
-        call_count = 0
-
-        async def mock_run_agent(ctx, *, role, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if role == "test_writer":
-                return test_writer_result
-            return code_writer_result
+        agent_result = _make_agent_run_result(output="Implementation complete", cost_usd=0.05, input_tokens=500, output_tokens=250)
 
         with (
-            patch("hadron.pipeline.nodes.tdd.run_agent", side_effect=mock_run_agent),
-            patch("hadron.pipeline.nodes.tdd.run_test_command", return_value=(True, "All 5 tests passed")),
+            patch("hadron.pipeline.nodes.implementation.run_agent", return_value=agent_result),
+            patch("hadron.pipeline.nodes.implementation.run_test_command", return_value=(True, "All 5 tests passed")),
             patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             MockWM.return_value.commit = AsyncMock()
-            result = await tdd_node(state, config)
+            result = await implementation_node(state, config)
 
         assert result["dev_results"][0]["tests_passing"] is True
         assert result["dev_results"][0]["dev_iteration"] == 1
@@ -556,100 +546,103 @@ class TestTddNode:
         assert result["cost_input_tokens"] == 500
         assert result["cost_output_tokens"] == 250
         assert result["dev_loop_count"] == 1
+        assert result["current_stage"] == "implementation"
 
     @pytest.mark.asyncio
-    async def test_tests_fail_then_pass_on_retry(self) -> None:
-        """Tests fail first iteration, pass second -> 2 iterations."""
-        from hadron.pipeline.nodes.tdd import tdd_node
+    async def test_tests_fail(self) -> None:
+        """Agent completes but tests fail -> tests_passing=False."""
+        from hadron.pipeline.nodes.implementation import implementation_node
 
         config = _make_config()
         state = _base_state()
 
-        test_writer_result = _make_agent_run_result(output="Tests written", cost_usd=0.02)
-        code_writer_result = _make_agent_run_result(output="Code implemented", cost_usd=0.03)
-
-        async def mock_run_agent(ctx, *, role, **kwargs):
-            if role == "test_writer":
-                return test_writer_result
-            return code_writer_result
-
-        test_call_count = 0
-
-        async def mock_run_test(*args, **kwargs):
-            nonlocal test_call_count
-            test_call_count += 1
-            # Call 1: initial test run (before code writer loop)
-            # Call 2: after code writer iteration 0
-            # Call 3: after code writer iteration 1
-            if test_call_count <= 2:
-                return (False, "FAILED: test_login")
-            return (True, "All tests passed")
-
         with (
-            patch("hadron.pipeline.nodes.tdd.run_agent", side_effect=mock_run_agent),
-            patch("hadron.pipeline.nodes.tdd.run_test_command", side_effect=mock_run_test),
+            patch("hadron.pipeline.nodes.implementation.run_agent", return_value=_make_agent_run_result(output="done")),
+            patch("hadron.pipeline.nodes.implementation.run_test_command", return_value=(False, "FAILED: test_login")),
             patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             MockWM.return_value.commit = AsyncMock()
-            result = await tdd_node(state, config)
-
-        assert result["dev_results"][0]["tests_passing"] is True
-        assert result["dev_results"][0]["dev_iteration"] == 2
-
-    @pytest.mark.asyncio
-    async def test_tests_fail_all_iterations(self) -> None:
-        """Tests fail all max_tdd_iterations -> tests_passing=False."""
-        from hadron.pipeline.nodes.tdd import tdd_node
-
-        config = _make_config()
-        state = _base_state()
-        state["config_snapshot"]["pipeline"]["max_tdd_iterations"] = 2
-
-        async def mock_run_agent(ctx, *, role, **kwargs):
-            return _make_agent_run_result(output="attempted", cost_usd=0.01)
-
-        with (
-            patch("hadron.pipeline.nodes.tdd.run_agent", side_effect=mock_run_agent),
-            patch("hadron.pipeline.nodes.tdd.run_test_command", return_value=(False, "FAILED")),
-            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
-        ):
-            MockWM.return_value.commit = AsyncMock()
-            result = await tdd_node(state, config)
+            result = await implementation_node(state, config)
 
         assert result["dev_results"][0]["tests_passing"] is False
-        assert result["dev_results"][0]["dev_iteration"] == 2
 
     @pytest.mark.asyncio
     async def test_commits_work_after_completion(self) -> None:
-        """After TDD loop, work is committed via WorktreeManager."""
-        from hadron.pipeline.nodes.tdd import tdd_node
+        """After implementation, work is committed via WorktreeManager."""
+        from hadron.pipeline.nodes.implementation import implementation_node
 
         config = _make_config()
         state = _base_state()
 
-        async def mock_run_agent(ctx, *, role, **kwargs):
-            return _make_agent_run_result(output="done")
-
         with (
-            patch("hadron.pipeline.nodes.tdd.run_agent", side_effect=mock_run_agent),
-            patch("hadron.pipeline.nodes.tdd.run_test_command", return_value=(True, "passed")),
+            patch("hadron.pipeline.nodes.implementation.run_agent", return_value=_make_agent_run_result(output="done")),
+            patch("hadron.pipeline.nodes.implementation.run_test_command", return_value=(True, "passed")),
             patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             commit_mock = AsyncMock()
             MockWM.return_value.commit = commit_mock
-            await tdd_node(state, config)
+            await implementation_node(state, config)
 
         commit_mock.assert_awaited_once()
         call_args = commit_mock.call_args
         assert "CR-abc123" in call_args[0][1]  # commit message contains CR ID
 
     @pytest.mark.asyncio
+    async def test_initial_uses_implementation_role(self) -> None:
+        """First run (review_loop_count=0) uses 'implementation' role."""
+        from hadron.pipeline.nodes.implementation import implementation_node
+
+        config = _make_config()
+        state = _base_state()
+
+        roles_seen = []
+
+        async def mock_run_agent(ctx, *, role, **kwargs):
+            roles_seen.append(role)
+            return _make_agent_run_result(output="done")
+
+        with (
+            patch("hadron.pipeline.nodes.implementation.run_agent", side_effect=mock_run_agent),
+            patch("hadron.pipeline.nodes.implementation.run_test_command", return_value=(True, "passed")),
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
+        ):
+            MockWM.return_value.commit = AsyncMock()
+            await implementation_node(state, config)
+
+        assert roles_seen == ["implementation"]
+
+    @pytest.mark.asyncio
+    async def test_rework_uses_rework_role(self) -> None:
+        """On retry (review_loop_count>0) uses 'implementation_rework' role."""
+        from hadron.pipeline.nodes.implementation import implementation_node
+
+        config = _make_config()
+        state = _base_state(review_loop_count=1)
+
+        roles_seen = []
+
+        async def mock_run_agent(ctx, *, role, **kwargs):
+            roles_seen.append(role)
+            return _make_agent_run_result(output="done")
+
+        with (
+            patch("hadron.pipeline.nodes.implementation.run_agent", side_effect=mock_run_agent),
+            patch("hadron.pipeline.nodes.implementation.run_test_command", return_value=(True, "passed")),
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
+        ):
+            MockWM.return_value.commit = AsyncMock()
+            await implementation_node(state, config)
+
+        assert roles_seen == ["implementation_rework"]
+
+    @pytest.mark.asyncio
     async def test_review_feedback_included(self) -> None:
-        """When review_results have findings, they are included in code_writer prompt."""
-        from hadron.pipeline.nodes.tdd import tdd_node
+        """When review_results have findings, they are included in rework prompt."""
+        from hadron.pipeline.nodes.implementation import implementation_node
 
         config = _make_config()
         state = _base_state(
+            review_loop_count=1,
             review_results=[{
                 "repo_name": "repo",
                 "findings": [{"severity": "major", "message": "SQL injection risk", "file": "auth.py", "line": 42}],
@@ -657,22 +650,46 @@ class TestTddNode:
             }],
         )
 
-        prompts_seen = []
+        roles_seen = []
 
-        async def mock_run_agent(ctx, *, role, user_prompt="", **kwargs):
-            prompts_seen.append((role, kwargs.get("user_prompt", user_prompt)))
+        async def mock_run_agent(ctx, *, role, **kwargs):
+            roles_seen.append(role)
             return _make_agent_run_result(output="done")
 
         with (
-            patch("hadron.pipeline.nodes.tdd.run_agent", side_effect=mock_run_agent),
-            patch("hadron.pipeline.nodes.tdd.run_test_command", return_value=(True, "passed")),
+            patch("hadron.pipeline.nodes.implementation.run_agent", side_effect=mock_run_agent),
+            patch("hadron.pipeline.nodes.implementation.run_test_command", return_value=(True, "passed")),
             patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             MockWM.return_value.commit = AsyncMock()
-            await tdd_node(state, config)
+            await implementation_node(state, config)
 
-        # The run_agent calls should have happened
-        assert len(prompts_seen) >= 2  # test_writer + code_writer
+        # Should use rework role when review_loop_count > 0
+        assert roles_seen == ["implementation_rework"]
+
+    @pytest.mark.asyncio
+    async def test_single_agent_call(self) -> None:
+        """Only one run_agent call is made (no test_writer + code_writer split)."""
+        from hadron.pipeline.nodes.implementation import implementation_node
+
+        config = _make_config()
+        state = _base_state()
+        call_count = 0
+
+        async def mock_run_agent(ctx, *, role, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return _make_agent_run_result(output="done")
+
+        with (
+            patch("hadron.pipeline.nodes.implementation.run_agent", side_effect=mock_run_agent),
+            patch("hadron.pipeline.nodes.implementation.run_test_command", return_value=(True, "passed")),
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
+        ):
+            MockWM.return_value.commit = AsyncMock()
+            await implementation_node(state, config)
+
+        assert call_count == 1
 
 
 # ===========================================================================
@@ -794,8 +811,8 @@ class TestReviewNode:
         assert result["review_passed"] is True
 
     @pytest.mark.asyncio
-    async def test_unparseable_reviewer_output_fails(self) -> None:
-        """If a reviewer returns non-JSON, it's treated as failed review."""
+    async def test_unparseable_reviewer_output_does_not_block(self) -> None:
+        """If a reviewer returns non-JSON, it's treated as minor (infrastructure issue)."""
         from hadron.pipeline.nodes.review import review_node
 
         clean_review = json.dumps({"review_passed": True, "findings": []})
@@ -815,8 +832,8 @@ class TestReviewNode:
             MockWM.return_value.get_diff = AsyncMock(return_value="diff --git a/main.py b/main.py")
             result = await review_node(state, config)
 
-        # Unparseable output results in a "major" finding -> blocks
-        assert result["review_passed"] is False
+        # Unparseable output results in a "minor" finding -> does not block
+        assert result["review_passed"] is True
 
     @pytest.mark.asyncio
     async def test_review_loop_count_increments(self) -> None:

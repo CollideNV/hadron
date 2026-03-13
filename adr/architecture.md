@@ -18,7 +18,7 @@ This document describes the architecture for a fully AI-driven Software Developm
 
 **Repo Management:** Git worktrees — one branch per repo per change request. Each repo runs in its own worker pod. Language and test tooling auto-detected from repo files (pyproject.toml, package.json, Cargo.toml, etc.).
 
-**Execution Sandboxing:** Kubernetes pods. Each repo in a change request runs in its own ephemeral worker pod with process isolation, resource limits, and stage-aware network policies. AI-generated code runs egress-locked during TDD (LLM APIs and git only); full egress unlocked after Security Review passes. Test infrastructure (databases, caches) runs as ephemeral sidecars — no shared staging environments.
+**Execution Sandboxing:** Kubernetes pods. Each repo in a change request runs in its own ephemeral worker pod with process isolation, resource limits, and stage-aware network policies. AI-generated code runs egress-locked during Implementation (LLM APIs and git only); full egress unlocked after Security Review passes. Test infrastructure (databases, caches) runs as ephemeral sidecars — no shared staging environments.
 
 **Prompt Injection Defense:** Six-layer defense model. Input risk screening at intake catches low-effort attacks. Behaviour specs act as a sanitised firewall between untrusted CR text and code-writing agents. Security Reviewer operates in adversarial mode — treats the CR as hostile, flags code that doesn't match specs regardless of stated justification. Deterministic diff scope analysis catches out-of-scope changes. Runtime containment (egress lock, command boundaries) limits blast radius. Optional human PR review as final layer.
 
@@ -26,11 +26,11 @@ This document describes the architecture for a fully AI-driven Software Developm
 
 **Landscape Intelligence:** A background Scanner continuously builds knowledge of the application ecosystem — what each service does, what it owns, how services connect. The pipeline queries this knowledge at intake time to determine affected repos.
 
-**Delivery (pluggable tail):** Pluggable delivery strategies — the pipeline always produces code on a branch; what happens next (self-verify, push-and-wait-for-CI, push-and-forget) is configuration. PRs include a structured summary (specs, tests, review findings, cost). Optional human code review: teams can require PR approval before the release gate, with review comments feeding back into the TDD loop.
+**Delivery (pluggable tail):** Pluggable delivery strategies — the pipeline always produces code on a branch; what happens next (self-verify, push-and-wait-for-CI, push-and-forget) is configuration. PRs include a structured summary (specs, tests, review findings, cost). Optional human code review: teams can require PR approval before the release gate, with review comments feeding back into the Implementation loop.
 
 **Control Room:** Real-time event stream via Redis Streams and Server-Sent Events (SSE), with three levels of observability (pipeline → subgraph → agent tool calls). Pause, redirect, skip, take over, or abort at any moment (via REST API). Pluggable notifications (Slack, Teams, email, GitHub, custom webhooks) ensure humans stay informed.
 
-**Multi-Repo Coordination:** When a CR affects multiple repos, the Controller spawns one worker pod per repo. Each worker runs independently through the full pipeline (translate → TDD → review → push PR → terminate). The Controller tracks all workers for a CR and coordinates the release gate — once all repos have pushed reviewed PRs, a human can approve and merge them all.
+**Multi-Repo Coordination:** When a CR affects multiple repos, the Controller spawns one worker pod per repo. Each worker runs independently through the full pipeline (translate → implement → review → push PR → terminate). The Controller tracks all workers for a CR and coordinates the release gate — once all repos have pushed reviewed PRs, a human can approve and merge them all.
 
 **Cost Tracking:** Token costs accumulated per agent call in real-time. Dashboard shows running cost per CR. Circuit breakers auto-pause when thresholds are exceeded.
 
@@ -49,7 +49,7 @@ This document describes the architecture for a fully AI-driven Software Developm
 │                           │    │                                                               │    │                       │
 │  Jira                     │    │  Intake → Repo ID → Worktrees → Behaviour → Verify →         │    │  self_contained       │
 │  GitHub Issues            │───▶│                                  Translation                  │───▶│  push_and_wait        │
-│  Azure DevOps             │    │                     TDD → Review → Delivery → Release         │    │  push_and_forget      │
+│  Azure DevOps             │    │                     Implementation → Review → Delivery → Release│    │  push_and_forget      │
 │  Manual / API             │    │                                                               │    │                       │
 │  Slack                    │    │  (with feedback loops: verify↔translate, review↔dev, CI↔dev)  │    │                       │
 └───────────────────────────┘    └───────────────────────────────────────────────────────────────┘    └───────────────────────┘
@@ -72,7 +72,7 @@ This document describes the architecture for a fully AI-driven Software Developm
 | 1b | Repo Identification | Structured CR + landscape knowledge | Confirmed list of affected repos | Phase 1: none. Phase 2+: LLM | ← human correction |
 | 2 | Behaviour Translation | Structured CR + repo context | Gherkin specs per repo | Analyst → Mapper → Writer | ← from Verification |
 | 3 | Behaviour Verification | Behaviour specs | Verified / rejected + feedback | Completeness + Consistency + Regression | → to Translation |
-| 4 | TDD Development | Verified specs (+ review/CI feedback) | Passing code + tests on branch | Test Writer → Code Writer → Runner | ← from Review or CI |
+| 4 | Implementation | Verified specs (+ review/CI feedback) | Passing code + tests on branch | Implementation agent writes tests and code | ← from Review or CI |
 | 5 | Code Review | Code + tests + specs + risk flags | Review verdict + scope warnings | Diff Scope Analyser + Security (adversarial) + Quality + Spec Compliance | → to Development |
 | 5b | Rebase & Conflict Resolution | Reviewed code on branch | Clean branch on latest main | Merge Conflict Agent (if needed) | ← human take-over if unresolvable |
 | 6 | Delivery | Rebased code on branch | Verification result | Depends on strategy | ← optional CI loop |
@@ -128,13 +128,13 @@ This document describes the architecture for a fully AI-driven Software Developm
 | Tenant switcher in dashboard | User selects active tenant. All views, actions, and events scope to it. `X-Tenant-ID` header on every API call |
 | Role-based access with Approver gate | Release approval is the critical safety checkpoint — only authorised humans |
 | Infrastructure-as-a-Sidecar | Test databases and caches are ephemeral pod sidecars. No shared staging. All state wiped when the pod dies |
-| Stage-aware network policy (egress locking) | AI-generated code runs network-locked during TDD. Full egress unlocked only after Security Review passes |
+| Stage-aware network policy (egress locking) | AI-generated code runs network-locked during Implementation. Full egress unlocked only after Security Review passes |
 | Dynamic worker sizing | Pod resources scale with repo characteristics (test suite weight, compilation heaviness). Each repo has its own pod — no multi-repo resource contention |
 | Atomic Merge Check (stale approval protection) | After approval, verify main hasn't moved. If it has, auto-rebase and re-test before merging — no human re-approval needed unless tests fail |
 | Agent Retrospective (post-CR knowledge distillation) | Lightweight LLM call after every CR extracts repo-specific learnings. Future CRs benefit from past mistakes |
 | Resume-with-Validation (Sync Node) | After human take-over, pipeline diffs, updates specs, and re-runs tests before the AI continues. Never operates on stale assumptions |
 | PR body as first-class output | Human reviewers outside the pipeline see a structured summary: CR, specs, test results, review findings, cost. Not an afterthought |
-| Optional human PR review in delivery loop | Teams that don't trust AI-only review can require PR approval before release gate. Human review comments loop back to TDD like any other feedback |
+| Optional human PR review in delivery loop | Teams that don't trust AI-only review can require PR approval before release gate. Human review comments loop back to Implementation like any other feedback |
 | Git auth via short-lived tokens (GitHub App preferred) | Per-tenant, auto-rotated, scoped to repos. Workers never see raw credentials. SSH keys as fallback |
 | Agent command boundaries (defense in depth) | Non-root user + seccomp + filesystem permissions + egress lock + SDK allowlists. Agents can run tests and builds but not inspect the pod or exfiltrate data |
 | Configurable data retention with cleanup CronJob | Event streams 90 days, audit 2 years, cost detail 6 months, stale branches 90 days. All configurable per tenant. Compliance mode disables cleanup |
@@ -157,7 +157,7 @@ This document describes the architecture for a fully AI-driven Software Developm
 | Pluggable notification channels | Slack, Teams, email, GitHub, custom webhooks — all hookable, user-subscribable |
 | Token cost tracking per agent call | Accumulated in real-time, visible in dashboard, drives circuit breakers |
 | Monorepo as directory-scoped applications | Same model — one worktree, agents scoped to application directories |
-| Graduated test scope during TDD | Narrow tests for fast iteration loops, full suite before review gate. Agent widens scope based on codebase understanding. Pre-existing failures excluded by diffing against main |
+| Graduated test scope during Implementation | Narrow tests for fast iteration loops, full suite before review gate. Agent widens scope based on codebase understanding. Pre-existing failures excluded by diffing against main |
 | Rebase before delivery, not at merge time | Catches conflicts while the pipeline still has full context (CR intent, specs, code). Agent or human can resolve immediately rather than discovering conflicts after PR is opened |
 | Merge Conflict Agent with human fallback | Automated resolution for common cases; pause + notify for complex conflicts. Human always has the option to take over the branch |
 | Provider chain per agent role | Ordered failover list, not single provider. Each role can have different chains — spec writing may demand Claude, quality review can use anything |

@@ -68,13 +68,13 @@ Primary provider (e.g. Anthropic Claude Sonnet)
 | Timeout per call | 120s | ✅ | Max wait for a single LLM response |
 | Rate limit handling | auto | ✅ | Respect `Retry-After` header; back-pressure across all agents sharing the same API key |
 
-**Failover scope:** When a provider fails, only the specific agent call fails over — not the entire pipeline. CR-142's Code Writer might be using the fallback while CR-143's Spec Writer is still on the primary. Each agent call makes its own failover decision independently.
+**Failover scope:** When a provider fails, only the specific agent call fails over — not the entire pipeline. CR-142's Implementation agent might be using the fallback while CR-143's Spec Writer is still on the primary. Each agent call makes its own failover decision independently.
 
 **Rate limit coordination:** Multiple agents across multiple CRs share API keys. The pipeline maintains a per-key token bucket that tracks rate limit headers from the provider. When approaching limits, it throttles new calls rather than hitting 429s. This is especially important for Anthropic (tokens-per-minute limits) and OpenAI (requests-per-minute limits).
 
 **Provider health tracking:** The pipeline tracks success rates, latency, and error rates per provider. This feeds into the system observability dashboards (§18). If a provider is degraded (>20% error rate over 5 minutes), the pipeline can be configured to proactively route new agent calls to the fallback without waiting for individual call failures.
 
-**What failover does NOT do:** It does not switch providers mid-conversation. If an agent call involves a multi-turn tool-use loop (e.g. Code Writer iterating through test failures), the entire loop stays on one provider. Failover happens at the granularity of a complete agent invocation, not individual API calls within a tool-use session.
+**What failover does NOT do:** It does not switch providers mid-conversation. If an agent call involves a multi-turn tool-use loop (e.g. Implementation agent iterating through test failures), the entire loop stays on one provider. Failover happens at the granularity of a complete agent invocation, not individual API calls within a tool-use session.
 
 **Prompt compatibility:** Different providers may need different prompt formatting. The prompt template system (§11) supports provider-specific variants. A role prompt can have a primary version (optimised for Claude) and a fallback version (adapted for GPT). If no variant exists, the primary prompt is used — most prompts work across providers with some quality degradation.
 
@@ -101,8 +101,8 @@ Agent invocations can run in up to three phases, each using a different model op
 | `intake_parser` | None | Single structured-output call, no exploration |
 | `spec_writer` | Explore → Plan → Act | Read repo, plan spec coverage, write .feature files |
 | `spec_verifier` | Explore → Act | Read specs + CR, verify (plan adds little) |
-| `test_writer` | Explore → Plan → Act | Discover test patterns, plan tests, write tests |
-| `code_writer` | Explore → Plan → Act | Understand codebase, plan implementation, write code |
+| `implementation` | Explore → Plan → Act | Discover codebase and test patterns, plan implementation, write tests and code |
+| `implementation_rework` | Explore → Plan → Act | Understand review/CI feedback, plan fixes, rework tests and code |
 | `security_reviewer` | Explore only | Reads diff + files, outputs JSON |
 | `quality_reviewer` | Explore only | Reads diff + files, outputs JSON |
 | `spec_compliance_reviewer` | Explore only | Reads diff + files, outputs JSON |
@@ -167,8 +167,8 @@ Each repo can include an `AGENTS.md` file at its root — explicit instructions 
 | **Spec Writer** | Behaviour Translation | Writes Gherkin .feature files from the structured CR | Every acceptance criterion covered; testable assertions; negative and boundary cases |
 | **Completeness Checker** | Behaviour Verification | Verifies every CR criterion has scenarios | Lists gaps with specific suggestions |
 | **Consistency Checker** | Behaviour Verification | Verifies cross-repo specs don't contradict | Checks API contracts, data formats, sequences |
-| **Test Writer** | TDD Development (RED) | Writes failing tests from behaviour specs | Tests fail for the right reasons; existing tests still pass |
-| **Code Writer** | TDD Development (GREEN) | Implements code to make tests pass | All tests green; follows repo conventions; clean code |
+| **Implementation** | Implementation | Writes tests and code from behaviour specs | All tests green; follows repo conventions; clean code |
+| **Implementation Rework** | Implementation (rework loop) | Reworks tests and code based on review/CI feedback | Fixes applied; all tests green; follows repo conventions |
 | **Diff Scope Analyser** | Code Review (pre-pass) | Deterministic check: flags files, endpoints, dependencies outside expected scope | No LLM — can't be prompt-injected. Flags, not blocks |
 | **Security Reviewer** | Code Review | Finds security vulnerabilities; runs in **adversarial mode** (§12.5) — treats CR as untrusted input | Flags code that doesn't match specs regardless of CR justification |
 | **Quality Reviewer** | Code Review | Assesses correctness, architecture, maintainability | Correctness, patterns, error handling, performance |

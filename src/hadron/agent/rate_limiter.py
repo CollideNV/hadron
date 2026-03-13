@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from typing import Generic, TypeVar
 
 import anthropic
+# InternalServerError covers 500, 503 (ServiceUnavailableError), and 529 (OverloadedError)
+_TRANSIENT_ERRORS = (anthropic.RateLimitError, anthropic.InternalServerError)
 
 logger = logging.getLogger(__name__)
 
@@ -82,20 +84,21 @@ async def call_with_retry(
                 throttle_count=throttle_count,
                 throttle_seconds=throttle_seconds,
             )
-        except anthropic.RateLimitError as e:
+        except _TRANSIENT_ERRORS as e:
             if attempt == max_retries - 1:
                 raise
-            # Prefer server-provided Retry-After, fall back to exponential backoff
-            retry_after = _extract_retry_after(e)
+            # Prefer server-provided Retry-After, fall back to linear backoff
+            retry_after = _extract_retry_after(e) if isinstance(e, anthropic.RateLimitError) else None
             if retry_after is not None:
                 wait = max(MIN_WAIT_SECONDS, min(retry_after, MAX_WAIT_SECONDS))
             else:
                 wait = min(base_wait * (attempt + 1), MAX_WAIT_SECONDS)
             throttle_count += 1
             throttle_seconds += wait
+            status = getattr(e, "status_code", None) or type(e).__name__
             logger.warning(
-                "Rate limited [%s] (attempt %d/%d), waiting %.0fs%s: %s",
-                label, attempt + 1, max_retries, wait,
+                "Transient API error %s [%s] (attempt %d/%d), waiting %.0fs%s: %s",
+                status, label, attempt + 1, max_retries, wait,
                 " (from Retry-After)" if retry_after is not None else "",
                 e,
             )

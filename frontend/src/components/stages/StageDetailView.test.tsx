@@ -42,21 +42,21 @@ function renderWithContext(
 
 describe("StageDetailView", () => {
   it("shows stage name and back button", () => {
-    renderWithContext({ stageName: "tdd", onBack: vi.fn() });
-    const tddLabels = screen.getAllByText("tdd");
-    expect(tddLabels.length).toBeGreaterThanOrEqual(1);
+    renderWithContext({ stageName: "implementation", onBack: vi.fn() });
+    const implLabels = screen.getAllByText("implementation");
+    expect(implLabels.length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/back/i)).toBeInTheDocument();
   });
 
   it("calls onBack when back button clicked", () => {
     const onBack = vi.fn();
-    renderWithContext({ stageName: "tdd", onBack });
+    renderWithContext({ stageName: "implementation", onBack });
     fireEvent.click(screen.getByText(/back/i));
     expect(onBack).toHaveBeenCalled();
   });
 
   it("shows 'no agent sessions' when no activity", () => {
-    renderWithContext({ stageName: "tdd", onBack: vi.fn() });
+    renderWithContext({ stageName: "implementation", onBack: vi.fn() });
     expect(screen.getByText(/no agent sessions/i)).toBeInTheDocument();
   });
 
@@ -64,22 +64,22 @@ describe("StageDetailView", () => {
     const events = [
       makeEvent({
         event_type: "agent_started",
-        stage: "tdd",
-        data: { role: "tdd_developer", repo: "backend" },
+        stage: "implementation",
+        data: { role: "developer", repo: "backend" },
       }),
     ];
     const agentOutputs = [
       makeEvent({
         event_type: "agent_output",
-        stage: "tdd",
-        data: { role: "tdd_developer", repo: "backend", text: "Writing tests now" },
+        stage: "implementation",
+        data: { role: "developer", repo: "backend", text: "Writing tests now" },
       }),
     ];
     renderWithContext(
-      { stageName: "tdd", onBack: vi.fn() },
+      { stageName: "implementation", onBack: vi.fn() },
       { events, agentOutputs },
     );
-    const devLabels = screen.getAllByText("tdd developer");
+    const devLabels = screen.getAllByText("developer");
     expect(devLabels.length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Writing tests now")).toBeInTheDocument();
   });
@@ -88,29 +88,29 @@ describe("StageDetailView", () => {
     const events = [
       makeEvent({
         event_type: "stage_entered",
-        stage: "tdd",
+        stage: "implementation",
         timestamp: 1700000000,
       }),
       makeEvent({
         event_type: "stage_completed",
-        stage: "tdd",
+        stage: "implementation",
         timestamp: 1700000060,
       }),
     ];
     const testRuns = [
       makeEvent({
         event_type: "test_run",
-        stage: "tdd",
+        stage: "implementation",
         data: { passed: true, iteration: 1 },
       }),
       makeEvent({
         event_type: "test_run",
-        stage: "tdd",
+        stage: "implementation",
         data: { passed: false, iteration: 2 },
       }),
     ];
     renderWithContext(
-      { stageName: "tdd", onBack: vi.fn() },
+      { stageName: "implementation", onBack: vi.fn() },
       { events, testRuns },
     );
     expect(screen.getByText("1 passed")).toBeInTheDocument();

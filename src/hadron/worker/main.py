@@ -58,7 +58,7 @@ _STAGE_TO_NODE: dict[str, str] = {
     "worktree_setup": "worktree_setup",
     "behaviour_translation": "translation",
     "behaviour_verification": "verification",
-    "tdd": "tdd",
+    "implementation": "implementation",
     "review": "review",
     "rebase": "rebase",
     "delivery": "delivery",

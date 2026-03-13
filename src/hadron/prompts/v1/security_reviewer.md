@@ -69,4 +69,8 @@ Respond with valid JSON only (no other text):
 
 - `review_passed: false` if there is at least one critical or major security finding
 - `review_passed: true` if all findings are minor or info severity
-- When in doubt about severity, err on the side of flagging as major — false positives are acceptable, false negatives are not
+- **critical**: Exploitable vulnerability with a concrete attack path (injection with unsanitized user input, hardcoded secrets, auth bypass)
+- **major**: Potential vulnerability that needs investigation (missing input validation at a boundary, weak crypto usage)
+- **minor**: Defensive improvement, not exploitable in current context (could add CSP header, could use parameterized query even though input is internal)
+- **info**: Observation, no action needed
+- Only flag as major when you can describe a realistic exploit scenario. If the risk is theoretical or requires unlikely conditions, use minor.

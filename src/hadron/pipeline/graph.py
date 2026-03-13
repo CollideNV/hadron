@@ -18,7 +18,7 @@ from hadron.pipeline.nodes.rebase import rebase_node
 from hadron.pipeline.nodes.release import release_node
 from hadron.pipeline.nodes.repo_id import repo_id_node
 from hadron.pipeline.nodes.review import review_node
-from hadron.pipeline.nodes.tdd import tdd_node
+from hadron.pipeline.nodes.implementation import implementation_node
 from hadron.pipeline.nodes.worktree_setup import worktree_setup_node
 
 
@@ -33,7 +33,7 @@ def build_pipeline_graph() -> StateGraph:
     Graph structure follows adr/orchestration.md §5.3:
         Intake → Repo ID → Worktree Setup → Behaviour Translation → Behaviour Verification
             ↕ (verification loop)
-        → TDD → Review
+        → Implementation → Review
             ↕ (review loop)
         → Rebase → Delivery → Release
 
@@ -48,7 +48,7 @@ def build_pipeline_graph() -> StateGraph:
     graph.add_node("worktree_setup", worktree_setup_node)
     graph.add_node("translation", behaviour_translation_node)
     graph.add_node("verification", behaviour_verification_node)
-    graph.add_node("tdd", tdd_node)
+    graph.add_node("implementation", implementation_node)
     graph.add_node("review", review_node)
     graph.add_node("rebase", rebase_node)
     graph.add_node("delivery", delivery_node)
@@ -62,20 +62,20 @@ def build_pipeline_graph() -> StateGraph:
     graph.add_edge("worktree_setup", "translation")
     graph.add_edge("translation", "verification")
 
-    # Conditional: verification → translation (retry) | tdd (proceed) | paused (circuit breaker)
+    # Conditional: verification → translation (retry) | implementation (proceed) | paused (circuit breaker)
     graph.add_conditional_edges(
         "verification",
         after_verification,
-        {"translation": "translation", "tdd": "tdd", "paused": "paused"},
+        {"translation": "translation", "implementation": "implementation", "paused": "paused"},
     )
 
-    graph.add_edge("tdd", "review")
+    graph.add_edge("implementation", "review")
 
-    # Conditional: review → tdd (retry) | rebase (proceed) | paused (circuit breaker)
+    # Conditional: review → implementation (retry) | rebase (proceed) | paused (circuit breaker)
     graph.add_conditional_edges(
         "review",
         after_review,
-        {"tdd": "tdd", "rebase": "rebase", "paused": "paused"},
+        {"implementation": "implementation", "rebase": "rebase", "paused": "paused"},
     )
 
     # Conditional: rebase → delivery (clean) | paused (conflicts)

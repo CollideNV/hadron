@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from hadron.config.limits import MAX_COMMAND_OUTPUT_CHARS, MAX_READ_FILE_CHARS
-from hadron.security.validators import validate_agent_command
+from hadron.security.validators import sanitize_agent_command, validate_agent_command
 from hadron.utils.text import truncate
 
 logger = logging.getLogger(__name__)
@@ -212,6 +212,7 @@ def _execute_list_directory(working_dir: str, input_data: dict[str, Any]) -> str
 async def _execute_run_command(working_dir: str, input_data: dict[str, Any]) -> str:
     """Run a shell command with safety validation and output truncation."""
     cmd = input_data["command"]
+    cmd = sanitize_agent_command(cmd)
     if not validate_agent_command(cmd):
         return f"Error: Command rejected by safety filter: {cmd!r}"
     env = {**scrubbed_env(), "PYTHONDONTWRITEBYTECODE": "1"}

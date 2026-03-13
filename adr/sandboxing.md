@@ -16,7 +16,7 @@ Each repo in a change request runs in its own ephemeral K8s pod. The pod provide
 | Filesystem isolation | `emptyDir` volume — pod-local, dies with the pod |
 | Resource limits | Pod `resources.limits` — CPU, memory caps enforced by kubelet |
 | Execution timeout | `activeDeadlineSeconds` on the Job spec (4 hours default) |
-| Network isolation | Stage-aware `NetworkPolicy` — TDD runs egress-locked (LLM APIs + git + sidecars only). Full egress unlocked after Security Review passes (§7.4) |
+| Network isolation | Stage-aware `NetworkPolicy` — Implementation runs egress-locked (LLM APIs + git + sidecars only). Full egress unlocked after Security Review passes (§7.4) |
 | Credential isolation | Only pipeline secrets mounted — no production credentials |
 | CR-to-CR isolation | Separate pods, separate volumes, separate network identity |
 
@@ -93,7 +93,7 @@ AI-generated code is untrusted until reviewed. The pod's network policy changes 
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  TDD Development (egress-locked)                                     │
+│  Implementation (egress-locked)                                       │
 │                                                                      │
 │  ALLOWED:                              BLOCKED:                      │
 │   ✅ LLM API endpoints (HTTPS)          ❌ Public internet           │
@@ -113,7 +113,7 @@ AI-generated code is untrusted until reviewed. The pod's network policy changes 
 
 **Implementation:** The pod starts with a restrictive `NetworkPolicy`. When the Security Reviewer agent returns a "Pass" verdict on the generated diff, the worker signals the Controller. The Controller updates the pod's `NetworkPolicy` (or annotates the pod for Istio/Cilium to apply a new egress profile). This unlocks package registries and external endpoints for the Delivery stage.
 
-**Package installation during TDD:** Dependencies declared in `package.json`, `requirements.txt`, etc. are installed during the Setup Worktrees stage (before egress is locked), since they're part of the existing codebase. If the Code Writer adds new dependencies, the install runs against a pre-warmed cache or vendored dependencies. If a new dependency genuinely requires a registry fetch, the agent must declare it — the pipeline can temporarily unlock egress for a scoped `npm install` / `pip install`, logged and auditable.
+**Package installation during Implementation:** Dependencies declared in `package.json`, `requirements.txt`, etc. are installed during the Setup Worktrees stage (before egress is locked), since they're part of the existing codebase. If the Implementation agent adds new dependencies, the install runs against a pre-warmed cache or vendored dependencies. If a new dependency genuinely requires a registry fetch, the agent must declare it — the pipeline can temporarily unlock egress for a scoped `npm install` / `pip install`, logged and auditable.
 
 ### 7.5 Dynamic Worker Sizing
 
@@ -139,7 +139,7 @@ repos:
 
 ### 7.6 Agent Command Boundaries
 
-Agent SDKs give agents shell access and file tools. Without restrictions, a Code Writer could run `curl`, `cat /proc/self/environ`, or `rm -rf /workspace`. The pod boundary provides process and network isolation, but **within** the pod, agents are further constrained:
+Agent SDKs give agents shell access and file tools. Without restrictions, an Implementation agent could run `curl`, `cat /proc/self/environ`, or `rm -rf /workspace`. The pod boundary provides process and network isolation, but **within** the pod, agents are further constrained:
 
 **Filesystem restrictions:**
 
@@ -153,7 +153,7 @@ Agent SDKs give agents shell access and file tools. Without restrictions, a Code
 
 **Implementation:** The agent process runs as a non-root user with a restricted shell profile. Sensitive environment variables are only set in the agent backend's process scope (the wrapper that calls the LLM API), not in the shell the agent controls. File access is enforced via Linux permissions and `seccomp` profiles on the pod.
 
-**Command allowlist (TDD stage):**
+**Command allowlist (Implementation stage):**
 
 | Allowed | Examples | Why |
 |---------|---------|-----|

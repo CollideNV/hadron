@@ -19,7 +19,7 @@ Feature: Prompt Injection Defense
     And it specifically looks for prompt injection attempts in the generated code
 
   Scenario: Layer 4 - Deterministic diff scope analysis
-    Given code changes have been produced by the TDD stage
+    Given code changes have been produced by the implementation stage
     When the diff scope analyser runs before review
     Then it identifies sensitive file changes (config, CI, infrastructure, dependency manifests) without using an AI agent
     And the flags are injected as warnings into the Security Reviewer prompt

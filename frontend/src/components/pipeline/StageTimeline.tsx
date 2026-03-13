@@ -49,7 +49,7 @@ export default function StageTimeline({
     }
     return {
       behaviour_translation: Math.max(0, (counts.get("behaviour_translation") || 0) - 1),
-      tdd: Math.max(0, (counts.get("tdd") || 0) - 1),
+      implementation: Math.max(0, (counts.get("implementation") || 0) - 1),
     };
   }, [events]);
 

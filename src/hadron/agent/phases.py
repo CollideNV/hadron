@@ -43,6 +43,24 @@ class PhasePromptBuilder:
         parts.append(f"## Original Task\n\n{task.user_prompt}")
         return "\n\n".join(parts)
 
+    def build_act_system(self, task: AgentTask, has_plan: bool) -> str:
+        """Build the system prompt for the act phase.
+
+        When a plan exists, prepends guidance to follow it rather than
+        re-exploring the codebase from scratch.
+        """
+        if not has_plan:
+            return task.system_prompt
+
+        plan_preamble = (
+            "You have received a detailed implementation plan and codebase context "
+            "from prior exploration and planning phases. Follow the plan step by step. "
+            "Do NOT re-explore the codebase from scratch — the exploration has already "
+            "been done for you. Only read files when the plan references them or when "
+            "you need specific details not covered by the plan.\n\n"
+        )
+        return plan_preamble + task.system_prompt
+
     def build_act_user(
         self, task: AgentTask, exploration_summary: str, plan_text: str
     ) -> str:
@@ -56,7 +74,12 @@ class PhasePromptBuilder:
 
         parts = []
         if plan_text:
-            parts.append(f"## Implementation Plan\n\n{plan_text}")
+            parts.append(
+                "## Implementation Plan (follow this)\n\n"
+                "Execute the steps below in order. The codebase has already been "
+                "explored and this plan was produced by a senior architect.\n\n"
+                + plan_text
+            )
         if exploration_summary:
             parts.append(f"## Codebase Context (from exploration)\n\n{exploration_summary}")
         parts.append(f"## Original Task\n\n{task.user_prompt}")

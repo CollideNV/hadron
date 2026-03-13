@@ -38,30 +38,30 @@ Three-agent subgraph: **CR Analyst** (extracts requirements and edge cases), **R
 
 Three parallel checks: **Completeness** (every acceptance criterion has scenarios), **Consistency** (cross-repo specs don't contradict — API contracts, data formats, sequences match), **Regression** (new specs don't conflict with existing behaviour). Issues loop back to Translation with specific feedback.
 
-### 8.6 TDD Development
+### 8.6 Implementation
 
-**Test Writer** (RED phase — writes failing tests from specs), **Code Writer** (GREEN phase — implements minimum code to pass tests), **Test Runner** (executes tests, loops until green). Context includes the behaviour specs, review feedback and CI logs from previous iterations, and human override instructions from the control room.
+A single **Implementation** agent writes both tests and code from the verified behaviour specs. Context includes the behaviour specs, review feedback and CI logs from previous iterations, and human override instructions from the control room.
 
-**Graduated test scope:** The Test Runner widens the test scope as development progresses, mirroring how a developer works — start tight for fast feedback, widen to catch regressions before leaving the stage:
+**Graduated test scope:** The agent widens the test scope as development progresses, mirroring how a developer works — start tight for fast feedback, widen to catch regressions before leaving the stage:
 
 ```
-TDD loop iteration 1–2:     New/changed tests only           (seconds)
-TDD loop iteration 3+:      Tests in affected modules/classes (seconds–minutes)
-Final pass before review:   Full test suite                   (minutes)
-Post-rebase sanity check:   Full test suite                   (minutes)
+Implementation iteration 1–2:  New/changed tests only           (seconds)
+Implementation iteration 3+:   Tests in affected modules/classes (seconds–minutes)
+Final pass before review:       Full test suite                   (minutes)
+Post-rebase sanity check:       Full test suite                   (minutes)
 ```
 
-The agent decides which tests are "affected" based on its understanding of the codebase — imports, class hierarchies, shared fixtures, and the repo's AGENTS.md guidance on test organisation. This is best-effort and LLM-driven, not a static dependency graph. The key constraint is the final pass: the full existing suite must be green before the pipeline advances to Code Review. This catches regressions that narrow runs might miss, without paying the full-suite cost on every TDD iteration.
+The agent decides which tests are "affected" based on its understanding of the codebase — imports, class hierarchies, shared fixtures, and the repo's AGENTS.md guidance on test organisation. This is best-effort and LLM-driven, not a static dependency graph. The key constraint is the final pass: the full existing suite must be green before the pipeline advances to Code Review. This catches regressions that narrow runs might miss, without paying the full-suite cost on every implementation iteration.
 
 If the full suite surfaces pre-existing failures (tests that were already failing on `main`), the agent identifies them by diffing against `main`'s test results and excludes them from its pass/fail decision. The pipeline reports these pre-existing failures in the review summary but does not block on them.
 
-When multiple repos are affected, TDD runs **in parallel** — each repo has its own worker pod running independently (see §8.11).
+When multiple repos are affected, Implementation runs **in parallel** — each repo has its own worker pod running independently (see §8.11).
 
 ### 8.7 Code Review
 
 **Diff scope analysis (§12.6):** Before agents review, a deterministic check flags files, endpoints, or dependencies that are outside the expected scope of the behaviour specs. These flags are surfaced to the reviewers.
 
-Three parallel reviewers: **Security** (injection, auth, input validation, secrets, crypto — runs in adversarial mode per §12.5, treating the CR description as untrusted input), **Quality** (correctness, architecture fit, error handling, performance, readability), **Spec Compliance** (code matches behaviour specs). Critical findings loop back to TDD Development with specific fix instructions.
+Three parallel reviewers: **Security** (injection, auth, input validation, secrets, crypto — runs in adversarial mode per §12.5, treating the CR description as untrusted input), **Quality** (correctness, architecture fit, error handling, performance, readability), **Spec Compliance** (code matches behaviour specs). Critical findings loop back to Implementation with specific fix instructions.
 
 Review runs per repo in each repo's own worker pod. The Spec Compliance reviewer has access to this repo's specs. Cross-repo contract validation happens at the release gate level, where the Controller can compare PRs across repos before the human approves.
 
@@ -69,11 +69,11 @@ Review runs per repo in each repo's own worker pod. The Spec Compliance reviewer
 
 After code review passes, the pipeline rebases each repo's branch onto the latest `main`. This is where concurrent CRs touching the same repo are reconciled.
 
-**Clean rebase (common case):** No conflicts — the branch moves forward onto latest `main`. The full test suite runs as a regression check (same scope as the final TDD pass). If tests pass, the pipeline continues to Delivery.
+**Clean rebase (common case):** No conflicts — the branch moves forward onto latest `main`. The full test suite runs as a regression check (same scope as the final Implementation pass). If tests pass, the pipeline continues to Delivery.
 
 **Conflicts detected:** The **Merge Conflict Agent** resolves them. This agent has context of: the CR's intent, the behaviour specs, the code it generated, and the incoming changes from `main` that caused the conflict. It resolves conflicts by understanding *what both sides intended* rather than blindly picking sides.
 
-After resolution, the full test suite runs. If tests pass, the pipeline continues. If tests fail (the resolution introduced a regression), the pipeline loops back to TDD Development with the conflict context.
+After resolution, the full test suite runs. If tests pass, the pipeline continues. If tests fail (the resolution introduced a regression), the pipeline loops back to Implementation with the conflict context.
 
 **Unresolvable conflicts:** If the agent cannot resolve confidently (e.g. both CRs restructured the same module in fundamentally different ways), the pipeline **pauses and notifies** the operator. The human can: resolve the conflict manually on the branch (via `git clone` or the dashboard), then resume the pipeline; redirect the agent with instructions ("keep the other CR's version of the auth middleware, adapt our changes around it"); or abort the CR entirely.
 
@@ -135,7 +135,7 @@ repos:
 
 When `require_human_review` is enabled, the pipeline opens the PR, triggers CI, and then **checkpoints and waits** for two things: CI to pass *and* a human to approve the PR on GitHub/GitLab. The Controller watches for PR review events via webhook. Once both conditions are met, the pipeline resumes into the release gate.
 
-If the human reviewer requests changes on the PR, the pipeline receives the review comments via webhook, treats them like Code Review findings (same as §8.7), and loops back to TDD Development with the human's feedback as highest-priority context. This creates a natural collaboration: AI proposes, human reviews, AI fixes.
+If the human reviewer requests changes on the PR, the pipeline receives the review comments via webhook, treats them like Code Review findings (same as §8.7), and loops back to Implementation with the human's feedback as highest-priority context. This creates a natural collaboration: AI proposes, human reviews, AI fixes.
 
 ```
 PR opened
@@ -146,7 +146,7 @@ PR opened
   │                               │
   │         Changes requested ────┘
   │                │
-  │         Loop back to TDD Development
+  │         Loop back to Implementation
   │         with reviewer's comments
   └────────────────────────────────────
 ```
@@ -183,9 +183,9 @@ CR affects 3 repos:
 
   Controller spawns 3 workers:
 
-  Worker A (auth-service):    translate → verify → TDD → review → rebase → push PR → done
-  Worker B (api-gateway):     translate → verify → TDD → review → rebase → push PR → done
-  Worker C (email-service):   translate → verify → TDD → review → rebase → push PR → done
+  Worker A (auth-service):    translate → verify → implement → review → rebase → push PR → done
+  Worker B (api-gateway):     translate → verify → implement → review → rebase → push PR → done
+  Worker C (email-service):   translate → verify → implement → review → rebase → push PR → done
 
   All workers run in parallel, fully independently.
 

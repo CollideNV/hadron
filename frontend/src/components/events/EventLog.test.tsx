@@ -22,18 +22,18 @@ describe("EventLog", () => {
   it("shows multiple stages", () => {
     const events = [
       makeEvent({ event_type: "stage_entered", stage: "intake" }),
-      makeEvent({ event_type: "stage_entered", stage: "tdd" }),
+      makeEvent({ event_type: "stage_entered", stage: "implementation" }),
     ];
-    render(<EventLog events={events} currentStage="tdd" />);
+    render(<EventLog events={events} currentStage="implementation" />);
     expect(screen.getByText("2 stages")).toBeInTheDocument();
   });
 
   it("renders stage labels", () => {
     const events = [
-      makeEvent({ event_type: "stage_entered", stage: "tdd" }),
+      makeEvent({ event_type: "stage_entered", stage: "implementation" }),
     ];
-    render(<EventLog events={events} currentStage="tdd" status="running" />);
-    expect(screen.getByText("TDD Development")).toBeInTheDocument();
+    render(<EventLog events={events} currentStage="implementation" status="running" />);
+    expect(screen.getByText("Implementation")).toBeInTheDocument();
   });
 
   it("calls onSelectStage when view full log is clicked", async () => {

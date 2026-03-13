@@ -52,7 +52,7 @@ class BehaviourSpec(TypedDict, total=False):
 
 
 class DevResult(TypedDict, total=False):
-    """TDD development result for a single repo."""
+    """Implementation result for a single repo."""
 
     repo_name: str
     test_files: dict[str, str]  # filename -> content

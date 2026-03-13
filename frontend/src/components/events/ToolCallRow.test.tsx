@@ -7,7 +7,7 @@ import { makeEvent } from "../../test-utils";
 function toolEvent(overrides: Record<string, unknown> = {}) {
   return makeEvent({
     event_type: "agent_tool_call",
-    stage: "tdd",
+    stage: "implementation",
     data: { role: "code_writer", tool: "write_file", input: { path: "src/main.ts" }, ...overrides },
   });
 }
@@ -66,7 +66,7 @@ describe("ToolCallRow", () => {
   it("handles empty input gracefully", () => {
     const event = makeEvent({
       event_type: "agent_tool_call",
-      stage: "tdd",
+      stage: "implementation",
       data: { role: "code_writer", tool: "read_file" },
     });
     render(<ToolCallRow event={event} color="#37e284" />);

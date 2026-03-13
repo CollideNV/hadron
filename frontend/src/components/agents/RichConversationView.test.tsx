@@ -10,9 +10,9 @@ vi.mock("../../api/client", () => ({
 
 function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return {
-    role: "tdd_developer",
+    role: "developer",
     repo: "backend",
-    stage: "tdd",
+    stage: "implementation",
     completed: false,
     items: [],
     inputTokens: 0,
@@ -86,7 +86,7 @@ describe("RichConversationView", () => {
     const testRuns = [
       makeEvent({
         event_type: "test_run",
-        stage: "tdd",
+        stage: "implementation",
         data: { passed: true, iteration: 1 },
         timestamp: 2,
       }),
