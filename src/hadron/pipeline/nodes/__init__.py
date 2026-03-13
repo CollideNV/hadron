@@ -200,53 +200,63 @@ def gather_changed_files(worktree: str, pattern: str, default_branch: str = "mai
 
     Uses ``git diff`` against the merge-base with the default branch to scope
     to files changed by this CR, avoiding injection of unrelated pre-existing
-    files. Also includes uncommitted (staged + unstaged) changes.
+    files.  Also includes uncommitted (staged + unstaged + untracked) changes.
+
+    Git pathspec globs (``**``) are unreliable across git versions, so all git
+    commands fetch full file lists and we filter with pathlib in Python.
     """
+    import fnmatch
     import subprocess
+
     base = Path(worktree)
     changed: set[str] = set()
+
+    def _lines(result: subprocess.CompletedProcess[str]) -> list[str]:
+        return [l.strip() for l in result.stdout.splitlines() if l.strip()]
+
+    def _match(paths: list[str]) -> set[str]:
+        return {p for p in paths if fnmatch.fnmatch(p, pattern)}
+
     try:
-        # Find merge base with default branch
+        # 1. Committed changes since branching from default branch
         merge_base = subprocess.run(
             ["git", "merge-base", default_branch, "HEAD"],
             cwd=worktree, capture_output=True, text=True, timeout=10,
         )
         if merge_base.returncode == 0 and merge_base.stdout.strip():
-            # Committed changes since branching from default
             committed = subprocess.run(
                 ["git", "diff", "--name-only", "--diff-filter=ACMR",
-                 merge_base.stdout.strip(), "HEAD", "--", pattern],
+                 merge_base.stdout.strip(), "HEAD"],
                 cwd=worktree, capture_output=True, text=True, timeout=10,
             )
-            changed.update(line.strip() for line in committed.stdout.splitlines() if line.strip())
+            changed.update(_match(_lines(committed)))
 
-        # Also include uncommitted changes (staged + unstaged)
+        # 2. Uncommitted changes to tracked files (staged + unstaged)
         uncommitted = subprocess.run(
-            ["git", "diff", "--name-only", "--diff-filter=ACMR", "HEAD", "--", pattern],
+            ["git", "diff", "--name-only", "--diff-filter=ACMR", "HEAD"],
             cwd=worktree, capture_output=True, text=True, timeout=10,
         )
-        changed.update(line.strip() for line in uncommitted.stdout.splitlines() if line.strip())
+        changed.update(_match(_lines(uncommitted)))
 
-        # And untracked new files matching the pattern
+        # 3. Untracked new files (written by agent but never committed)
         untracked = subprocess.run(
-            ["git", "ls-files", "--others", "--exclude-standard", "--", pattern],
+            ["git", "ls-files", "--others", "--exclude-standard"],
             cwd=worktree, capture_output=True, text=True, timeout=10,
         )
-        changed.update(line.strip() for line in untracked.stdout.splitlines() if line.strip())
+        changed.update(_match(_lines(untracked)))
 
     except (subprocess.SubprocessError, OSError):
-        return gather_files(worktree, pattern)
+        logger.warning("git commands failed in gather_changed_files; returning empty")
+        return ""
 
     if not changed:
-        return gather_files(worktree, pattern)
+        return ""
 
     parts: list[str] = []
     total = 0
-    for path in sorted(base.glob(pattern)):
+    for rel in sorted(changed):
+        path = base / rel
         if not path.is_file():
-            continue
-        rel = str(path.relative_to(base))
-        if rel not in changed:
             continue
         content = path.read_text(errors="replace")
         entry = f"### {rel}\n\n```\n{content}\n```"
