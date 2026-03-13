@@ -150,6 +150,10 @@ Verify the above specifications against the CR.
         "verification_iteration": state.get("verification_loop_count", 0) + 1,
     }]
 
+    # Cache feature content in state so downstream nodes (TDD, review) can skip
+    # expensive git operations to re-gather the same files.
+    cached_feature_content = feature_content or ""
+
     await ctx.event_bus.emit(PipelineEvent(
         cr_id=cr_id, event_type=EventType.STAGE_COMPLETED,
         stage=f"behaviour_verification:{ri.repo_name}",
@@ -175,6 +179,7 @@ Verify the above specifications against the CR.
         "behaviour_specs": updated_specs,
         "behaviour_verified": verified,
         "verification_loop_count": state.get("verification_loop_count", 0) + 1,
+        "feature_content": cached_feature_content,
         "current_stage": "behaviour_verification",
         "cost_input_tokens": result.input_tokens,
         "cost_output_tokens": result.output_tokens,

@@ -16,7 +16,7 @@ from hadron.pipeline.nodes.context import NodeContext
 # Re-export from sub-modules for backwards compatibility
 from hadron.config.limits import MAX_CONTEXT_CHARS  # noqa: F401
 from hadron.pipeline.nodes.json_extract import extract_json  # noqa: F401
-from hadron.pipeline.nodes.files import gather_files, gather_changed_files  # noqa: F401
+from hadron.pipeline.nodes.files import gather_files, gather_changed_files, gather_changed_files_multi  # noqa: F401
 from hadron.pipeline.nodes.callbacks import (  # noqa: F401
     make_tool_call_emitter,
     make_agent_event_emitter,
@@ -35,6 +35,7 @@ __all__ = [
     "run_agent",
     "gather_files",
     "gather_changed_files",
+    "gather_changed_files_multi",
     "make_tool_call_emitter",
     "make_agent_event_emitter",
     "make_nudge_poller",

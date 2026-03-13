@@ -9,7 +9,7 @@ from hadron.agent.base import CostAccumulator
 from hadron.agent.prompt import PromptComposer
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
-from hadron.pipeline.nodes import NodeContext, RepoInfo, gather_changed_files, gather_files, pipeline_node, run_agent
+from hadron.pipeline.nodes import NodeContext, RepoInfo, gather_changed_files, gather_changed_files_multi, gather_files, pipeline_node, run_agent
 from hadron.pipeline.nodes.cr_format import format_cr_section, format_cr_summary
 from hadron.pipeline.testing import run_test_command
 
@@ -48,9 +48,11 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
             for f in rr["findings"]:
                 review_feedback += f"- [{f.get('severity', '')}] {f.get('message', '')} ({f.get('file', '')}:{f.get('line', 0)})\n"
 
-    # Gather only feature files written/modified by this CR's spec_writer,
-    # not unrelated pre-existing specs (e.g. infrastructure features).
-    feature_content = gather_changed_files(ri.worktree_path, "features/**/*.feature", ri.default_branch)
+    # Use cached feature content from behaviour verification if available,
+    # otherwise fall back to gathering from git.
+    feature_content = state.get("feature_content") or ""
+    if not feature_content:
+        feature_content = gather_changed_files(ri.worktree_path, "features/**/*.feature", ri.default_branch)
 
     # === RED PHASE: Write failing tests ===
     await ctx.event_bus.emit(PipelineEvent(
@@ -86,10 +88,11 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
     test_output = ""
     iteration = 0
 
-    # Gather test files and feature specs written by this CR
-    test_content = gather_changed_files(ri.worktree_path, "tests/**/test_*.py", ri.default_branch)
-    # Also check for frontend test files (*.test.ts, *.test.tsx)
-    frontend_test_content = gather_changed_files(ri.worktree_path, "frontend/src/**/*.test.ts*", ri.default_branch)
+    # Gather test files written by this CR — batch patterns into a single git call
+    test_patterns = ["tests/**/test_*.py", "frontend/src/**/*.test.ts*"]
+    gathered = gather_changed_files_multi(ri.worktree_path, test_patterns, ri.default_branch)
+    test_content = gathered["tests/**/test_*.py"]
+    frontend_test_content = gathered["frontend/src/**/*.test.ts*"]
     if frontend_test_content:
         test_content = (test_content + "\n\n" + frontend_test_content).strip()
 

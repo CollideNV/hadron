@@ -30,11 +30,14 @@ def gather_files(worktree: str, pattern: str) -> str:
     return "\n\n".join(parts)
 
 
-def gather_changed_files(worktree: str, pattern: str, default_branch: str = "main") -> str:
-    """Read files matching glob pattern that were added or modified in this branch."""
+def _get_changed_file_set(worktree: str, default_branch: str = "main") -> set[str]:
+    """Return the set of changed/added/untracked file paths relative to worktree root.
+
+    Runs git merge-base, git diff, and git ls-files once. Multiple callers
+    needing different glob patterns can share this result.
+    """
     import subprocess
 
-    base = Path(worktree)
     changed: set[str] = set()
 
     def _lines(result: subprocess.CompletedProcess[str]) -> list[str]:
@@ -66,8 +69,14 @@ def gather_changed_files(worktree: str, pattern: str, default_branch: str = "mai
         changed.update(_lines(untracked))
 
     except (subprocess.SubprocessError, OSError) as exc:
-        logger.warning("git commands failed in gather_changed_files: %s", exc)
-        return ""
+        logger.warning("git commands failed in _get_changed_file_set: %s", exc)
+
+    return changed
+
+
+def _read_matched_files(worktree: str, pattern: str, changed: set[str]) -> str:
+    """Read files matching glob pattern from the changed set."""
+    base = Path(worktree)
 
     if not changed:
         return ""
@@ -92,3 +101,22 @@ def gather_changed_files(worktree: str, pattern: str, default_branch: str = "mai
         parts.append(entry)
         total += len(entry)
     return "\n\n".join(parts)
+
+
+def gather_changed_files(worktree: str, pattern: str, default_branch: str = "main") -> str:
+    """Read files matching glob pattern that were added or modified in this branch."""
+    changed = _get_changed_file_set(worktree, default_branch)
+    return _read_matched_files(worktree, pattern, changed)
+
+
+def gather_changed_files_multi(
+    worktree: str,
+    patterns: list[str],
+    default_branch: str = "main",
+) -> dict[str, str]:
+    """Like gather_changed_files but for multiple patterns with a single git call.
+
+    Returns a dict mapping each pattern to its gathered content string.
+    """
+    changed = _get_changed_file_set(worktree, default_branch)
+    return {pattern: _read_matched_files(worktree, pattern, changed) for pattern in patterns}

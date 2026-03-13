@@ -694,7 +694,7 @@ class TestConversationCompaction:
             backend._client.messages, "create",
             new_callable=AsyncMock,
             side_effect=[tool_r1, tool_r2, tool_r3, summary_response, end_response],
-        ), patch("hadron.agent.claude.execute_tool", new_callable=AsyncMock, return_value="file contents"):
+        ), patch("hadron.agent.tool_loop.execute_tool", new_callable=AsyncMock, return_value="file contents"):
             events: list[tuple[str, dict]] = []
 
             async def capture_event(event_type: str, data: dict) -> None:

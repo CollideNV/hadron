@@ -694,7 +694,7 @@ class TestReviewNode:
         state = _base_state()
 
         with (
-            patch("hadron.pipeline.nodes.review.run_agent", return_value=_make_agent_run_result(output=clean_review)),
+            patch("hadron.pipeline.nodes.review_exec.run_agent", return_value=_make_agent_run_result(output=clean_review)),
             patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             MockWM.return_value.get_diff = AsyncMock(return_value="diff --git a/main.py b/main.py\n+print('hello')")
@@ -728,7 +728,7 @@ class TestReviewNode:
         state = _base_state()
 
         with (
-            patch("hadron.pipeline.nodes.review.run_agent", side_effect=mock_run_agent),
+            patch("hadron.pipeline.nodes.review_exec.run_agent", side_effect=mock_run_agent),
             patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             MockWM.return_value.get_diff = AsyncMock(return_value="diff --git a/auth.py b/auth.py")
@@ -757,7 +757,7 @@ class TestReviewNode:
         state = _base_state()
 
         with (
-            patch("hadron.pipeline.nodes.review.run_agent", side_effect=mock_run_agent),
+            patch("hadron.pipeline.nodes.review_exec.run_agent", side_effect=mock_run_agent),
             patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             MockWM.return_value.get_diff = AsyncMock(return_value="diff --git a/main.py b/main.py")
@@ -785,7 +785,7 @@ class TestReviewNode:
         state = _base_state()
 
         with (
-            patch("hadron.pipeline.nodes.review.run_agent", side_effect=mock_run_agent),
+            patch("hadron.pipeline.nodes.review_exec.run_agent", side_effect=mock_run_agent),
             patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             MockWM.return_value.get_diff = AsyncMock(return_value="diff --git a/main.py b/main.py")
@@ -809,7 +809,7 @@ class TestReviewNode:
         state = _base_state()
 
         with (
-            patch("hadron.pipeline.nodes.review.run_agent", side_effect=mock_run_agent),
+            patch("hadron.pipeline.nodes.review_exec.run_agent", side_effect=mock_run_agent),
             patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             MockWM.return_value.get_diff = AsyncMock(return_value="diff --git a/main.py b/main.py")
@@ -828,7 +828,7 @@ class TestReviewNode:
         state = _base_state(review_loop_count=1)
 
         with (
-            patch("hadron.pipeline.nodes.review.run_agent", return_value=_make_agent_run_result(output=clean_review)),
+            patch("hadron.pipeline.nodes.review_exec.run_agent", return_value=_make_agent_run_result(output=clean_review)),
             patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             MockWM.return_value.get_diff = AsyncMock(return_value="")
@@ -852,7 +852,7 @@ class TestReviewNode:
         state = _base_state()
 
         with (
-            patch("hadron.pipeline.nodes.review.run_agent", side_effect=mock_run_agent),
+            patch("hadron.pipeline.nodes.review_exec.run_agent", side_effect=mock_run_agent),
             patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             MockWM.return_value.get_diff = AsyncMock(return_value="")
@@ -876,7 +876,7 @@ class TestReviewNode:
         state = _base_state()
 
         with (
-            patch("hadron.pipeline.nodes.review.run_agent", side_effect=mock_run_agent),
+            patch("hadron.pipeline.nodes.review_exec.run_agent", side_effect=mock_run_agent),
             patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
         ):
             MockWM.return_value.get_diff = AsyncMock(return_value="")

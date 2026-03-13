@@ -14,220 +14,32 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Callable
+from typing import Any
 
 from hadron.agent.base import AgentResult, CostAccumulator, merge_model_breakdowns
-from hadron.agent.prompt import PromptComposer
-from hadron.config.defaults import DEFAULT_EXPLORE_MODEL, DEFAULT_MODEL
-from hadron.config.limits import MAX_DIFF_CHARS
+from hadron.config.defaults import DEFAULT_MODEL
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
-from hadron.pipeline.diff_scope import ScopeFlag, analyse_diff_scope
+from hadron.pipeline.diff_scope import analyse_diff_scope
 from hadron.pipeline.nodes import (
-    NodeContext, RepoInfo, emit_cost_update, extract_json, gather_changed_files, pipeline_node, run_agent,
+    NodeContext, RepoInfo, emit_cost_update, gather_changed_files, pipeline_node,
+    run_agent,
 )
-from hadron.pipeline.nodes.cr_format import format_cr_section, format_cr_summary
+from hadron.pipeline.nodes.review_exec import REVIEWER_REGISTRY, run_single_reviewer
+from hadron.pipeline.nodes.review_payload import (
+    format_diff_section,
+    format_repo_specs,
+    format_scope_section,
+)
+
+# Backwards-compatible aliases for private API
+_REVIEWER_REGISTRY = REVIEWER_REGISTRY
+_run_single_reviewer = run_single_reviewer
+_format_diff_section = format_diff_section
+_format_repo_specs = format_repo_specs
+_format_scope_section = format_scope_section
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Shared payload helpers
-# ---------------------------------------------------------------------------
-
-
-def _format_diff_section(diff: str, default_branch: str) -> str:
-    """Format the diff section shared by all reviewers."""
-    return f"""## Code Diff (feature branch vs {default_branch})
-
-```diff
-{diff[:MAX_DIFF_CHARS]}
-```
-"""
-
-
-def _format_repo_specs(behaviour_specs: list[dict[str, Any]], repo_name: str) -> str:
-    """Format Gherkin spec content for a specific repo."""
-    for spec in behaviour_specs:
-        if spec.get("repo_name") == repo_name:
-            # Prefer content gathered from disk (spec writer writes to disk, not state)
-            if spec.get("feature_content_from_disk"):
-                return spec["feature_content_from_disk"]
-            # Fallback to feature_files dict (if populated)
-            text = ""
-            for fname, content in spec.get("feature_files", {}).items():
-                text += f"\n### {fname}\n```gherkin\n{content}\n```\n"
-            if text:
-                return text
-    return ""
-
-
-# ---------------------------------------------------------------------------
-# Per-reviewer payload builders
-# ---------------------------------------------------------------------------
-
-
-def _build_security_payload(
-    diff: str,
-    structured_cr: dict[str, Any],
-    default_branch: str,
-    scope_flags: list[ScopeFlag],
-    behaviour_specs: list[dict[str, Any]],
-    repo_name: str,
-) -> str:
-    """Build the task payload for the Security Reviewer (adr/security.md §12.5)."""
-    scope_section = ""
-    if scope_flags:
-        scope_section = "\n## Diff Scope Flags (Deterministic Pre-Pass)\n\n"
-        scope_section += "The following sensitive files were modified. Pay extra attention to these:\n\n"
-        for flag in scope_flags:
-            scope_section += f"- **[{flag.check}]** {flag.message}\n"
-
-    spec_text = _format_repo_specs(behaviour_specs, repo_name)
-
-    return (
-        format_cr_section(structured_cr, untrusted=True)
-        + scope_section
-        + "\n## Behaviour Specs\n\n"
-        + (spec_text if spec_text else "_No behaviour specs available for this repo._")
-        + "\n\n"
-        + _format_diff_section(diff, default_branch)
-    )
-
-
-def _build_quality_payload(
-    diff: str,
-    structured_cr: dict[str, Any],
-    default_branch: str,
-    scope_flags: list[ScopeFlag],
-    behaviour_specs: list[dict[str, Any]],
-    repo_name: str,
-) -> str:
-    """Build the task payload for the Quality Reviewer."""
-    scope_section = ""
-    if scope_flags:
-        scope_section = "\n## Diff Scope Flags (Deterministic Pre-Pass)\n\n"
-        scope_section += "The following sensitive files were modified in this diff:\n\n"
-        for flag in scope_flags:
-            scope_section += f"- **[{flag.check}]** {flag.message}\n"
-
-    spec_text = _format_repo_specs(behaviour_specs, repo_name)
-    return (
-        format_cr_summary(structured_cr)
-        + scope_section
-        + "\n## Behaviour Specs\n\n"
-        + (spec_text if spec_text else "_No behaviour specs available for this repo._")
-        + "\n\n"
-        + _format_diff_section(diff, default_branch)
-    )
-
-
-def _build_spec_compliance_payload(
-    diff: str,
-    structured_cr: dict[str, Any],
-    default_branch: str,
-    scope_flags: list[ScopeFlag],
-    behaviour_specs: list[dict[str, Any]],
-    repo_name: str,
-) -> str:
-    """Build the task payload for the Spec Compliance Reviewer."""
-    scope_section = ""
-    if scope_flags:
-        scope_section = "\n## Diff Scope Flags (Deterministic Pre-Pass)\n\n"
-        scope_section += "The following sensitive files were modified in this diff:\n\n"
-        for flag in scope_flags:
-            scope_section += f"- **[{flag.check}]** {flag.message}\n"
-
-    this_repo_text = _format_repo_specs(behaviour_specs, repo_name)
-
-    other_text = ""
-    for spec in behaviour_specs:
-        if spec.get("repo_name") != repo_name:
-            other_text += f"\n### Repo: {spec.get('repo_name', 'unknown')}\n"
-            for fname in spec.get("feature_files", {}):
-                other_text += f"- {fname}\n"
-
-    return (
-        format_cr_summary(structured_cr)
-        + scope_section
-        + "\n## Behaviour Specs (This Repo)\n\n"
-        + (this_repo_text if this_repo_text else "_No behaviour specs available._")
-        + "\n\n"
-        + (f"## Specs From Other Affected Repos\n{other_text}\n" if other_text else "")
-        + _format_diff_section(diff, default_branch)
-        + "\n**Instructions:** Use the `read_file` tool to read `.feature` files from the worktree "
-        + "if you need the full spec content beyond what is provided above.\n"
-    )
-
-
-_REVIEWER_REGISTRY: dict[str, Callable[..., str]] = {
-    "security_reviewer": _build_security_payload,
-    "quality_reviewer": _build_quality_payload,
-    "spec_compliance_reviewer": _build_spec_compliance_payload,
-}
-
-
-async def _run_single_reviewer(
-    role: str,
-    task_payload: str,
-    ctx: NodeContext,
-    cr_id: str,
-    repo_name: str,
-    worktree_path: str,
-    loop_iteration: int = 0,
-    model: str | None = None,
-) -> dict[str, Any]:
-    """Run a single reviewer agent and return parsed results + cost info."""
-    sub_stage = f"review:{role}"
-
-    composer = PromptComposer()
-    system_prompt = composer.compose_system_prompt(role)
-    user_prompt = composer.compose_user_prompt(task_payload)
-
-    await ctx.event_bus.emit(PipelineEvent(
-        cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage=sub_stage,
-    ))
-
-    agent_run = await run_agent(
-        ctx,
-        role=role,
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        cr_id=cr_id,
-        stage=sub_stage,
-        repo_name=repo_name,
-        working_directory=worktree_path,
-        allowed_tools=["read_file", "list_directory"],
-        model=model or DEFAULT_EXPLORE_MODEL,
-        explore_model="",
-        plan_model="",
-        loop_iteration=loop_iteration,
-    )
-    result = agent_run.result
-
-    # Parse JSON from agent output
-    review = extract_json(result.output, context=f"review:{role}")
-    if review is None:
-        # SAFETY: If we can't parse the reviewer's output, assume the review FAILED.
-        review = {"review_passed": False, "findings": [{"severity": "major", "reviewer": role, "message": "Could not parse reviewer output as JSON — treating as failed review"}], "summary": result.output[:500]}
-
-    # Tag findings with reviewer name if not already present
-    for finding in review.get("findings", []):
-        finding.setdefault("reviewer", role)
-
-    await ctx.event_bus.emit(PipelineEvent(
-        cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage=sub_stage,
-    ))
-
-    return {
-        "review": review,
-        "cost_usd": result.cost_usd,
-        "input_tokens": result.input_tokens,
-        "output_tokens": result.output_tokens,
-        "throttle_count": result.throttle_count,
-        "throttle_seconds": result.throttle_seconds,
-        "model_breakdown": result.model_breakdown,
-    }
 
 
 @pipeline_node("review")
@@ -246,30 +58,38 @@ async def review_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
     # 2. Deterministic diff scope analysis (no LLM)
     scope_flags = analyse_diff_scope(diff)
 
-    # 2b. Gather feature files from disk (behaviour_specs[].feature_files is always
-    # empty because the spec writer writes to disk, not to state)
-    feature_content = gather_changed_files(ri.worktree_path, "features/**/*.feature", ri.default_branch)
+    # 2b. Pre-build shared sections ONCE (diff, scope flags, spec text)
+    diff_section = format_diff_section(diff, ri.default_branch)
+    scope_section = format_scope_section(scope_flags)
+
+    # Use cached feature content from behaviour verification if available,
+    # otherwise fall back to gathering from git.
+    feature_content = state.get("feature_content") or ""
+    if not feature_content:
+        feature_content = gather_changed_files(ri.worktree_path, "features/**/*.feature", ri.default_branch)
     if feature_content:
-        # Inject into behaviour_specs so payload builders can use _format_repo_specs
+        # Inject into behaviour_specs so format_repo_specs can find it
         for spec in behaviour_specs:
             if spec.get("repo_name") == ri.repo_name and not spec.get("feature_files"):
                 spec["feature_content_from_disk"] = feature_content
 
+    spec_text = format_repo_specs(behaviour_specs, ri.repo_name)
+
     # 3. Build payloads and run all reviewers in parallel
-    payload_args = (diff, structured_cr, ri.default_branch, scope_flags, behaviour_specs, ri.repo_name)
+    payload_args = (structured_cr, diff_section, scope_section, spec_text, behaviour_specs, ri.repo_name)
     reviewer_tasks = []
-    for role, build_payload in _REVIEWER_REGISTRY.items():
+    for role, build_payload in REVIEWER_REGISTRY.items():
         payload = build_payload(*payload_args)
         # Security reviewer runs on Sonnet (misses matter); others use Haiku.
         model = DEFAULT_MODEL if role == "security_reviewer" else None
         reviewer_tasks.append(
-            _run_single_reviewer(role, payload, ctx, cr_id, ri.repo_name, ri.worktree_path, review_loop, model=model)
+            run_single_reviewer(role, payload, ctx, cr_id, ri.repo_name, ri.worktree_path, review_loop, model=model)
         )
     reviewer_results = await asyncio.gather(*reviewer_tasks)
 
     # 5. Merge findings and costs
     all_findings: list[dict[str, Any]] = []
-    for role, r in zip(_REVIEWER_REGISTRY, reviewer_results):
+    for role, r in zip(REVIEWER_REGISTRY, reviewer_results):
         await emit_cost_update(ctx.event_bus, cr_id, f"review:{role}", AgentResult(
             output="",
             cost_usd=r["cost_usd"],

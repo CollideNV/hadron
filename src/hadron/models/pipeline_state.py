@@ -107,6 +107,7 @@ class PipelineState(TypedDict, total=False):
     behaviour_specs: list[BehaviourSpec]
     behaviour_verified: bool
     verification_loop_count: int
+    feature_content: str  # cached gather_changed_files("features/**/*.feature") output
 
     # --- Development ---
     dev_results: list[DevResult]
