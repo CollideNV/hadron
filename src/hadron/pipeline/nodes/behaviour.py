@@ -12,7 +12,7 @@ from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import (
     NodeContext, RepoInfo, extract_json, gather_changed_files, pipeline_node, run_agent,
 )
-from hadron.pipeline.nodes.cr_format import format_cr_section
+from hadron.pipeline.nodes.cr_format import format_cr_section, format_cr_summary
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ async def behaviour_verification_node(state: PipelineState, ctx: NodeContext, cr
     # Gather only feature files written/modified by this CR's spec_writer
     feature_content = gather_changed_files(ri.worktree_path, "features/**/*.feature", ri.default_branch)
 
-    task_payload = format_cr_section(structured_cr) + f"""
+    task_payload = format_cr_summary(structured_cr) + f"""
 ## Feature Specifications
 
 {feature_content if feature_content else "(No .feature files found)"}

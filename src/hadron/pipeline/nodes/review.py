@@ -18,7 +18,7 @@ from typing import Any
 
 from hadron.agent.base import AgentResult, merge_model_breakdowns
 from hadron.agent.prompt import PromptComposer
-from hadron.config.defaults import DEFAULT_EXPLORE_MODEL
+from hadron.config.defaults import DEFAULT_EXPLORE_MODEL, DEFAULT_MODEL
 from hadron.config.limits import MAX_DIFF_CHARS
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
@@ -26,7 +26,7 @@ from hadron.pipeline.diff_scope import ScopeFlag, analyse_diff_scope
 from hadron.pipeline.nodes import (
     NodeContext, RepoInfo, emit_cost_update, extract_json, gather_changed_files, pipeline_node, run_agent,
 )
-from hadron.pipeline.nodes.cr_format import format_cr_section
+from hadron.pipeline.nodes.cr_format import format_cr_section, format_cr_summary
 
 logger = logging.getLogger(__name__)
 
@@ -102,13 +102,22 @@ def _build_quality_payload(
     diff: str,
     structured_cr: dict[str, Any],
     default_branch: str,
+    scope_flags: list[ScopeFlag],
     behaviour_specs: list[dict[str, Any]],
     repo_name: str,
 ) -> str:
     """Build the task payload for the Quality Reviewer."""
+    scope_section = ""
+    if scope_flags:
+        scope_section = "\n## Diff Scope Flags (Deterministic Pre-Pass)\n\n"
+        scope_section += "The following sensitive files were modified in this diff:\n\n"
+        for flag in scope_flags:
+            scope_section += f"- **[{flag.check}]** {flag.message}\n"
+
     spec_text = _format_repo_specs(behaviour_specs, repo_name)
     return (
-        format_cr_section(structured_cr)
+        format_cr_summary(structured_cr)
+        + scope_section
         + "\n## Behaviour Specs\n\n"
         + (spec_text if spec_text else "_No behaviour specs available for this repo._")
         + "\n\n"
@@ -120,10 +129,18 @@ def _build_spec_compliance_payload(
     diff: str,
     structured_cr: dict[str, Any],
     default_branch: str,
+    scope_flags: list[ScopeFlag],
     behaviour_specs: list[dict[str, Any]],
     repo_name: str,
 ) -> str:
     """Build the task payload for the Spec Compliance Reviewer."""
+    scope_section = ""
+    if scope_flags:
+        scope_section = "\n## Diff Scope Flags (Deterministic Pre-Pass)\n\n"
+        scope_section += "The following sensitive files were modified in this diff:\n\n"
+        for flag in scope_flags:
+            scope_section += f"- **[{flag.check}]** {flag.message}\n"
+
     this_repo_text = _format_repo_specs(behaviour_specs, repo_name)
 
     other_text = ""
@@ -134,7 +151,8 @@ def _build_spec_compliance_payload(
                 other_text += f"- {fname}\n"
 
     return (
-        format_cr_section(structured_cr)
+        format_cr_summary(structured_cr)
+        + scope_section
         + "\n## Behaviour Specs (This Repo)\n\n"
         + (this_repo_text if this_repo_text else "_No behaviour specs available._")
         + "\n\n"
@@ -153,6 +171,7 @@ async def _run_single_reviewer(
     repo_name: str,
     worktree_path: str,
     loop_iteration: int = 0,
+    model: str | None = None,
 ) -> dict[str, Any]:
     """Run a single reviewer agent and return parsed results + cost info."""
     sub_stage = f"review:{role}"
@@ -175,7 +194,7 @@ async def _run_single_reviewer(
         repo_name=repo_name,
         working_directory=worktree_path,
         allowed_tools=["read_file", "list_directory"],
-        model=DEFAULT_EXPLORE_MODEL,  # Diff analysis + JSON output — Haiku suffices
+        model=model or DEFAULT_EXPLORE_MODEL,
         explore_model="",
         plan_model="",
         loop_iteration=loop_iteration,
@@ -241,14 +260,17 @@ async def review_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
     security_payload = _build_security_payload(
         diff, structured_cr, ri.default_branch, scope_flags, behaviour_specs, ri.repo_name,
     )
-    quality_payload = _build_quality_payload(diff, structured_cr, ri.default_branch, behaviour_specs, ri.repo_name)
+    quality_payload = _build_quality_payload(
+        diff, structured_cr, ri.default_branch, scope_flags, behaviour_specs, ri.repo_name,
+    )
     spec_payload = _build_spec_compliance_payload(
-        diff, structured_cr, ri.default_branch, behaviour_specs, ri.repo_name,
+        diff, structured_cr, ri.default_branch, scope_flags, behaviour_specs, ri.repo_name,
     )
 
     # 4. Run all 3 reviewers in parallel
+    # Security reviewer runs on Sonnet (misses matter); others use Haiku.
     security_result, quality_result, spec_result = await asyncio.gather(
-        _run_single_reviewer("security_reviewer", security_payload, ctx, cr_id, ri.repo_name, ri.worktree_path, review_loop),
+        _run_single_reviewer("security_reviewer", security_payload, ctx, cr_id, ri.repo_name, ri.worktree_path, review_loop, model=DEFAULT_MODEL),
         _run_single_reviewer("quality_reviewer", quality_payload, ctx, cr_id, ri.repo_name, ri.worktree_path, review_loop),
         _run_single_reviewer("spec_compliance_reviewer", spec_payload, ctx, cr_id, ri.repo_name, ri.worktree_path, review_loop),
     )

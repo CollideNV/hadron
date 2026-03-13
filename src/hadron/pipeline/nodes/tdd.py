@@ -10,7 +10,7 @@ from hadron.agent.prompt import PromptComposer
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import NodeContext, RepoInfo, gather_changed_files, gather_files, pipeline_node, run_agent
-from hadron.pipeline.nodes.cr_format import format_cr_section
+from hadron.pipeline.nodes.cr_format import format_cr_section, format_cr_summary
 from hadron.pipeline.testing import run_test_command
 
 logger = logging.getLogger(__name__)
@@ -103,23 +103,28 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
     if frontend_test_content:
         test_content = (test_content + "\n\n" + frontend_test_content).strip()
 
+    # Build the static part of the code writer payload once (CR summary + specs + tests).
+    # Only the test output changes between iterations.
+    cr_summary = format_cr_summary(structured_cr)
+    code_payload_base = cr_summary
+    if feature_content:
+        code_payload_base += f"\n\n## Feature Specifications\n\n{feature_content}"
+    if test_content:
+        code_payload_base += f"\n\n## Test Files (your implementation must make these pass)\n\n{test_content}"
+
     # Run tests to get initial failure output for the code writer
     initial_passing, test_output = await run_test_command(
         ri.worktree_path, ri.test_command, cr_id,
     )
+
+    code_system = composer.compose_system_prompt("code_writer", repo_context)
 
     await ctx.event_bus.emit(PipelineEvent(
         cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="tdd:code_writer",
     ))
 
     for iteration in range(max_iterations):
-        code_system = composer.compose_system_prompt("code_writer", repo_context)
-
-        code_payload = cr_text
-        if feature_content:
-            code_payload += f"\n\n## Feature Specifications\n\n{feature_content}"
-        if test_content:
-            code_payload += f"\n\n## Test Files (your implementation must make these pass)\n\n{test_content}"
+        code_payload = code_payload_base
         if test_output:
             code_payload += f"\n\n## Failing Test Output{' (iteration ' + str(iteration) + ')' if iteration > 0 else ''}\n\n```\n{test_output[-3000:]}\n```\n\nFix the implementation to make the failing tests pass."
 

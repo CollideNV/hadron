@@ -40,6 +40,20 @@ def format_cr_section(
     return section
 
 
+def format_cr_summary(structured_cr: dict[str, Any]) -> str:
+    """Format a short CR summary (title + criteria, no description).
+
+    Use this for stages that already have the full context (specs, diff, test files)
+    and only need the CR as a reference anchor, not as primary input.
+    """
+    title = structured_cr.get("title", "")
+    criteria = structured_cr.get("acceptance_criteria", [])
+    section = f"## Change Request\n\n**Title:** {title}\n"
+    if criteria:
+        section += f"\n**Acceptance Criteria:**\n{format_criteria(criteria)}\n"
+    return section
+
+
 def format_criteria(criteria: list[str]) -> str:
     """Join acceptance criteria into a bulleted markdown list."""
     return "\n".join(f"- {c}" for c in criteria)
