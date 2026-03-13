@@ -102,11 +102,14 @@ export function buildSessions(
       session.modelBreakdown = e.data.model_breakdown || {};
     } else if (e.event_type === "agent_prompt") {
       const session = getSession(e.data.role || "", e.data.repo || "", e.stage);
-      session.items.push({
-        type: "prompt",
-        text: e.data.text || "",
-        ts: e.timestamp,
-      });
+      // Only add one prompt per session (SSE reconnects may replay events)
+      if (!session.items.some((i) => i.type === "prompt")) {
+        session.items.push({
+          type: "prompt",
+          text: e.data.text || "",
+          ts: e.timestamp,
+        });
+      }
     } else if (e.event_type === "phase_started") {
       const phase = e.data.phase || "";
       currentPhase.set(sessionKey, phase);

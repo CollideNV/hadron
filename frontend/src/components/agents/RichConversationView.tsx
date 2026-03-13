@@ -63,6 +63,7 @@ export default function RichConversationView({
     return session.items.filter(
       (item) =>
         item.type === "phase_started" ||
+        item.type === "prompt" ||
         ("phase" in item && item.phase === selectedPhase),
     );
   }, [session.items, selectedPhase]);

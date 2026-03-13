@@ -94,8 +94,17 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
     test_output = ""
     iteration = 0
 
-    # Gather only test files written/modified by this CR's test_writer
+    # Gather test files and feature specs written by this CR
     test_content = gather_changed_files(ri.worktree_path, "tests/**/test_*.py", ri.default_branch)
+    # Also check for frontend test files (*.test.ts, *.test.tsx)
+    frontend_test_content = gather_changed_files(ri.worktree_path, "frontend/src/**/*.test.ts*", ri.default_branch)
+    if frontend_test_content:
+        test_content = (test_content + "\n\n" + frontend_test_content).strip()
+
+    # Run tests to get initial failure output for the code writer
+    initial_passing, test_output = await run_test_command(
+        ri.worktree_path, ri.test_command, cr_id,
+    )
 
     await ctx.event_bus.emit(PipelineEvent(
         cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage="tdd:code_writer",
@@ -105,10 +114,12 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
         code_system = composer.compose_system_prompt("code_writer", repo_context)
 
         code_payload = cr_text
+        if feature_content:
+            code_payload += f"\n\n## Feature Specifications\n\n{feature_content}"
         if test_content:
             code_payload += f"\n\n## Test Files (your implementation must make these pass)\n\n{test_content}"
-        if iteration > 0 and test_output:
-            code_payload += f"\n\n## Test Failure Output (iteration {iteration})\n\n```\n{test_output[-3000:]}\n```\n\nFix the implementation to make the failing tests pass."
+        if test_output:
+            code_payload += f"\n\n## Failing Test Output{' (iteration ' + str(iteration) + ')' if iteration > 0 else ''}\n\n```\n{test_output[-3000:]}\n```\n\nFix the implementation to make the failing tests pass."
 
         code_user = composer.compose_user_prompt(code_payload, review_feedback)
 
