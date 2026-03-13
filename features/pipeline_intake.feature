@@ -5,50 +5,48 @@ Feature: Pipeline Intake
 
   Background:
     Given a running controller instance
-    And a connected PostgreSQL database
-    And a connected Redis instance
 
   Scenario: Trigger a new change request with multiple repos
-    When a user sends a POST to "/api/pipeline/trigger" with a title, description, source, and list of repo URLs
-    Then a CRRun record is created with status "pending"
-    And a unique cr_id is returned
-    And one worker process is spawned per repo URL
+    When a user submits a CR with a title, description, source, and list of repo URLs
+    Then a run record is created with status "pending"
+    And a unique CR identifier is returned
+    And one worker is spawned per repo URL
 
   Scenario: Trigger a single-repo change request
-    When a user sends a POST to "/api/pipeline/trigger" with a title, description, source, and one repo URL
-    Then a CRRun record is created with status "pending"
-    And a unique cr_id is returned
-    And one worker process is spawned for that repo
+    When a user submits a CR with a title, description, source, and one repo URL
+    Then a run record is created with status "pending"
+    And one worker is spawned for that repo
 
-  Scenario: Language and test commands are auto-detected from repository
-    When a user sends a POST to "/api/pipeline/trigger"
-    Then the request body does not include language or test_command fields
-    And these are auto-detected by each worker from the repo's marker files
+  Scenario: Languages and test commands are auto-detected
+    When a user submits a CR
+    Then the request does not include language or test command fields
+    And these are auto-detected by each worker from the repository
 
   Scenario: Parse raw CR into structured format
     Given a worker has started for a new CR
-    When the intake node executes
-    Then the intake parser agent is invoked with the raw CR title and description
-    And the agent returns a StructuredCR with title, description, acceptance_criteria, affected_domains, priority, constraints, and risk_flags
-    And a STAGE_ENTERED event is emitted for "intake"
-    And AGENT_STARTED and AGENT_COMPLETED events are emitted
-    And a STAGE_COMPLETED event is emitted for "intake"
-    And a COST_UPDATE event is emitted with token counts and USD cost
+    When the intake stage executes
+    Then the intake agent is invoked with the raw CR title and description
+    And it produces a structured CR with acceptance criteria, domains, priority, constraints, and risk flags
 
-  Scenario: Intake parser falls back to defaults on unparseable output
-    Given the intake parser agent returns malformed JSON
-    When the intake node processes the response
-    Then it falls back to a default StructuredCR with the raw title and description
+  Scenario: Emit lifecycle events during intake
+    Given a worker has started for a new CR
+    When the intake stage executes
+    Then stage entered and stage completed events are emitted
+    And agent started and agent completed events are emitted
+    And a cost update event is emitted
+
+  Scenario: Fall back to defaults on unparseable output
+    Given the intake agent returns output that cannot be parsed
+    When the intake stage processes the response
+    Then it falls back to a default structured CR with the raw title and description
     And the pipeline pauses for human review
 
   Scenario: Reject duplicate external IDs
-    Given a CRRun already exists with external_id "JIRA-123"
-    When a user triggers a new CR with the same external_id "JIRA-123"
+    Given a run already exists with a specific external ID
+    When a user triggers a new CR with the same external ID
     Then the request is rejected
-    And no duplicate CRRun is created
 
   Scenario: Freeze configuration at intake
-    Given pipeline defaults are configured
     When a CR is triggered
-    Then the current configuration is snapshotted into the CRRun
+    Then the current configuration is snapshotted into the run record
     And all subsequent stages use the frozen config snapshot

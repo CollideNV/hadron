@@ -5,12 +5,12 @@ Feature: Prompt Injection Defense
 
   Scenario: Layer 1 - Input screening via role prompts
     When an agent is invoked
-    Then its role template includes instructions about handling untrusted input
+    Then its role prompt includes instructions about handling untrusted input
 
   Scenario: Layer 2 - Spec firewall
-    Given a CR has been translated into Gherkin specs
+    Given a CR has been translated into behaviour specs
     When code-writing agents execute
-    Then they work from the Gherkin specs, not the raw CR text
+    Then they work from the behaviour specs, not the raw CR text
     And the raw CR cannot directly influence code generation
 
   Scenario: Layer 3 - Adversarial security review
@@ -21,9 +21,7 @@ Feature: Prompt Injection Defense
   Scenario: Layer 4 - Deterministic diff scope analysis
     Given code changes have been produced by the TDD stage
     When the diff scope analyser runs before review
-    Then it parses the unified diff using pure Python with no LLM
-    And it flags config file changes including Docker, Kubernetes, CI/CD, and Terraform files
-    And it flags dependency manifest changes including package.json, requirements.txt, and pyproject.toml
+    Then it identifies sensitive file changes (config, CI, infrastructure, dependency manifests) without using an AI agent
     And the flags are injected as warnings into the Security Reviewer prompt
 
   Scenario: Layer 5 - Runtime containment

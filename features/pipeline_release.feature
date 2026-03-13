@@ -1,4 +1,4 @@
-Feature: Release Gate and Release
+Feature: Release Gate
   The release gate is a Controller-level concern. Workers push PRs
   and terminate. The Controller waits for all repos in a CR to have
   reviewed PRs, then presents a unified release gate to the human.
@@ -12,7 +12,7 @@ Feature: Release Gate and Release
   Scenario: Controller tracks worker completion
     Given a CR affects 3 repos
     When each worker pushes its PR and terminates
-    Then the Controller tracks completion: 1/3, 2/3, 3/3
+    Then the Controller tracks completion progress
 
   Scenario: Unified release gate when all repos ready
     Given all workers for a CR have pushed their PRs
@@ -34,19 +34,19 @@ Feature: Release Gate and Release
 
   Scenario: Partial completion blocks release gate
     Given a CR affects 3 repos
-    And 2 workers have completed but 1 is still running
+    And not all workers have completed
     Then the release gate does not open
     And the dashboard shows per-repo status
 
   Scenario: Failed worker blocks release gate
-    Given a CR affects 3 repos
-    And 2 workers have completed but 1 has paused with a circuit breaker
+    Given a CR affects multiple repos
+    And one worker has paused with a circuit breaker
     Then the release gate does not open
     And the human can act on the failed repo without affecting successful ones
 
   Scenario: Stale approval triggers re-rebase
     Given the human has approved the release
-    But main has moved since the last rebase for one repo
-    When the Controller performs the atomic merge check
+    But the base branch has moved since the last rebase for one repo
+    When the Controller performs the merge check
     Then it spawns a new worker for the stale repo to rebase and re-test
     And the human does not need to re-approve unless tests fail

@@ -1,52 +1,46 @@
 Feature: Event Streaming
-  The pipeline emits real-time events via Redis Streams. Clients
-  consume them through an SSE endpoint. Events cover the full
-  pipeline lifecycle, agent execution, tests, and cost.
+  The pipeline emits real-time events covering the full lifecycle:
+  stage transitions, agent execution, test results, cost updates,
+  and failure/pause notifications. Clients consume events via SSE.
 
   Scenario: Subscribe to events via SSE
     Given a CR is running
-    When a client connects to "GET /api/events/stream?cr_id={cr_id}"
+    When a client connects to the event stream
     Then all existing events are replayed first
     And new events are streamed in real-time as they occur
     And there is no gap between replayed and live events
     And the connection closes on terminal events
 
-  Scenario: Gap-free handoff between replay and subscribe
-    Given events have been emitted to a CR's stream
+  Scenario: No events lost during reconnection
+    Given events have been emitted for a CR
     When the SSE endpoint replays existing events
-    Then the last stream ID from the replay is captured
-    And the live subscription starts from that stream ID
+    Then the live subscription starts from where the replay left off
     So that events emitted during the replay are not lost
 
-  Scenario: Emit pipeline lifecycle events
+  Scenario: Pipeline lifecycle events
     When a pipeline runs from start to finish
-    Then PIPELINE_STARTED is emitted at the beginning
-    And STAGE_ENTERED is emitted when each stage begins
-    And STAGE_COMPLETED is emitted when each stage finishes
-    And PIPELINE_COMPLETED is emitted at the end
+    Then a started event is emitted at the beginning
+    And a stage entered event is emitted when each stage begins
+    And a stage completed event is emitted when each stage finishes
+    And a completed event is emitted at the end
 
-  Scenario: Emit agent execution events
+  Scenario: Agent execution events
     When an agent is invoked within a stage
-    Then AGENT_STARTED is emitted with the agent role
-    And AGENT_COMPLETED is emitted when the agent finishes
+    Then an agent started event is emitted with the agent role
+    And an agent completed event is emitted when the agent finishes
 
-  Scenario: Emit test and review events
+  Scenario: Test and review events
     When tests are executed during TDD
-    Then TEST_RUN events are emitted with pass/fail status
+    Then test run events are emitted with pass/fail status
     When review findings are produced
-    Then REVIEW_FINDING events may be emitted
+    Then review finding events may be emitted
 
-  Scenario: Emit cost tracking events
+  Scenario: Cost tracking events
     When an agent completes execution
-    Then a COST_UPDATE event is emitted with input tokens, output tokens, and USD cost
+    Then a cost update event is emitted with token counts, incremental cost, and cumulative total cost
 
-  Scenario: Emit failure and pause events
+  Scenario: Failure and pause events
     When the pipeline encounters a fatal error
-    Then a PIPELINE_FAILED event is emitted
+    Then a pipeline failed event is emitted
     When the pipeline pauses for human intervention
-    Then a PIPELINE_PAUSED event is emitted
-
-  Scenario: Store events in Redis Streams
-    When an event is emitted
-    Then it is appended to the Redis Stream "hadron:cr:{cr_id}:events"
-    And a notification is published to "hadron:cr:{cr_id}:events:notify"
+    Then a pipeline paused event is emitted
