@@ -50,6 +50,7 @@ export default function StageSummaryCard({
         existing.cost_usd += stats.cost_usd;
         existing.throttle_count += stats.throttle_count;
         existing.throttle_seconds += stats.throttle_seconds;
+        existing.api_calls += stats.api_calls || 0;
       } else {
         modelStats[model] = { ...stats };
       }
@@ -100,6 +101,7 @@ export default function StageSummaryCard({
             <thead>
               <tr className="text-text-dim text-left">
                 <th className="font-normal pb-0.5">Model</th>
+                <th className="font-normal pb-0.5 text-right">Calls</th>
                 <th className="font-normal pb-0.5 text-right">Tokens</th>
                 <th className="font-normal pb-0.5 text-right">Cost</th>
                 <th className="font-normal pb-0.5 text-right">Throttle</th>
@@ -110,6 +112,9 @@ export default function StageSummaryCard({
                 <tr key={model}>
                   <td className="font-mono text-text-muted truncate pr-2 py-px" title={model}>
                     {formatModelName(model)}
+                  </td>
+                  <td className="text-text-dim text-right py-px">
+                    {stats.api_calls || 0}
                   </td>
                   <td className="text-text-dim text-right py-px whitespace-nowrap">
                     {(stats.input_tokens / 1000).toFixed(1)}k/{(stats.output_tokens / 1000).toFixed(1)}k

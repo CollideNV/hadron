@@ -67,6 +67,7 @@ export interface ModelBreakdownEntry {
   cost_usd: number;
   throttle_count: number;
   throttle_seconds: number;
+  api_calls: number;
 }
 export interface AgentToolCallData {
   role?: string;

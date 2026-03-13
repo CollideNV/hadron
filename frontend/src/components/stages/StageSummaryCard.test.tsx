@@ -155,11 +155,11 @@ describe("StageSummaryCard", () => {
         modelBreakdown: {
           "claude-3-5-sonnet-20241022": {
             input_tokens: 5000, output_tokens: 1000,
-            cost_usd: 0.030, throttle_count: 0, throttle_seconds: 0,
+            cost_usd: 0.030, throttle_count: 0, throttle_seconds: 0, api_calls: 12,
           },
           "claude-3-5-haiku-20241022": {
             input_tokens: 2000, output_tokens: 500,
-            cost_usd: 0.004, throttle_count: 1, throttle_seconds: 10,
+            cost_usd: 0.004, throttle_count: 1, throttle_seconds: 10, api_calls: 3,
           },
         },
       }),
@@ -175,6 +175,9 @@ describe("StageSummaryCard", () => {
     );
     expect(screen.getByText("3-5-sonnet")).toBeInTheDocument();
     expect(screen.getByText("3-5-haiku")).toBeInTheDocument();
+    expect(screen.getByText("Calls")).toBeInTheDocument();
+    expect(screen.getByText("12")).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
     expect(screen.getByText("$0.030")).toBeInTheDocument();
     expect(screen.getByText("$0.004")).toBeInTheDocument();
     expect(screen.getByText("Throttle")).toBeInTheDocument();

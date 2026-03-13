@@ -137,6 +137,7 @@ class _PhaseResult:
             throttle_seconds=self.throttle_seconds,
             cache_creation_tokens=self.cache_creation_tokens,
             cache_read_tokens=self.cache_read_tokens,
+            api_calls=self.round_count,
         )
 
 
