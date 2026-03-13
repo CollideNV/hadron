@@ -177,6 +177,7 @@ describe("StageSummaryCard", () => {
     expect(screen.getByText("3-5-haiku")).toBeInTheDocument();
     expect(screen.getByText("$0.030")).toBeInTheDocument();
     expect(screen.getByText("$0.004")).toBeInTheDocument();
+    expect(screen.getByText("Throttle")).toBeInTheDocument();
     expect(screen.getByText("10s")).toBeInTheDocument();
   });
 

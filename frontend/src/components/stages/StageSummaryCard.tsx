@@ -94,26 +94,38 @@ export default function StageSummaryCard({
           </div>
         )}
 
-        {/* Per-model breakdown */}
+        {/* Per-model breakdown table */}
         {Object.keys(modelStats).length > 0 && (
-          <div className="space-y-0.5 mt-1">
-            {Object.entries(modelStats).map(([model, stats]) => (
-              <div key={model} className="flex items-center justify-between text-[10px]">
-                <span className="font-mono text-text-muted truncate" title={model}>
-                  {formatModelName(model)}
-                </span>
-                <div className="flex items-center gap-2">
-                  <span className="text-text-dim">
+          <table className="w-full text-[10px] mt-1 border-spacing-0" style={{ borderCollapse: "collapse" }}>
+            <thead>
+              <tr className="text-text-dim text-left">
+                <th className="font-normal pb-0.5">Model</th>
+                <th className="font-normal pb-0.5 text-right">Tokens</th>
+                <th className="font-normal pb-0.5 text-right">Cost</th>
+                <th className="font-normal pb-0.5 text-right">Throttle</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(modelStats).map(([model, stats]) => (
+                <tr key={model}>
+                  <td className="font-mono text-text-muted truncate pr-2 py-px" title={model}>
+                    {formatModelName(model)}
+                  </td>
+                  <td className="text-text-dim text-right py-px whitespace-nowrap">
                     {(stats.input_tokens / 1000).toFixed(1)}k/{(stats.output_tokens / 1000).toFixed(1)}k
-                  </span>
-                  <span className="text-accent font-mono">${stats.cost_usd.toFixed(3)}</span>
-                  {stats.throttle_count > 0 && (
-                    <span className="text-status-error">{stats.throttle_seconds.toFixed(0)}s</span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+                  </td>
+                  <td className="text-accent font-mono text-right py-px whitespace-nowrap">
+                    ${stats.cost_usd.toFixed(3)}
+                  </td>
+                  <td className="text-right py-px whitespace-nowrap">
+                    {stats.throttle_count > 0
+                      ? <span className="text-status-error">{stats.throttle_seconds.toFixed(0)}s</span>
+                      : <span className="text-text-dim">&mdash;</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
 
         {/* Test badges */}
