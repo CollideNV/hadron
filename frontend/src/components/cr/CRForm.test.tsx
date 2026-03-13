@@ -126,4 +126,34 @@ describe("CRForm", () => {
     expect(screen.getByLabelText("Repository URL")).toBeInTheDocument();
     expect(screen.getByLabelText("Default Branch")).toBeInTheDocument();
   });
+
+  // Cancel button tests
+  it("does not render Cancel button when onCancel not provided", () => {
+    render(<CRForm onSubmit={vi.fn()} submitting={false} />);
+    expect(screen.queryByRole("button", { name: /cancel/i })).not.toBeInTheDocument();
+  });
+
+  it("renders Cancel button when onCancel is provided", () => {
+    render(<CRForm onSubmit={vi.fn()} submitting={false} onCancel={vi.fn()} />);
+    expect(screen.getByRole("button", { name: /cancel/i })).toBeInTheDocument();
+  });
+
+  it("calls onCancel when Cancel button is clicked", async () => {
+    const onCancel = vi.fn();
+    const user = userEvent.setup();
+    render(<CRForm onSubmit={vi.fn()} submitting={false} onCancel={onCancel} />);
+
+    await user.click(screen.getByRole("button", { name: /cancel/i }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("Cancel button does not submit the form", async () => {
+    const onSubmit = vi.fn();
+    const onCancel = vi.fn();
+    const user = userEvent.setup();
+    render(<CRForm onSubmit={onSubmit} submitting={false} onCancel={onCancel} />);
+
+    await user.click(screen.getByRole("button", { name: /cancel/i }));
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
 });

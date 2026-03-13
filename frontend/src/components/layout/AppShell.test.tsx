@@ -16,7 +16,7 @@ describe("AppShell", () => {
     expect(screen.getByText("by Collide")).toBeInTheDocument();
   });
 
-  it("renders navigation links", () => {
+  it("renders Pipelines navigation link", () => {
     render(
       <MemoryRouter>
         <AppShell>
@@ -25,7 +25,19 @@ describe("AppShell", () => {
       </MemoryRouter>,
     );
     expect(screen.getByText("Pipelines")).toBeInTheDocument();
-    expect(screen.getByText("+ New CR")).toBeInTheDocument();
+  });
+
+  it("does not render a /new link in the header", () => {
+    render(
+      <MemoryRouter>
+        <AppShell>
+          <div>content</div>
+        </AppShell>
+      </MemoryRouter>,
+    );
+    const links = screen.getAllByRole("link");
+    const hrefs = links.map((l) => l.getAttribute("href"));
+    expect(hrefs).not.toContain("/new");
   });
 
   it("renders children", () => {
@@ -39,7 +51,7 @@ describe("AppShell", () => {
     expect(screen.getByText("Test content here")).toBeInTheDocument();
   });
 
-  it("links to correct paths", () => {
+  it("links to the root path", () => {
     render(
       <MemoryRouter>
         <AppShell>
@@ -50,6 +62,5 @@ describe("AppShell", () => {
     const links = screen.getAllByRole("link");
     const hrefs = links.map((l) => l.getAttribute("href"));
     expect(hrefs).toContain("/");
-    expect(hrefs).toContain("/new");
   });
 });

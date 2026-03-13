@@ -37,12 +37,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
           >
             Pipelines
           </Link>
-          <Link
-            to="/new"
-            className="no-underline bg-accent text-bg px-3 py-1.5 rounded-md text-sm font-medium hover:brightness-110 transition-all"
-          >
-            + New CR
-          </Link>
         </nav>
       </header>
       <main className="flex-1">{children}</main>

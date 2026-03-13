@@ -1,16 +1,32 @@
+import { useState } from "react";
 import { useCRList } from "../hooks/useCRList";
 import CRCard from "../components/cr/CRCard";
+import CRCreationDialog from "../components/cr/CRCreationDialog";
+import { BTN_ACCENT } from "../utils/styles";
 
 export default function CRListPage() {
-  const { runs, loading, error } = useCRList();
+  const { runs, loading, error, refresh } = useCRList();
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const handleCreated = () => {
+    refresh();
+  };
 
   return (
     <div className="max-w-4xl mx-auto py-8 px-4">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-lg font-semibold text-text">Pipeline Runs</h1>
-        <span className="text-xs text-text-dim">
-          {runs.length} run{runs.length !== 1 && "s"}
-        </span>
+        <div className="flex items-center gap-4">
+          <span className="text-xs text-text-dim">
+            {runs.length} run{runs.length !== 1 && "s"}
+          </span>
+          <button
+            onClick={() => setDialogOpen(true)}
+            className={BTN_ACCENT}
+          >
+            + New CR
+          </button>
+        </div>
       </div>
 
       {loading && (
@@ -35,6 +51,12 @@ export default function CRListPage() {
           <CRCard key={run.cr_id} run={run} />
         ))}
       </div>
+
+      <CRCreationDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        onCreated={handleCreated}
+      />
     </div>
   );
 }
