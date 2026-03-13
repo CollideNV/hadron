@@ -1,9 +1,11 @@
 import { useState } from "react";
 import type { RawChangeRequest } from "../../api/types";
+import { BTN_ACCENT, BTN_GHOST } from "../../utils/styles";
 
 interface CRFormProps {
   onSubmit: (cr: RawChangeRequest) => void;
   submitting: boolean;
+  onCancel?: () => void;
 }
 
 const inputClass =
@@ -11,7 +13,7 @@ const inputClass =
 
 const URL_PATTERN = /^https?:\/\/.+/;
 
-export default function CRForm({ onSubmit, submitting }: CRFormProps) {
+export default function CRForm({ onSubmit, submitting, onCancel }: CRFormProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
@@ -103,13 +105,24 @@ export default function CRForm({ onSubmit, submitting }: CRFormProps) {
           />
         </div>
       </div>
-      <button
-        type="submit"
-        disabled={submitting || !title || !description || !!urlError}
-        className="w-full py-2.5 px-4 bg-accent text-bg rounded-lg font-medium text-sm hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer border-none"
-      >
-        {submitting ? "Submitting..." : "Trigger Pipeline"}
-      </button>
+      <div className="flex gap-3 justify-end">
+        {onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            className={BTN_GHOST}
+          >
+            Cancel
+          </button>
+        )}
+        <button
+          type="submit"
+          disabled={submitting || !title || !description || !!urlError}
+          className={`${BTN_ACCENT} disabled:opacity-40 disabled:cursor-not-allowed`}
+        >
+          {submitting ? "Submitting..." : "Trigger Pipeline"}
+        </button>
+      </div>
     </form>
   );
 }
