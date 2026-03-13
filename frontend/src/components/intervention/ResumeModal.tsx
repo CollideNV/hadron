@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { resumePipeline } from "../../api/client";
 import Modal from "../shared/Modal";
+import { BTN_ACCENT, BTN_GHOST } from "../../utils/styles";
 
 interface ResumeModalProps {
   crId: string;
@@ -104,7 +105,7 @@ export default function ResumeModal({ crId, status }: ResumeModalProps) {
           <button
             onClick={handleCustomResume}
             disabled={sending}
-            className="mt-2 px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:brightness-110 transition-all disabled:opacity-40 cursor-pointer border-none"
+            className={`mt-2 ${BTN_ACCENT}`}
           >
             {sent ? "Sent!" : sending ? "Resuming..." : "Resume with custom overrides"}
           </button>
@@ -120,7 +121,7 @@ export default function ResumeModal({ crId, status }: ResumeModalProps) {
               setOpen(false);
               setError("");
             }}
-            className="px-4 py-2 text-sm text-text-muted hover:text-text cursor-pointer bg-transparent border-none transition-colors"
+            className={BTN_GHOST}
           >
             Cancel
           </button>

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { sendIntervention } from "../../api/client";
 import Modal from "../shared/Modal";
+import { BTN_ACCENT, BTN_GHOST } from "../../utils/styles";
 
 interface InterventionModalProps {
   crId: string;
@@ -55,14 +56,14 @@ export default function InterventionModal({ crId }: InterventionModalProps) {
         <div className="flex items-center justify-end gap-3 mt-4">
           <button
             onClick={() => setOpen(false)}
-            className="px-4 py-2 text-sm text-text-muted hover:text-text cursor-pointer bg-transparent border-none transition-colors"
+            className={BTN_GHOST}
           >
             Cancel
           </button>
           <button
             onClick={handleSend}
             disabled={sending || !instructions.trim()}
-            className="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:brightness-110 transition-all disabled:opacity-40 cursor-pointer border-none"
+            className={BTN_ACCENT}
           >
             {sent ? "Sent!" : sending ? "Sending..." : "Send"}
           </button>

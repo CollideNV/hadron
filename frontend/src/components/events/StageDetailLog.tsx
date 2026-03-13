@@ -1,6 +1,7 @@
 import type { PipelineEvent } from "../../api/types";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { getStageColor } from "../../utils/stages";
+import { formatCost } from "../../utils/format";
 
 function subStageLabel(stage: string): string {
   if (!stage.includes(":")) return stage;
@@ -28,7 +29,7 @@ function summarize(event: PipelineEvent): string {
     case "review_finding":
       return `[${event.data.severity}] ${event.data.message || "finding"}`;
     case "cost_update":
-      return `Cost: $${(event.data.total_cost_usd || 0).toFixed(4)}`;
+      return `Cost: ${formatCost(event.data.total_cost_usd || 0)}`;
     case "pipeline_started":
       return "Pipeline started";
     case "pipeline_resumed":

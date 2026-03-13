@@ -1,5 +1,5 @@
 import type { AgentSession } from "./types";
-import { formatModelName } from "../../utils/format";
+import { formatModelName, formatCost } from "../../utils/format";
 
 interface SessionHeaderProps {
   session: AgentSession;
@@ -43,7 +43,7 @@ export default function SessionHeader({ session, isActive }: SessionHeaderProps)
       )}
       {session.costUsd > 0 && (
         <span className="text-[10px] text-accent ml-auto">
-          ${session.costUsd.toFixed(3)}
+          {formatCost(session.costUsd, 3)}
         </span>
       )}
     </div>

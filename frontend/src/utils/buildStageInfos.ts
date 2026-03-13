@@ -1,5 +1,6 @@
 import type { PipelineEvent } from "../api/types";
 import { STAGES } from "../api/types";
+import { formatCost } from "./format";
 
 /* ── Types ── */
 export interface SubStageInfo {
@@ -136,7 +137,7 @@ export function summarizeEvent(event: PipelineEvent): string {
     case "review_finding":
       return `[${event.data.severity}] ${event.data.message || "finding"}${event.data.file ? ` @ ${event.data.file}` : ""}`;
     case "cost_update":
-      return `$${(event.data.total_cost_usd || 0).toFixed(4)}`;
+      return formatCost(event.data.total_cost_usd || 0);
     case "intervention_set":
       return "Intervention received";
     case "error":

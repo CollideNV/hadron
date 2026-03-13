@@ -6,15 +6,16 @@ instead of reaching into ``request.app.state`` directly.
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import Request
+import redis.asyncio as aioredis
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from hadron.controller.job_spawner import JobSpawner
 from hadron.events.bus import EventBus
 from hadron.events.interventions import InterventionManager
 
 
-def get_session_factory(request: Request) -> Any:
+def get_session_factory(request: Request) -> async_sessionmaker[AsyncSession]:
     """Provide the async session factory."""
     return request.app.state.session_factory
 
@@ -24,12 +25,12 @@ def get_event_bus(request: Request) -> EventBus:
     return request.app.state.event_bus
 
 
-def get_job_spawner(request: Request) -> Any:
+def get_job_spawner(request: Request) -> JobSpawner:
     """Provide the job spawner."""
     return request.app.state.job_spawner
 
 
-def get_redis(request: Request) -> Any:
+def get_redis(request: Request) -> aioredis.Redis:
     """Provide the Redis client."""
     return request.app.state.redis
 

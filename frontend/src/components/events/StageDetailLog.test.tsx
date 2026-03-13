@@ -20,7 +20,7 @@ describe("StageDetailLog", () => {
   it("shows event count", () => {
     const events = [
       makeEvent({ event_type: "stage_entered" }),
-      makeEvent({ event_type: "agent_started", data: { role: "tdd_dev" } }),
+      makeEvent({ event_type: "agent_started", data: { role: "tdd_dev", repo: "" } }),
     ];
     render(
       <StageDetailLog events={events} stageName="tdd" onBack={vi.fn()} />,

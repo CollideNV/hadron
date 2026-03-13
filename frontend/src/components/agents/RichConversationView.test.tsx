@@ -22,6 +22,7 @@ function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
     throttleCount: 0,
     throttleSeconds: 0,
     modelBreakdown: {},
+    loopIteration: 0,
     ...overrides,
   };
 }
@@ -278,7 +279,7 @@ describe("RichConversationView", () => {
       makeEvent({
         event_type: "review_finding",
         stage: "review",
-        data: { message: "Something noted" },
+        data: { severity: "info", message: "Something noted" },
         timestamp: 2,
       }),
     ];
@@ -299,7 +300,7 @@ describe("RichConversationView", () => {
       makeEvent({
         event_type: "review_finding",
         stage: "review",
-        data: { severity: "major" },
+        data: { severity: "major", message: "No message" },
         timestamp: 2,
       }),
     ];

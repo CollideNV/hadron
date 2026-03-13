@@ -38,8 +38,8 @@ export interface StageCompletedData {
   error?: string;
 }
 export interface AgentStartedData {
-  role?: string;
-  repo?: string;
+  role: string;
+  repo: string;
   model?: string;
   explore_model?: string;
   plan_model?: string;
@@ -47,13 +47,13 @@ export interface AgentStartedData {
   allowed_tools?: string[];
 }
 export interface AgentCompletedData {
-  role?: string;
-  repo?: string;
+  role: string;
+  repo: string;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
   model?: string;
   output?: string;
-  input_tokens?: number;
-  output_tokens?: number;
-  cost_usd?: number;
   tool_calls_count?: number;
   round_count?: number;
   conversation_key?: string;
@@ -70,9 +70,9 @@ export interface ModelBreakdownEntry {
   api_calls: number;
 }
 export interface AgentToolCallData {
-  role?: string;
+  role: string;
+  tool: string;
   repo?: string;
-  tool?: string;
   input?: unknown;
   result?: string;
   result_snippet?: string;
@@ -80,35 +80,35 @@ export interface AgentToolCallData {
   type?: "call" | "result";
 }
 export interface AgentOutputData {
-  role?: string;
+  role: string;
+  text: string;
   repo?: string;
-  text?: string;
   round?: number;
 }
 export interface AgentNudgeData {
-  role?: string;
+  role: string;
+  text: string;
   repo?: string;
-  text?: string;
 }
 export interface PhaseStartedData {
-  role?: string;
+  role: string;
   repo?: string;
   [k: string]: unknown;
 }
 export interface PhaseCompletedData {
-  role?: string;
+  role: string;
   repo?: string;
   [k: string]: unknown;
 }
 export interface TestRunData {
-  passed?: boolean;
+  passed: boolean;
   iteration?: number;
   repo?: string;
   output_tail?: string;
 }
 export interface ReviewFindingData {
-  severity?: string;
-  message?: string;
+  severity: string;
+  message: string;
   file?: string;
   line?: number;
 }
@@ -116,6 +116,11 @@ export interface InterventionSetData {}
 export interface CostUpdateData {
   total_cost_usd?: number;
   delta_usd?: number;
+}
+export interface AgentPromptData {
+  role: string;
+  text: string;
+  repo?: string;
 }
 export interface ErrorData {
   message?: string;
@@ -139,6 +144,7 @@ export interface PipelineEventMap {
   agent_nudge: AgentNudgeData;
   phase_started: PhaseStartedData;
   phase_completed: PhaseCompletedData;
+  agent_prompt: AgentPromptData;
   test_run: TestRunData;
   review_finding: ReviewFindingData;
   intervention_set: InterventionSetData;
@@ -181,6 +187,7 @@ export const EVENT_TYPES = [
   "agent_nudge",
   "phase_started",
   "phase_completed",
+  "agent_prompt",
   "test_run",
   "review_finding",
   "intervention_set",

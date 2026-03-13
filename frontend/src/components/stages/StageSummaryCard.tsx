@@ -1,7 +1,7 @@
 import type { PipelineEvent, PipelineEventMap, ModelBreakdownEntry } from "../../api/types";
 import type { AgentSession } from "../agents/types";
 import { getStageColor } from "../../utils/stages";
-import { formatDuration, formatModelName } from "../../utils/format";
+import { formatDuration, formatModelName, formatTokenPair, formatCost } from "../../utils/format";
 
 export { getStageColor } from "../../utils/stages";
 
@@ -91,7 +91,7 @@ export default function StageSummaryCard({
         {totalCost > 0 && (
           <div className="flex items-center justify-between">
             <span className="text-text-dim">Cost</span>
-            <span className="text-accent font-mono">${totalCost.toFixed(3)}</span>
+            <span className="text-accent font-mono">{formatCost(totalCost, 3)}</span>
           </div>
         )}
 
@@ -117,10 +117,10 @@ export default function StageSummaryCard({
                     {stats.api_calls || 0}
                   </td>
                   <td className="text-text-dim text-right py-px whitespace-nowrap">
-                    {(stats.input_tokens / 1000).toFixed(1)}k/{(stats.output_tokens / 1000).toFixed(1)}k
+                    {formatTokenPair(stats.input_tokens, stats.output_tokens)}
                   </td>
                   <td className="text-accent font-mono text-right py-px whitespace-nowrap">
-                    ${stats.cost_usd.toFixed(3)}
+                    {formatCost(stats.cost_usd, 3)}
                   </td>
                   <td className="text-right py-px whitespace-nowrap">
                     {stats.throttle_count > 0

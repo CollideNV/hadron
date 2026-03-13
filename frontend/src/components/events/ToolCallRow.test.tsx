@@ -8,7 +8,7 @@ function toolEvent(overrides: Record<string, unknown> = {}) {
   return makeEvent({
     event_type: "agent_tool_call",
     stage: "tdd",
-    data: { tool: "write_file", input: { path: "src/main.ts" }, ...overrides },
+    data: { role: "code_writer", tool: "write_file", input: { path: "src/main.ts" }, ...overrides },
   });
 }
 
@@ -67,7 +67,7 @@ describe("ToolCallRow", () => {
     const event = makeEvent({
       event_type: "agent_tool_call",
       stage: "tdd",
-      data: { tool: "read_file" },
+      data: { role: "code_writer", tool: "read_file" },
     });
     render(<ToolCallRow event={event} color="#37e284" />);
     expect(screen.getByText("read_file")).toBeInTheDocument();

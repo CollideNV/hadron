@@ -14,9 +14,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Callable
 
-from hadron.agent.base import AgentResult, merge_model_breakdowns
+from hadron.agent.base import AgentResult, CostAccumulator, merge_model_breakdowns
 from hadron.agent.prompt import PromptComposer
 from hadron.config.defaults import DEFAULT_EXPLORE_MODEL, DEFAULT_MODEL
 from hadron.config.limits import MAX_DIFF_CHARS
@@ -29,9 +29,6 @@ from hadron.pipeline.nodes import (
 from hadron.pipeline.nodes.cr_format import format_cr_section, format_cr_summary
 
 logger = logging.getLogger(__name__)
-
-# The three reviewer roles and their prompt template names.
-_REVIEWER_ROLES = ("security_reviewer", "quality_reviewer", "spec_compliance_reviewer")
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +160,13 @@ def _build_spec_compliance_payload(
     )
 
 
+_REVIEWER_REGISTRY: dict[str, Callable[..., str]] = {
+    "security_reviewer": _build_security_payload,
+    "quality_reviewer": _build_quality_payload,
+    "spec_compliance_reviewer": _build_spec_compliance_payload,
+}
+
+
 async def _run_single_reviewer(
     role: str,
     task_payload: str,
@@ -231,12 +235,7 @@ async def review_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
     """Three parallel reviewers examine the diff for each repo."""
     structured_cr = state.get("structured_cr", {})
     behaviour_specs = state.get("behaviour_specs", [])
-    total_cost = 0.0
-    total_input = 0
-    total_output = 0
-    total_throttle_count = 0
-    total_throttle_seconds = 0.0
-    total_model_breakdown: dict[str, dict[str, Any]] = {}
+    costs = CostAccumulator()
 
     ri = RepoInfo.from_state(state)
     review_loop = state.get("review_loop_count", 0)
@@ -256,40 +255,33 @@ async def review_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
             if spec.get("repo_name") == ri.repo_name and not spec.get("feature_files"):
                 spec["feature_content_from_disk"] = feature_content
 
-    # 3. Build payloads for each reviewer
-    security_payload = _build_security_payload(
-        diff, structured_cr, ri.default_branch, scope_flags, behaviour_specs, ri.repo_name,
-    )
-    quality_payload = _build_quality_payload(
-        diff, structured_cr, ri.default_branch, scope_flags, behaviour_specs, ri.repo_name,
-    )
-    spec_payload = _build_spec_compliance_payload(
-        diff, structured_cr, ri.default_branch, scope_flags, behaviour_specs, ri.repo_name,
-    )
-
-    # 4. Run all 3 reviewers in parallel
-    # Security reviewer runs on Sonnet (misses matter); others use Haiku.
-    security_result, quality_result, spec_result = await asyncio.gather(
-        _run_single_reviewer("security_reviewer", security_payload, ctx, cr_id, ri.repo_name, ri.worktree_path, review_loop, model=DEFAULT_MODEL),
-        _run_single_reviewer("quality_reviewer", quality_payload, ctx, cr_id, ri.repo_name, ri.worktree_path, review_loop),
-        _run_single_reviewer("spec_compliance_reviewer", spec_payload, ctx, cr_id, ri.repo_name, ri.worktree_path, review_loop),
-    )
+    # 3. Build payloads and run all reviewers in parallel
+    payload_args = (diff, structured_cr, ri.default_branch, scope_flags, behaviour_specs, ri.repo_name)
+    reviewer_tasks = []
+    for role, build_payload in _REVIEWER_REGISTRY.items():
+        payload = build_payload(*payload_args)
+        # Security reviewer runs on Sonnet (misses matter); others use Haiku.
+        model = DEFAULT_MODEL if role == "security_reviewer" else None
+        reviewer_tasks.append(
+            _run_single_reviewer(role, payload, ctx, cr_id, ri.repo_name, ri.worktree_path, review_loop, model=model)
+        )
+    reviewer_results = await asyncio.gather(*reviewer_tasks)
 
     # 5. Merge findings and costs
     all_findings: list[dict[str, Any]] = []
-    for role, r in zip(_REVIEWER_ROLES, (security_result, quality_result, spec_result)):
+    for role, r in zip(_REVIEWER_REGISTRY, reviewer_results):
         await emit_cost_update(ctx.event_bus, cr_id, f"review:{role}", AgentResult(
             output="",
             cost_usd=r["cost_usd"],
             input_tokens=r["input_tokens"],
             output_tokens=r["output_tokens"],
-        ), total_cost)
-        total_cost += r["cost_usd"]
-        total_input += r["input_tokens"]
-        total_output += r["output_tokens"]
-        total_throttle_count += r.get("throttle_count", 0)
-        total_throttle_seconds += r.get("throttle_seconds", 0.0)
-        total_model_breakdown = merge_model_breakdowns(total_model_breakdown, r.get("model_breakdown", {}))
+        ), costs.total_cost)
+        costs.total_cost += r["cost_usd"]
+        costs.total_input += r["input_tokens"]
+        costs.total_output += r["output_tokens"]
+        costs.throttle_count += r.get("throttle_count", 0)
+        costs.throttle_seconds += r.get("throttle_seconds", 0.0)
+        costs.model_breakdown = merge_model_breakdowns(costs.model_breakdown, r.get("model_breakdown", {}))
         all_findings.extend(r["review"].get("findings", []))
 
     # 6. Emit individual findings
@@ -320,11 +312,6 @@ async def review_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
         "review_passed": passed,
         "review_loop_count": state.get("review_loop_count", 0) + 1,
         "current_stage": "review",
-        "cost_input_tokens": total_input,
-        "cost_output_tokens": total_output,
-        "cost_usd": total_cost,
-        "throttle_count": total_throttle_count,
-        "throttle_seconds": total_throttle_seconds,
-        "model_breakdown": total_model_breakdown,
+        **costs.to_state_dict(),
         "stage_history": [{"stage": "review", "status": "completed"}],
     }

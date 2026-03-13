@@ -46,8 +46,8 @@ describe("AgentRow", () => {
 
   it("shows tool count badge", () => {
     const toolCalls = [
-      makeEvent({ event_type: "agent_tool_call", data: { tool: "write_file" } }),
-      makeEvent({ event_type: "agent_tool_call", data: { tool: "read_file" } }),
+      makeEvent({ event_type: "agent_tool_call", data: { role: "spec_writer", tool: "write_file" } }),
+      makeEvent({ event_type: "agent_tool_call", data: { role: "spec_writer", tool: "read_file" } }),
     ];
     render(<AgentRow agent={makeAgent({ toolCalls })} color="#37e284" />);
     expect(screen.getByText("2 tools")).toBeInTheDocument();
@@ -55,7 +55,7 @@ describe("AgentRow", () => {
 
   it("shows singular 'tool' for one tool call", () => {
     const toolCalls = [
-      makeEvent({ event_type: "agent_tool_call", data: { tool: "write_file" } }),
+      makeEvent({ event_type: "agent_tool_call", data: { role: "spec_writer", tool: "write_file" } }),
     ];
     render(<AgentRow agent={makeAgent({ toolCalls })} color="#37e284" />);
     expect(screen.getByText("1 tool")).toBeInTheDocument();
@@ -71,7 +71,7 @@ describe("AgentRow", () => {
     const toolCalls = [
       makeEvent({
         event_type: "agent_tool_call",
-        data: { tool: "write_file", input: { path: "foo.ts" } },
+        data: { role: "spec_writer", tool: "write_file", input: { path: "foo.ts" } },
       }),
     ];
     render(<AgentRow agent={makeAgent({ toolCalls })} color="#37e284" />);

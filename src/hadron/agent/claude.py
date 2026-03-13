@@ -11,6 +11,8 @@ from typing import Any, AsyncIterator, Callable
 import anthropic
 
 from hadron.agent.base import AgentEvent, AgentResult, AgentTask, ModelStats, OnAgentEvent, OnToolCall
+from hadron.agent.cost import _compute_model_cost
+from hadron.agent.messages import _serialize_messages
 from hadron.agent.phases import PhasePromptBuilder
 from hadron.agent.rate_limiter import call_with_retry
 from hadron.agent.tools import execute_tool, make_tools
@@ -20,80 +22,10 @@ from hadron.config.limits import (
     MAX_TOOL_RESULT_EVENT_CHARS,
 )
 
+# Re-export for backwards compatibility (tests import these directly from claude.py)
+from hadron.agent.cost import _MODEL_COSTS, _DEFAULT_COST, register_model_cost  # noqa: F401
+
 logger = logging.getLogger(__name__)
-
-# Per-model cost per million tokens: (input, output).
-# Use register_model_cost() to add entries at runtime without modifying source.
-_MODEL_COSTS: dict[str, tuple[float, float]] = {
-    "claude-haiku-4-5-20251001": (0.80, 4.00),
-    "claude-sonnet-4-20250514": (3.00, 15.00),
-    "claude-sonnet-4-6": (3.00, 15.00),
-    "claude-opus-4-20250514": (15.00, 75.00),
-    "claude-opus-4-6": (15.00, 75.00),
-}
-# Fallback for unknown models (use Sonnet pricing)
-_DEFAULT_COST = (3.00, 15.00)
-
-
-def register_model_cost(model: str, input_cost: float, output_cost: float) -> None:
-    """Register per-million-token costs for a model.
-
-    Allows adding new models at startup (e.g. from database config)
-    without modifying source code.
-    """
-    _MODEL_COSTS[model] = (input_cost, output_cost)
-
-
-def _compute_model_cost(
-    model: str,
-    input_tokens: int,
-    output_tokens: int,
-    cache_creation_tokens: int = 0,
-    cache_read_tokens: int = 0,
-) -> float:
-    """Compute USD cost for a given model and token counts.
-
-    Cache pricing: writes cost 25% more than base input, reads cost 90% less.
-    """
-    cost_in, cost_out = _MODEL_COSTS.get(model, _DEFAULT_COST)
-    cache_write_cost = cost_in * 1.25
-    cache_read_cost = cost_in * 0.10
-    return (
-        input_tokens * cost_in
-        + output_tokens * cost_out
-        + cache_creation_tokens * cache_write_cost
-        + cache_read_tokens * cache_read_cost
-    ) / 1_000_000
-
-
-def _serialize_messages(msgs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert messages to JSON-serializable format."""
-    result = []
-    for msg in msgs:
-        entry: dict[str, Any] = {"role": msg["role"]}
-        content = msg.get("content")
-        if isinstance(content, str):
-            entry["content"] = content
-        elif isinstance(content, list):
-            serialized = []
-            for item in content:
-                if isinstance(item, dict):
-                    serialized.append(item)
-                elif hasattr(item, "type"):
-                    if item.type == "text":
-                        serialized.append({"type": "text", "text": item.text})
-                    elif item.type == "tool_use":
-                        serialized.append({
-                            "type": "tool_use", "id": item.id,
-                            "name": item.name, "input": item.input,
-                        })
-                else:
-                    serialized.append(str(item))
-            entry["content"] = serialized
-        else:
-            entry["content"] = str(content) if content else ""
-        result.append(entry)
-    return result
 
 
 @dataclass

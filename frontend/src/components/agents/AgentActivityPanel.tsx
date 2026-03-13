@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { PipelineEvent } from "../../api/types";
-import { buildSessions } from "./types";
+import { buildSessions } from "./buildSessions";
 import { useAutoSelectSession } from "./useAutoSelectSession";
 import AgentSessionList from "./AgentSessionList";
 import RichConversationView from "./RichConversationView";

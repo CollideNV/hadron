@@ -13,3 +13,15 @@ export function formatModelName(model: string): string {
 export function formatModelNameShort(model: string): string {
   return formatModelName(model).split("-")[0];
 }
+
+export function formatTokens(tokens: number): string {
+  return `${(tokens / 1000).toFixed(1)}k`;
+}
+
+export function formatTokenPair(input: number, output: number): string {
+  return `${formatTokens(input)}/${formatTokens(output)}`;
+}
+
+export function formatCost(usd: number, precision = 4): string {
+  return `$${usd.toFixed(precision)}`;
+}

@@ -51,7 +51,7 @@ export function useCRDetail(crId: string | undefined): CRDetailState {
 
   useEffect(() => {
     if (!crId) return;
-    getPipelineStatus(crId).then(setCrRun).catch(() => {});
+    getPipelineStatus(crId).then(setCrRun).catch((err) => console.warn("Failed to fetch CR status:", err));
   }, [crId]);
 
   // Re-fetch CR status periodically to catch stale stream state
@@ -59,7 +59,7 @@ export function useCRDetail(crId: string | undefined): CRDetailState {
     if (!crId) return;
     if (stream.status !== "running") return;
     const interval = setInterval(() => {
-      getPipelineStatus(crId).then(setCrRun).catch(() => {});
+      getPipelineStatus(crId).then(setCrRun).catch((err) => console.warn("Failed to fetch CR status:", err));
     }, 5000);
     return () => clearInterval(interval);
   }, [crId, stream.status]);

@@ -17,6 +17,7 @@ function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
     throttleCount: 0,
     throttleSeconds: 0,
     modelBreakdown: {},
+    loopIteration: 0,
     ...overrides,
   };
 }

@@ -197,7 +197,7 @@ describe("StageRow", () => {
     const user = userEvent.setup();
     const events = [
       makeEvent({ event_type: "stage_entered", stage: "tdd" }),
-      makeEvent({ event_type: "agent_started", stage: "tdd", data: { role: "dev" } }),
+      makeEvent({ event_type: "agent_started", stage: "tdd", data: { role: "dev", repo: "" } }),
       makeEvent({ event_type: "cost_update", stage: "tdd", data: { total_cost_usd: 0.5 } }),
     ];
     render(<StageRow info={makeStageInfo({ events })} {...defaultProps} />);

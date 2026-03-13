@@ -128,7 +128,7 @@ describe("useEventStream", () => {
       capturedOnEvent!(
         makeEvent({
           event_type: "agent_tool_call",
-          data: { tool: "read_file" },
+          data: { role: "code_writer", tool: "read_file" },
         }),
       );
     });
@@ -144,7 +144,7 @@ describe("useEventStream", () => {
       capturedOnEvent!(
         makeEvent({
           event_type: "agent_output",
-          data: { text: "analyzing code" },
+          data: { role: "code_writer", text: "analyzing code" },
         }),
       );
     });
@@ -159,7 +159,7 @@ describe("useEventStream", () => {
       capturedOnEvent!(
         makeEvent({
           event_type: "agent_nudge",
-          data: { text: "focus on tests" },
+          data: { role: "code_writer", text: "focus on tests" },
         }),
       );
     });
@@ -189,7 +189,7 @@ describe("useEventStream", () => {
       capturedOnEvent!(
         makeEvent({
           event_type: "review_finding",
-          data: { severity: "major" },
+          data: { severity: "major", message: "test" },
         }),
       );
     });

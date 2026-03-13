@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import type { CRRun } from "../../api/types";
 import CRStatusBadge from "./CRStatusBadge";
+import { formatCost } from "../../utils/format";
 
 function relativeTime(iso: string | null): string {
   if (!iso) return "";
@@ -35,7 +36,7 @@ export default function CRCard({ run }: { run: CRRun }) {
         <div className="text-right text-[11px] text-text-dim whitespace-nowrap">
           {run.cost_usd > 0 && (
             <div className="font-mono text-accent/80">
-              ${run.cost_usd.toFixed(4)}
+              {formatCost(run.cost_usd)}
             </div>
           )}
           <div className="mt-0.5">{relativeTime(run.created_at)}</div>

@@ -1,5 +1,6 @@
 import { Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
+import { BTN_ACCENT } from "../../utils/styles";
 
 interface Props {
   children: ReactNode;
@@ -33,7 +34,7 @@ export default class ErrorBoundary extends Component<Props, State> {
             </p>
             <button
               onClick={() => this.setState({ error: null })}
-              className="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:brightness-110 transition-all cursor-pointer border-none"
+              className={BTN_ACCENT}
             >
               Try again
             </button>

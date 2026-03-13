@@ -3,13 +3,11 @@ import { useAutoScroll } from "../../hooks/useAutoScroll";
 import type { PipelineEvent } from "../../api/types";
 import type { AgentSession, ConversationItem } from "./types";
 import { buildTimeline } from "../../utils/buildTimeline";
-import { formatModelName } from "../../utils/format";
-import RichToolCall from "./ToolRenderers";
+import { formatModelName, formatTokenPair } from "../../utils/format";
 import NudgeInput from "./NudgeInput";
-import MarkdownLite from "./MarkdownLite";
-import { InlineTestRun, InlineFinding } from "./InlineEventCards";
 import SessionHeader from "./SessionHeader";
 import TokenInfoFooter from "./TokenInfoFooter";
+import TimelineEntry, { PHASE_LABELS } from "./TimelineEntry";
 
 interface RichConversationViewProps {
   session: AgentSession;
@@ -32,12 +30,6 @@ function getPhases(items: ConversationItem[]): Array<{ phase: string; model: str
   return phases;
 }
 
-const PHASE_LABELS: Record<string, string> = {
-  explore: "Explore",
-  plan: "Plan",
-  act: "Execute",
-};
-
 export default function RichConversationView({
   session,
   crId,
@@ -52,7 +44,7 @@ export default function RichConversationView({
     (pipelineStatus === "running" || pipelineStatus === "connecting");
 
   const tokenInfo = session.inputTokens
-    ? `${(session.inputTokens / 1000).toFixed(1)}k / ${(session.outputTokens / 1000).toFixed(1)}k tok`
+    ? `${formatTokenPair(session.inputTokens, session.outputTokens)} tok`
     : "";
 
   const phases = useMemo(() => getPhases(session.items), [session.items]);
@@ -129,82 +121,9 @@ export default function RichConversationView({
             Agent is thinking...
           </p>
         )}
-        {timeline.map((entry, idx) => {
-          if (entry.kind === "phase_started" && !selectedPhase) {
-            return (
-              <div key={`${entry.kind}-${entry.ts}-${idx}`} className="flex items-center gap-2 py-1">
-                <div className="flex-1 border-t border-border-subtle" />
-                <span className="text-[10px] text-text-dim font-medium uppercase tracking-wide">
-                  {PHASE_LABELS[entry.item.phase] || entry.item.phase}
-                </span>
-                <span className="text-[10px] text-text-muted font-mono">
-                  {formatModelName(entry.item.model)}
-                </span>
-                <div className="flex-1 border-t border-border-subtle" />
-              </div>
-            );
-          }
-          if (entry.kind === "prompt") {
-            return (
-              <div key={`${entry.kind}-${entry.ts}-${idx}`} className="animate-fade-in">
-                <details className="group">
-                  <summary className="flex items-start gap-2 cursor-pointer list-none">
-                    <span className="text-[11px] flex-shrink-0 mt-0.5">&#128203;</span>
-                    <span className="text-xs text-text-dim italic">Task prompt</span>
-                    <span className="text-[10px] text-text-muted ml-1">(click to expand)</span>
-                  </summary>
-                  <div className="ml-6 mt-1">
-                    <MarkdownLite text={entry.item.text} />
-                  </div>
-                </details>
-              </div>
-            );
-          }
-          if (entry.kind === "output") {
-            return (
-              <div key={`${entry.kind}-${entry.ts}-${idx}`} className="animate-fade-in">
-                <div className="flex items-start gap-2">
-                  <span className="text-[11px] flex-shrink-0 mt-0.5">&#129302;</span>
-                  <MarkdownLite text={entry.item.text} />
-                </div>
-              </div>
-            );
-          }
-          if (entry.kind === "tool") {
-            return (
-              <div key={`${entry.kind}-${entry.ts}-${idx}`} className="animate-fade-in">
-                <RichToolCall call={entry.call} result={entry.result} />
-              </div>
-            );
-          }
-          if (entry.kind === "nudge") {
-            return (
-              <div key={`${entry.kind}-${entry.ts}-${idx}`} className="animate-fade-in">
-                <div className="flex items-start gap-2">
-                  <span className="text-[11px] flex-shrink-0 mt-0.5">&#128100;</span>
-                  <p className="text-xs text-text leading-relaxed bg-accent/10 rounded px-2 py-1 border border-accent/20">
-                    {entry.item.text}
-                  </p>
-                </div>
-              </div>
-            );
-          }
-          if (entry.kind === "test_run") {
-            return (
-              <div key={`${entry.kind}-${entry.ts}-${idx}`} className="animate-fade-in">
-                <InlineTestRun event={entry.event} />
-              </div>
-            );
-          }
-          if (entry.kind === "finding") {
-            return (
-              <div key={`${entry.kind}-${entry.ts}-${idx}`} className="animate-fade-in">
-                <InlineFinding event={entry.event} />
-              </div>
-            );
-          }
-          return null;
-        })}
+        {timeline.map((entry, idx) => (
+          <TimelineEntry key={`${entry.kind}-${entry.ts}-${idx}`} entry={entry} idx={idx} selectedPhase={selectedPhase} />
+        ))}
       </div>
 
       {/* Token info footer with per-model breakdown */}

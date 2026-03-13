@@ -18,6 +18,7 @@ function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
     throttleCount: 0,
     throttleSeconds: 0,
     modelBreakdown: {},
+    loopIteration: 0,
     ...overrides,
   };
 }
@@ -132,9 +133,9 @@ describe("StageSummaryCard", () => {
 
   it("shows finding severity counts", () => {
     const findings = [
-      makeEvent({ event_type: "review_finding", data: { severity: "critical" } }),
-      makeEvent({ event_type: "review_finding", data: { severity: "critical" } }),
-      makeEvent({ event_type: "review_finding", data: { severity: "minor" } }),
+      makeEvent({ event_type: "review_finding", data: { severity: "critical", message: "test" } }),
+      makeEvent({ event_type: "review_finding", data: { severity: "critical", message: "test" } }),
+      makeEvent({ event_type: "review_finding", data: { severity: "minor", message: "test" } }),
     ];
     render(
       <StageSummaryCard

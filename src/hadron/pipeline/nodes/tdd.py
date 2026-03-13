@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from hadron.agent.base import merge_model_breakdowns
+from hadron.agent.base import CostAccumulator
 from hadron.agent.prompt import PromptComposer
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
@@ -27,12 +27,7 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
 
     composer = PromptComposer()
     structured_cr = state.get("structured_cr", {})
-    total_cost = 0.0
-    total_input = 0
-    total_output = 0
-    total_throttle_count = 0
-    total_throttle_seconds = 0.0
-    total_model_breakdown: dict[str, dict[str, Any]] = {}
+    costs = CostAccumulator()
 
     ri = RepoInfo.from_state(state)
     review_loop = state.get("review_loop_count", 0)
@@ -80,12 +75,7 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
         loop_iteration=review_loop,
         # Haiku explores repo structure, Sonnet writes tests
     )
-    total_cost += test_run.result.cost_usd
-    total_input += test_run.result.input_tokens
-    total_output += test_run.result.output_tokens
-    total_throttle_count += test_run.result.throttle_count
-    total_throttle_seconds += test_run.result.throttle_seconds
-    total_model_breakdown = merge_model_breakdowns(total_model_breakdown, test_run.result.model_breakdown)
+    costs.add(test_run.result)
 
     await ctx.event_bus.emit(PipelineEvent(
         cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="tdd:test_writer",
@@ -139,16 +129,11 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
             stage="tdd:code_writer",
             repo_name=ri.repo_name,
             working_directory=ri.worktree_path,
-            prior_cost=total_cost,
+            prior_cost=costs.total_cost,
             loop_iteration=review_loop,
             # Haiku explores repo structure, Sonnet writes code
         )
-        total_cost += code_run.result.cost_usd
-        total_input += code_run.result.input_tokens
-        total_output += code_run.result.output_tokens
-        total_throttle_count += code_run.result.throttle_count
-        total_throttle_seconds += code_run.result.throttle_seconds
-        total_model_breakdown = merge_model_breakdowns(total_model_breakdown, code_run.result.model_breakdown)
+        costs.add(code_run.result)
 
         # Run tests
         tests_passing, test_output = await run_test_command(
@@ -200,11 +185,6 @@ async def tdd_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dict[s
         "dev_results": [dev_result],
         "dev_loop_count": state.get("dev_loop_count", 0) + 1,
         "current_stage": "tdd",
-        "cost_input_tokens": total_input,
-        "cost_output_tokens": total_output,
-        "cost_usd": total_cost,
-        "throttle_count": total_throttle_count,
-        "throttle_seconds": total_throttle_seconds,
-        "model_breakdown": total_model_breakdown,
+        **costs.to_state_dict(),
         "stage_history": [{"stage": "tdd", "status": "completed"}],
     }

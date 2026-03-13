@@ -30,7 +30,7 @@ describe("buildStageInfos", () => {
       makeEvent({ event_type: "stage_entered", stage: "tdd", timestamp: 100 }),
       makeEvent({ event_type: "agent_started", stage: "tdd", timestamp: 110, data: { role: "developer", repo: "myrepo" } }),
       makeEvent({ event_type: "agent_tool_call", stage: "tdd", timestamp: 120, data: { role: "developer", repo: "myrepo", tool: "read_file" } }),
-      makeEvent({ event_type: "agent_completed", stage: "tdd", timestamp: 130, data: { role: "developer", repo: "myrepo" } }),
+      makeEvent({ event_type: "agent_completed", stage: "tdd", timestamp: 130, data: { role: "developer", repo: "myrepo", input_tokens: 0, output_tokens: 0, cost_usd: 0 } }),
     ];
     const result = buildStageInfos(events);
     expect(result[0].agents).toHaveLength(1);
@@ -45,7 +45,7 @@ describe("buildStageInfos", () => {
     const events = [
       makeEvent({ event_type: "stage_entered", stage: "review:security", timestamp: 100 }),
       makeEvent({ event_type: "agent_started", stage: "review:security", timestamp: 110, data: { role: "security_reviewer", repo: "" } }),
-      makeEvent({ event_type: "agent_completed", stage: "review:security", timestamp: 120, data: { role: "security_reviewer", repo: "" } }),
+      makeEvent({ event_type: "agent_completed", stage: "review:security", timestamp: 120, data: { role: "security_reviewer", repo: "", input_tokens: 0, output_tokens: 0, cost_usd: 0 } }),
       makeEvent({ event_type: "stage_completed", stage: "review:security", timestamp: 130 }),
     ];
     const result = buildStageInfos(events);

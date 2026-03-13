@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useStageData } from "../../contexts/StageDataContext";
-import { buildSessions } from "../agents/types";
+import { buildSessions } from "../agents/buildSessions";
 import { useAutoSelectSession } from "../agents/useAutoSelectSession";
 import AgentSessionList from "../agents/AgentSessionList";
 import RichConversationView from "../agents/RichConversationView";

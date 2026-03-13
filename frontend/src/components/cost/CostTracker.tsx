@@ -1,3 +1,5 @@
+import { formatCost } from "../../utils/format";
+
 interface CostTrackerProps {
   costUsd: number;
 }
@@ -9,7 +11,7 @@ export default function CostTracker({ costUsd }: CostTrackerProps) {
         Cost
       </span>
       <span className="font-mono text-sm text-accent font-medium">
-        ${costUsd.toFixed(4)}
+        {formatCost(costUsd)}
       </span>
     </div>
   );

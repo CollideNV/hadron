@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildSessions } from "./types";
+import { buildSessions } from "./buildSessions";
 import { makeEvent } from "../../test-utils";
 
 describe("buildSessions", () => {
@@ -35,7 +35,7 @@ describe("buildSessions", () => {
       makeEvent({
         event_type: "agent_completed",
         stage: "tdd",
-        data: { role: "tdd_developer", repo: "", input_tokens: 5000, output_tokens: 2000 },
+        data: { role: "tdd_developer", repo: "", input_tokens: 5000, output_tokens: 2000, cost_usd: 0 },
         timestamp: 1700000010,
       }),
     ];
@@ -278,14 +278,14 @@ describe("buildSessions", () => {
       makeEvent({
         event_type: "agent_started",
         stage: "tdd",
-        data: {},
+        data: { role: "", repo: "" },
       }),
     ];
     const outputs = [
       makeEvent({
         event_type: "agent_output",
         stage: "tdd",
-        data: {},
+        data: { role: "", text: "" },
       }),
     ];
     const sessions = buildSessions(events, [], outputs, []);
@@ -359,6 +359,7 @@ describe("buildSessions", () => {
           repo: "",
           input_tokens: 1000,
           output_tokens: 500,
+          cost_usd: 0,
         },
         timestamp: 1700000010,
       }),

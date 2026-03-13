@@ -79,7 +79,7 @@ describe("ReviewFindingsPanel", () => {
       cr_id: "cr-1",
       event_type: "review_finding",
       stage: "review",
-      data: { severity: "info" },
+      data: { severity: "info", message: "" },
       timestamp: 1700000000,
     };
     render(<ReviewFindingsPanel findings={[finding]} />);

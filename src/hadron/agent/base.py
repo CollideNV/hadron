@@ -175,6 +175,35 @@ class AgentResult:
 
 
 @dataclass
+class CostAccumulator:
+    """Accumulates cost/token stats across multiple agent runs."""
+    total_cost: float = 0.0
+    total_input: int = 0
+    total_output: int = 0
+    throttle_count: int = 0
+    throttle_seconds: float = 0.0
+    model_breakdown: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    def add(self, result: AgentResult) -> None:
+        self.total_cost += result.cost_usd
+        self.total_input += result.input_tokens
+        self.total_output += result.output_tokens
+        self.throttle_count += result.throttle_count
+        self.throttle_seconds += result.throttle_seconds
+        self.model_breakdown = merge_model_breakdowns(self.model_breakdown, result.model_breakdown)
+
+    def to_state_dict(self) -> dict[str, Any]:
+        return {
+            "cost_input_tokens": self.total_input,
+            "cost_output_tokens": self.total_output,
+            "cost_usd": self.total_cost,
+            "throttle_count": self.throttle_count,
+            "throttle_seconds": self.throttle_seconds,
+            "model_breakdown": self.model_breakdown,
+        }
+
+
+@dataclass
 class AgentEvent:
     """Streaming event from an agent."""
 

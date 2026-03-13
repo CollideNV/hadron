@@ -190,7 +190,7 @@ describe("AgentActivityPanel", () => {
       }),
       makeEvent({
         event_type: "agent_completed",
-        data: { role: "tdd_developer", repo: "", input_tokens: 1000, output_tokens: 500 },
+        data: { role: "tdd_developer", repo: "", input_tokens: 1000, output_tokens: 500, cost_usd: 0 },
         timestamp: 1700000010,
       }),
     ];

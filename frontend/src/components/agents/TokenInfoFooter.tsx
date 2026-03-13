@@ -1,5 +1,5 @@
 import type { AgentSession } from "./types";
-import { formatModelName } from "../../utils/format";
+import { formatModelName, formatTokenPair, formatCost } from "../../utils/format";
 
 interface TokenInfoFooterProps {
   session: AgentSession;
@@ -19,10 +19,10 @@ export default function TokenInfoFooter({ session, tokenInfo }: TokenInfoFooterP
                   {shortName}
                 </span>
                 <span className="text-text-dim">
-                  {(stats.input_tokens / 1000).toFixed(1)}k/{(stats.output_tokens / 1000).toFixed(1)}k tok
+                  {formatTokenPair(stats.input_tokens, stats.output_tokens)} tok
                 </span>
                 <span className="text-accent">
-                  ${stats.cost_usd.toFixed(4)}
+                  {formatCost(stats.cost_usd)}
                 </span>
                 {stats.throttle_count > 0 && (
                   <span className="text-status-error">
