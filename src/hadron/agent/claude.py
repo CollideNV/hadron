@@ -178,6 +178,10 @@ class ClaudeAgentBackend:
         exploration_summary = ""
         plan_text = ""
 
+        # Emit the task prompt so the frontend can display it
+        if task.on_event:
+            await task.on_event("prompt", {"text": task.user_prompt})
+
         # --- PHASE 1: Explore (read-only tools, typically Haiku) ---
         if task.explore_model:
             if task.on_event:
@@ -218,6 +222,9 @@ class ClaudeAgentBackend:
                     "rounds": explore_result.round_count,
                     "input_tokens": explore_result.input_tokens,
                     "output_tokens": explore_result.output_tokens,
+                    "cost_usd": explore_result.cost_usd,
+                    "throttle_count": explore_result.throttle_count,
+                    "throttle_seconds": explore_result.throttle_seconds,
                     "cache_read_tokens": explore_result.cache_read_tokens,
                 })
 
@@ -252,13 +259,21 @@ class ClaudeAgentBackend:
             stats = plan_result.to_model_stats()
             breakdown[task.plan_model] = breakdown.get(task.plan_model, ModelStats()).merge(stats)
 
+            # Emit the plan output so the frontend can display it
+            if task.on_event and plan_text:
+                await task.on_event("output", {"text": plan_text, "round": 0})
+
             if task.on_event:
                 await task.on_event("phase_completed", {
                     "phase": "plan",
                     "model": task.plan_model,
                     "plan_length": len(plan_text),
+                    "rounds": 1,
                     "input_tokens": plan_result.input_tokens,
                     "output_tokens": plan_result.output_tokens,
+                    "cost_usd": plan_result.cost_usd,
+                    "throttle_count": plan_result.throttle_count,
+                    "throttle_seconds": plan_result.throttle_seconds,
                     "cache_read_tokens": plan_result.cache_read_tokens,
                 })
 
@@ -307,6 +322,9 @@ class ClaudeAgentBackend:
                 "rounds": act_result.round_count,
                 "input_tokens": act_result.input_tokens,
                 "output_tokens": act_result.output_tokens,
+                "cost_usd": act_result.cost_usd,
+                "throttle_count": act_result.throttle_count,
+                "throttle_seconds": act_result.throttle_seconds,
                 "cache_read_tokens": act_result.cache_read_tokens,
             })
 

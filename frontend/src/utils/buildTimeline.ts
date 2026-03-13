@@ -5,6 +5,8 @@ export type TimelineItem =
   | { kind: "output"; item: Extract<ConversationItem, { type: "output" }>; ts: number }
   | { kind: "tool"; call: Extract<ConversationItem, { type: "tool_call" }>; result?: Extract<ConversationItem, { type: "tool_result" }>; ts: number }
   | { kind: "nudge"; item: Extract<ConversationItem, { type: "nudge" }>; ts: number }
+  | { kind: "phase_started"; item: Extract<ConversationItem, { type: "phase_started" }>; ts: number }
+  | { kind: "prompt"; item: Extract<ConversationItem, { type: "prompt" }>; ts: number }
   | { kind: "test_run"; event: PipelineEvent; ts: number }
   | { kind: "finding"; event: PipelineEvent; ts: number };
 
@@ -40,6 +42,10 @@ export function buildTimeline(
       });
     } else if (item.type === "nudge") {
       timeline.push({ kind: "nudge", item, ts: item.ts });
+    } else if (item.type === "phase_started") {
+      timeline.push({ kind: "phase_started", item, ts: item.ts });
+    } else if (item.type === "prompt") {
+      timeline.push({ kind: "prompt", item, ts: item.ts });
     }
     i++;
   }

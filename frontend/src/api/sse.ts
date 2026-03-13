@@ -26,6 +26,7 @@ export function connectEventStream(
     "agent_completed",
     "agent_tool_call",
     "agent_output",
+    "agent_prompt",
     "agent_nudge",
     "phase_started",
     "phase_completed",

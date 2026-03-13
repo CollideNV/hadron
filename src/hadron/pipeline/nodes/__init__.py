@@ -195,6 +195,47 @@ def gather_files(worktree: str, pattern: str) -> str:
     return "\n\n".join(parts)
 
 
+def gather_changed_files(worktree: str, pattern: str) -> str:
+    """Read files matching glob pattern that were added or modified in the worktree.
+
+    Uses ``git diff`` to scope to files changed in this branch, avoiding
+    injection of unrelated pre-existing files (e.g. infrastructure specs
+    when only the CR's feature file is relevant).
+    """
+    import subprocess
+    base = Path(worktree)
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only", "--diff-filter=ACMR", "HEAD~10", "--", pattern],
+            cwd=worktree, capture_output=True, text=True, timeout=10,
+        )
+        changed = {line.strip() for line in result.stdout.splitlines() if line.strip()}
+    except (subprocess.SubprocessError, OSError):
+        # Fall back to all files if git fails
+        return gather_files(worktree, pattern)
+
+    if not changed:
+        # Nothing changed — fall back to all (first run or no commits yet)
+        return gather_files(worktree, pattern)
+
+    parts: list[str] = []
+    total = 0
+    for path in sorted(base.glob(pattern)):
+        if not path.is_file():
+            continue
+        rel = str(path.relative_to(base))
+        if rel not in changed:
+            continue
+        content = path.read_text(errors="replace")
+        entry = f"### {rel}\n\n```\n{content}\n```"
+        if total + len(entry) > MAX_CONTEXT_CHARS:
+            parts.append(f"\n... ({pattern}: remaining files truncated)")
+            break
+        parts.append(entry)
+        total += len(entry)
+    return "\n\n".join(parts)
+
+
 # ---------------------------------------------------------------------------
 # Event callback factories
 # ---------------------------------------------------------------------------
@@ -258,6 +299,13 @@ def make_agent_event_emitter(
                     "tool": data["tool"], "result": data["result"][:10_000],
                     "round": data.get("round", 0), "type": "result",
                 },
+            ))
+        elif event_type == "prompt":
+            await event_bus.emit(PipelineEvent(
+                cr_id=cr_id,
+                event_type=EventType.AGENT_PROMPT,
+                stage=stage,
+                data={"role": role, "repo": repo, "text": data["text"][:5000]},
             ))
         elif event_type == "nudge":
             await event_bus.emit(PipelineEvent(

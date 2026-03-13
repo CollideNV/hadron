@@ -21,6 +21,7 @@ class EventType(str, Enum):
     AGENT_COMPLETED = "agent_completed"
     AGENT_TOOL_CALL = "agent_tool_call"
     AGENT_OUTPUT = "agent_output"
+    AGENT_PROMPT = "agent_prompt"
     AGENT_NUDGE = "agent_nudge"
     TEST_RUN = "test_run"
     REVIEW_FINDING = "review_finding"
