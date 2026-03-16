@@ -16,18 +16,32 @@ from hadron.events.interventions import InterventionManager
 class BackendPool:
     """Lazily creates and caches agent backends by name."""
 
-    def __init__(self, cfg: Any) -> None:
+    def __init__(self, cfg: Any, opencode_endpoints: list[dict] | None = None) -> None:
         self._cfg = cfg
         self._cache: dict[str, Any] = {}
+        self._opencode_endpoints: dict[str, dict] = {
+            f"opencode:{ep['slug']}": ep for ep in (opencode_endpoints or [])
+        }
+
+    def set_opencode_endpoints(self, endpoints: list[dict]) -> None:
+        """Update endpoints (called after config snapshot is loaded)."""
+        self._opencode_endpoints = {f"opencode:{ep['slug']}": ep for ep in endpoints}
+        # Invalidate cached opencode endpoint backends
+        for key in list(self._cache):
+            if key.startswith("opencode:"):
+                del self._cache[key]
 
     def get(self, name: str) -> Any:
         if name not in self._cache:
+            opencode_url = getattr(self._cfg, "opencode_base_url", "")
+            if name in self._opencode_endpoints:
+                opencode_url = self._opencode_endpoints[name]["base_url"]
             self._cache[name] = create_agent_backend(
                 name,
                 anthropic_api_key=getattr(self._cfg, "anthropic_api_key", ""),
                 gemini_api_key=getattr(self._cfg, "gemini_api_key", ""),
                 openai_api_key=getattr(self._cfg, "openai_api_key", ""),
-                opencode_base_url=getattr(self._cfg, "opencode_base_url", ""),
+                opencode_base_url=opencode_url,
             )
         return self._cache[name]
 

@@ -202,9 +202,8 @@ class TestUpdateModelSettings:
 class TestGetAvailableBackends:
     @pytest.mark.asyncio
     async def test_returns_backends(self):
-        # No DB needed for this endpoint
-        app = FastAPI()
-        app.include_router(router, prefix="/api")
+        factory, _ = _build_factory_returning([])
+        app = _make_app(factory)
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/api/settings/backends")
@@ -223,3 +222,109 @@ class TestGetAvailableBackends:
 
         opencode = next(b for b in data if b["name"] == "opencode")
         assert opencode["models"] == []
+
+    @pytest.mark.asyncio
+    async def test_includes_named_opencode_endpoints(self):
+        endpoints = [
+            {"slug": "local-ollama", "display_name": "Local Ollama", "base_url": "http://localhost:11434/v1", "models": ["qwen3:7b"]},
+        ]
+        factory, _ = _build_factory_returning([
+            _make_setting("opencode_endpoints", endpoints),
+        ])
+        app = _make_app(factory)
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/settings/backends")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        names = [b["name"] for b in data]
+        assert "opencode:local-ollama" in names
+        ep = next(b for b in data if b["name"] == "opencode:local-ollama")
+        assert ep["display_name"] == "Local Ollama"
+        assert ep["models"] == ["qwen3:7b"]
+
+
+# ---------------------------------------------------------------------------
+# GET /api/settings/opencode-endpoints
+# ---------------------------------------------------------------------------
+
+
+class TestOpenCodeEndpoints:
+    @pytest.mark.asyncio
+    async def test_get_empty(self):
+        factory, _ = _build_factory_returning([])
+        app = _make_app(factory)
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/settings/opencode-endpoints")
+
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    @pytest.mark.asyncio
+    async def test_get_existing(self):
+        endpoints = [
+            {"slug": "gpu-server", "display_name": "GPU Server", "base_url": "http://gpu.internal/v1", "models": ["llama-70b"]},
+        ]
+        factory, _ = _build_factory_returning([
+            _make_setting("opencode_endpoints", endpoints),
+        ])
+        app = _make_app(factory)
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/settings/opencode-endpoints")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["slug"] == "gpu-server"
+        assert data[0]["models"] == ["llama-70b"]
+
+    @pytest.mark.asyncio
+    async def test_put_creates_endpoints(self):
+        mock_session = AsyncMock()
+
+        async def fake_execute(stmt):
+            mock_result = MagicMock()
+            mock_result.scalar_one_or_none.return_value = None
+            return mock_result
+
+        mock_session.execute = fake_execute
+        mock_session.add = MagicMock()
+
+        @asynccontextmanager
+        async def factory():
+            yield mock_session
+
+        app = _make_app(factory)
+
+        payload = [
+            {"slug": "local-ollama", "display_name": "Local Ollama", "base_url": "http://localhost:11434/v1", "models": ["qwen3:7b"]},
+            {"slug": "gpu-server", "display_name": "GPU Server", "base_url": "http://gpu.internal/v1", "models": ["llama-70b"]},
+        ]
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.put("/api/settings/opencode-endpoints", json=payload)
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        assert data[0]["slug"] == "local-ollama"
+        # PipelineSetting + AuditLog = 2 adds
+        assert mock_session.add.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_put_rejects_duplicate_slugs(self):
+        factory, _ = _build_factory_returning([])
+        app = _make_app(factory)
+
+        payload = [
+            {"slug": "same", "display_name": "A", "base_url": "http://a", "models": []},
+            {"slug": "same", "display_name": "B", "base_url": "http://b", "models": []},
+        ]
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.put("/api/settings/opencode-endpoints", json=payload)
+
+        assert resp.status_code == 422

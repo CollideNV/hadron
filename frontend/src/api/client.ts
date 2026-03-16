@@ -1,4 +1,4 @@
-import type { BackendModels, CRRun, CRRunDetail, ModelSettings, PromptTemplate, PromptTemplateDetail, RawChangeRequest } from "./types";
+import type { BackendModels, CRRun, CRRunDetail, ModelSettings, OpenCodeEndpoint, PromptTemplate, PromptTemplateDetail, RawChangeRequest } from "./types";
 
 const BASE = "/api";
 
@@ -100,6 +100,17 @@ export async function updateModelSettings(settings: ModelSettings): Promise<Mode
 
 export async function getAvailableBackends(): Promise<BackendModels[]> {
   return fetchJSON<BackendModels[]>("/settings/backends");
+}
+
+export async function getOpenCodeEndpoints(): Promise<OpenCodeEndpoint[]> {
+  return fetchJSON<OpenCodeEndpoint[]>("/settings/opencode-endpoints");
+}
+
+export async function updateOpenCodeEndpoints(endpoints: OpenCodeEndpoint[]): Promise<OpenCodeEndpoint[]> {
+  return fetchJSON<OpenCodeEndpoint[]>("/settings/opencode-endpoints", {
+    method: "PUT",
+    body: JSON.stringify(endpoints),
+  });
 }
 
 export async function getWorkerLogs(crId: string): Promise<string> {

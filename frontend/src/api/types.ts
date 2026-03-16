@@ -208,6 +208,13 @@ export interface BackendModels {
   models: string[];
 }
 
+export interface OpenCodeEndpoint {
+  slug: string;
+  display_name: string;
+  base_url: string;
+  models: string[];
+}
+
 export const EVENT_TYPES = [
   "pipeline_started",
   "pipeline_resumed",

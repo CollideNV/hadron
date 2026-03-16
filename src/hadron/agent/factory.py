@@ -47,7 +47,7 @@ def create_agent_backend(
         from hadron.agent.gemini import GeminiAgentBackend
         return GeminiAgentBackend(api_key=gemini_api_key or None)
 
-    if name == "opencode":
+    if name == "opencode" or name.startswith("opencode:"):
         from hadron.agent.opencode import OpenCodeAgentBackend
         return OpenCodeAgentBackend(base_url=opencode_base_url or None)
 

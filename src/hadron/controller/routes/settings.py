@@ -46,6 +46,13 @@ class BackendModels(BaseModel):
     models: list[str]
 
 
+class OpenCodeEndpoint(BaseModel):
+    slug: str
+    display_name: str
+    base_url: str
+    models: list[str]
+
+
 # ---------------------------------------------------------------------------
 # Defaults (fallback when no DB rows exist)
 # ---------------------------------------------------------------------------
@@ -69,8 +76,10 @@ _DEFAULT_STAGES: dict[str, dict] = {
 # ---------------------------------------------------------------------------
 
 
-def _build_backends_list() -> list[BackendModels]:
-    """Derive available backends and their models from the cost table."""
+async def _build_backends_list(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> list[BackendModels]:
+    """Derive available backends and their models from the cost table + DB endpoints."""
     groups: dict[str, list[str]] = {
         "claude": [],
         "openai": [],
@@ -84,12 +93,28 @@ def _build_backends_list() -> list[BackendModels]:
         elif model_name.startswith("gemini-"):
             groups["gemini"].append(model_name)
 
-    return [
+    backends = [
         BackendModels(name="claude", display_name="Anthropic", models=groups["claude"]),
         BackendModels(name="openai", display_name="OpenAI", models=groups["openai"]),
         BackendModels(name="gemini", display_name="Gemini", models=groups["gemini"]),
         BackendModels(name="opencode", display_name="OpenCode", models=[]),
     ]
+
+    # Append named OpenCode endpoints from DB
+    async with session_factory() as session:
+        result = await session.execute(
+            select(PipelineSetting).where(PipelineSetting.key == "opencode_endpoints")
+        )
+        row = result.scalar_one_or_none()
+        if row and isinstance(row.value_json, list):
+            for ep in row.value_json:
+                backends.append(BackendModels(
+                    name=f"opencode:{ep['slug']}",
+                    display_name=ep["display_name"],
+                    models=ep.get("models", []),
+                ))
+
+    return backends
 
 
 def _parse_stages(raw: dict) -> dict[str, StageConfig]:
@@ -188,6 +213,65 @@ async def update_model_settings(
 
 
 @router.get("/settings/backends")
-async def get_available_backends() -> list[BackendModels]:
+async def get_available_backends(
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> list[BackendModels]:
     """Return available backends with their model lists."""
-    return _build_backends_list()
+    return await _build_backends_list(session_factory)
+
+
+# ---------------------------------------------------------------------------
+# OpenCode Endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/settings/opencode-endpoints")
+async def get_opencode_endpoints(
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> list[OpenCodeEndpoint]:
+    """Return named OpenCode endpoints."""
+    async with session_factory() as session:
+        result = await session.execute(
+            select(PipelineSetting).where(PipelineSetting.key == "opencode_endpoints")
+        )
+        row = result.scalar_one_or_none()
+        if row and isinstance(row.value_json, list):
+            return [OpenCodeEndpoint(**ep) for ep in row.value_json]
+    return []
+
+
+@router.put("/settings/opencode-endpoints")
+async def update_opencode_endpoints(
+    body: list[OpenCodeEndpoint],
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> list[OpenCodeEndpoint]:
+    """Replace all named OpenCode endpoints. Validates unique slugs."""
+    # Validate unique slugs
+    slugs = [ep.slug for ep in body]
+    if len(slugs) != len(set(slugs)):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail="Duplicate endpoint slugs")
+
+    endpoints_json = [ep.model_dump() for ep in body]
+
+    async with session_factory() as session:
+        result = await session.execute(
+            select(PipelineSetting).where(PipelineSetting.key == "opencode_endpoints")
+        )
+        row = result.scalar_one_or_none()
+        if row:
+            row.value_json = endpoints_json
+        else:
+            session.add(PipelineSetting(
+                key="opencode_endpoints",
+                value_json=endpoints_json,
+            ))
+
+        session.add(AuditLog(
+            action="opencode_endpoints_updated",
+            details={"slugs": slugs},
+        ))
+
+        await session.commit()
+
+    return body

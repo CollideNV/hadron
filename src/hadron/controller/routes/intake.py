@@ -47,10 +47,10 @@ async def trigger_pipeline(
         if prompts:
             config_snapshot["prompts"] = prompts
 
-        # Freeze model settings
+        # Freeze model settings + opencode endpoints
         result = await session.execute(
             select(PipelineSetting).where(
-                PipelineSetting.key.in_(["default_backend", "stage_models"])
+                PipelineSetting.key.in_(["default_backend", "stage_models", "opencode_endpoints"])
             )
         )
         for setting in result.scalars():
@@ -58,6 +58,8 @@ async def trigger_pipeline(
                 config_snapshot["pipeline"]["default_backend"] = setting.value_json.get("backend", "claude")
             elif setting.key == "stage_models":
                 config_snapshot["pipeline"]["stage_models"] = setting.value_json
+            elif setting.key == "opencode_endpoints":
+                config_snapshot["pipeline"]["opencode_endpoints"] = setting.value_json
 
     default_branch = cr.repo_default_branch
 

@@ -1,21 +1,26 @@
 import { useCallback, useEffect, useState } from "react";
-import type { BackendModels, ModelSettings } from "../api/types";
-import { getAvailableBackends, getModelSettings, updateModelSettings } from "../api/client";
+import type { BackendModels, ModelSettings, OpenCodeEndpoint } from "../api/types";
+import { getAvailableBackends, getModelSettings, getOpenCodeEndpoints, updateModelSettings, updateOpenCodeEndpoints } from "../api/client";
 import ModelGrid from "../components/settings/ModelGrid";
+import OpenCodeEndpointEditor from "../components/settings/OpenCodeEndpointEditor";
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<ModelSettings | null>(null);
   const [savedSettings, setSavedSettings] = useState<ModelSettings | null>(null);
   const [backends, setBackends] = useState<BackendModels[]>([]);
+  const [endpoints, setEndpoints] = useState<OpenCodeEndpoint[]>([]);
+  const [savedEndpoints, setSavedEndpoints] = useState<OpenCodeEndpoint[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([getModelSettings(), getAvailableBackends()])
-      .then(([s, b]) => {
+    Promise.all([getModelSettings(), getAvailableBackends(), getOpenCodeEndpoints()])
+      .then(([s, b, ep]) => {
         setSettings(s);
         setSavedSettings(s);
         setBackends(b);
+        setEndpoints(ep);
+        setSavedEndpoints(ep);
       })
       .catch((e) => setError(e.message));
   }, []);
@@ -25,21 +30,31 @@ export default function SettingsPage() {
     setSaving(true);
     setError(null);
     try {
-      const updated = await updateModelSettings(settings);
+      const [updated] = await Promise.all([
+        updateModelSettings(settings),
+        updateOpenCodeEndpoints(endpoints),
+      ]);
       setSettings(updated);
       setSavedSettings(updated);
+      setSavedEndpoints(endpoints);
+      // Re-fetch backends so new endpoints appear in dropdowns
+      const b = await getAvailableBackends();
+      setBackends(b);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
-  }, [settings]);
+  }, [settings, endpoints]);
 
   const handleDiscard = useCallback(() => {
     if (savedSettings) setSettings(savedSettings);
-  }, [savedSettings]);
+    setEndpoints(savedEndpoints);
+  }, [savedSettings, savedEndpoints]);
 
-  const dirty = settings !== null && savedSettings !== null && JSON.stringify(settings) !== JSON.stringify(savedSettings);
+  const dirty =
+    (settings !== null && savedSettings !== null && JSON.stringify(settings) !== JSON.stringify(savedSettings)) ||
+    JSON.stringify(endpoints) !== JSON.stringify(savedEndpoints);
 
   if (!settings) {
     return (
@@ -97,6 +112,9 @@ export default function SettingsPage() {
           ))}
         </select>
       </div>
+
+      {/* OpenCode Endpoints */}
+      <OpenCodeEndpointEditor endpoints={endpoints} onChange={setEndpoints} />
 
       {/* Stage × Phase grid */}
       <div>
