@@ -15,8 +15,8 @@ _MAX_STATIC_CONTEXT_CHARS = 48_000  # ~12k tokens
 
 
 @functools.lru_cache(maxsize=None)
-def _load_template(role: str) -> str:
-    """Load a prompt template by role name (cached after first read)."""
+def _load_template_from_disk(role: str) -> str:
+    """Load a prompt template by role name from disk (cached after first read)."""
     path = _PROMPTS_DIR / f"{role}.md"
     if not path.exists():
         raise FileNotFoundError(f"Prompt template not found: {path}")
@@ -32,13 +32,39 @@ class PromptComposer:
     Layer 4: Loop feedback (previous review findings, test failures, etc.)
     """
 
+    def __init__(self) -> None:
+        self._cache: dict[str, str] = {}
+
+    @classmethod
+    def from_snapshot(cls, prompts: dict[str, str]) -> PromptComposer:
+        """Create a PromptComposer pre-loaded from a config snapshot."""
+        composer = cls()
+        composer._cache = dict(prompts)
+        return composer
+
+    async def load_all(self, session_factory) -> None:  # noqa: ANN001
+        """Bulk-load all prompt templates from the database into the cache."""
+        from hadron.db.models import PromptTemplate
+        from sqlalchemy import select
+
+        async with session_factory() as session:
+            result = await session.execute(select(PromptTemplate))
+            for row in result.scalars():
+                self._cache[row.role] = row.content
+
+    def _get_template(self, role: str) -> str:
+        """Get template from cache, falling back to disk."""
+        if role in self._cache:
+            return self._cache[role]
+        return _load_template_from_disk(role)
+
     def compose_system_prompt(
         self,
         role: str,
         repo_context: str = "",
     ) -> str:
         """Build the system prompt (Layers 1 + 2)."""
-        template = _load_template(role)
+        template = self._get_template(role)
         parts = [template]
 
         if repo_context:
