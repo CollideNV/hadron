@@ -5,11 +5,24 @@ from __future__ import annotations
 # Per-model cost per million tokens: (input, output).
 # Use register_model_cost() to add entries at runtime without modifying source.
 _MODEL_COSTS: dict[str, tuple[float, float]] = {
+    # Anthropic
     "claude-haiku-4-5-20251001": (0.80, 4.00),
     "claude-sonnet-4-20250514": (3.00, 15.00),
     "claude-sonnet-4-6": (3.00, 15.00),
     "claude-opus-4-20250514": (15.00, 75.00),
     "claude-opus-4-6": (15.00, 75.00),
+    # OpenAI
+    "gpt-4o": (2.50, 10.00),
+    "gpt-4o-mini": (0.15, 0.60),
+    "gpt-4.1": (2.00, 8.00),
+    "gpt-4.1-mini": (0.40, 1.60),
+    "gpt-4.1-nano": (0.10, 0.40),
+    "o3": (2.00, 8.00),
+    "o4-mini": (1.10, 4.40),
+    # Gemini
+    "gemini-2.5-pro": (1.25, 10.00),
+    "gemini-2.5-flash": (0.15, 0.60),
+    "gemini-2.0-flash": (0.10, 0.40),
 }
 # Fallback for unknown models (use Sonnet pricing)
 _DEFAULT_COST = (3.00, 15.00)

@@ -33,6 +33,22 @@ class BootstrapConfig(BaseModel):
         default=DEFAULT_WORKSPACE_DIR,
         description="Root directory for git clones and worktrees.",
     )
+    agent_backend: str = Field(
+        default="claude",
+        description="Agent backend to use: claude, openai, gemini, opencode.",
+    )
+    gemini_api_key: str = Field(
+        default="",
+        description="Google Gemini API key for Gemini agent backend.",
+    )
+    openai_api_key: str = Field(
+        default="",
+        description="OpenAI API key for OpenAI agent backend.",
+    )
+    opencode_base_url: str = Field(
+        default="",
+        description="Base URL for OpenCode (local OpenAI-compatible) backend.",
+    )
     controller_host: str = Field(default="0.0.0.0")
     controller_port: int = Field(default=8000)
     log_level: str = Field(default="INFO")

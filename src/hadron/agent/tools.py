@@ -101,6 +101,45 @@ def make_tools(allowed: list[str], working_dir: str | None) -> list[dict]:
     return [_ALL_TOOL_DEFS[name] for name in allowed if name in _ALL_TOOL_DEFS]
 
 
+def make_tools_openai(allowed: list[str], working_dir: str | None) -> list[dict]:
+    """Build OpenAI-format tool definitions for the allowed tool set.
+
+    Returns a list of ``{"type": "function", "function": {...}}`` dicts.
+    """
+    result = []
+    for name in allowed:
+        defn = _ALL_TOOL_DEFS.get(name)
+        if defn is None:
+            continue
+        result.append({
+            "type": "function",
+            "function": {
+                "name": defn["name"],
+                "description": defn["description"],
+                "parameters": defn["input_schema"],
+            },
+        })
+    return result
+
+
+def make_tools_gemini(allowed: list[str], working_dir: str | None) -> list[dict]:
+    """Build Gemini-format function declarations for the allowed tool set.
+
+    Returns a list of dicts suitable for ``Tool(function_declarations=[...])``.
+    """
+    result = []
+    for name in allowed:
+        defn = _ALL_TOOL_DEFS.get(name)
+        if defn is None:
+            continue
+        result.append({
+            "name": defn["name"],
+            "description": defn["description"],
+            "parameters": defn["input_schema"],
+        })
+    return result
+
+
 # ------------------------------------------------------------------
 # Path safety
 # ------------------------------------------------------------------

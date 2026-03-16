@@ -9,9 +9,9 @@ from typing import Any, AsyncIterator
 import anthropic
 
 from hadron.agent.base import AgentEvent, AgentResult, AgentTask, ModelStats, OnAgentEvent
+from hadron.agent.base_backend import BaseAgentBackend, _ResultAccumulator
 from hadron.agent.compaction import compact_messages
 from hadron.agent.cost import _compute_model_cost
-from hadron.agent.phases import PhasePromptBuilder
 from hadron.agent.rate_limiter import call_with_retry
 from hadron.agent.tool_loop import (
     ToolLoopConfig,
@@ -32,61 +32,7 @@ from hadron.agent.cost import _MODEL_COSTS, _DEFAULT_COST, register_model_cost  
 logger = logging.getLogger(__name__)
 
 
-class _ResultAccumulator:
-    """Accumulates stats across explore/plan/act phases."""
-
-    __slots__ = (
-        "input_tokens", "output_tokens", "cost", "tool_calls", "conversations",
-        "rounds", "throttle_count", "throttle_seconds",
-        "cache_creation", "cache_read", "breakdown",
-    )
-
-    def __init__(self) -> None:
-        self.input_tokens = 0
-        self.output_tokens = 0
-        self.cost = 0.0
-        self.tool_calls: list[dict[str, Any]] = []
-        self.conversations: list[dict[str, Any]] = []
-        self.rounds = 0
-        self.throttle_count = 0
-        self.throttle_seconds = 0.0
-        self.cache_creation = 0
-        self.cache_read = 0
-        self.breakdown: dict[str, ModelStats] = {}
-
-    def add(self, result: _PhaseResult, model: str) -> None:
-        self.input_tokens += result.input_tokens
-        self.output_tokens += result.output_tokens
-        self.cost += result.cost_usd
-        self.tool_calls.extend(result.tool_calls)
-        self.conversations.extend(result.conversation)
-        self.rounds += result.round_count
-        self.throttle_count += result.throttle_count
-        self.throttle_seconds += result.throttle_seconds
-        self.cache_creation += result.cache_creation_tokens
-        self.cache_read += result.cache_read_tokens
-        stats = result.to_model_stats()
-        self.breakdown[model] = self.breakdown.get(model, ModelStats()).merge(stats)
-
-    def to_result(self, output: str, model: str) -> AgentResult:
-        return AgentResult(
-            output=output,
-            input_tokens=self.input_tokens,
-            output_tokens=self.output_tokens,
-            cost_usd=self.cost,
-            tool_calls=self.tool_calls,
-            conversation=self.conversations,
-            round_count=self.rounds,
-            model=model,
-            throttle_count=self.throttle_count,
-            throttle_seconds=self.throttle_seconds,
-            cache_creation_tokens=self.cache_creation,
-            cache_read_tokens=self.cache_read,
-            model_breakdown={m: s.to_dict() for m, s in self.breakdown.items()},
-        )
-
-
-class ClaudeAgentBackend:
+class ClaudeAgentBackend(BaseAgentBackend):
     """Agent backend using the Anthropic Messages API with a tool-use loop.
 
     Supports three-phase execution: Explore (read-only) -> Plan (single call) -> Act (full tools).
@@ -94,155 +40,20 @@ class ClaudeAgentBackend:
     """
 
     def __init__(self, api_key: str | None = None) -> None:
+        super().__init__()
         self._client = anthropic.AsyncAnthropic(
             api_key=api_key or os.environ.get("HADRON_ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY", ""),
         )
-        self._prompts = PhasePromptBuilder()
-
-    async def execute(self, task: AgentTask) -> AgentResult:
-        """Run the agent's tool-use loop to completion.
-
-        If explore_model and/or plan_model are set, runs a three-phase pipeline:
-        1. Explore (Haiku): read-only tool loop to gather codebase context
-        2. Plan (Opus): single API call to produce an implementation plan
-        3. Act (Sonnet): full tool loop to execute the plan
-
-        If neither is set, falls back to the original single-phase behaviour.
-        """
-        acc = _ResultAccumulator()
-
-        # Emit the task prompt so the frontend can display it
-        if task.on_event:
-            await task.on_event("prompt", {"text": task.user_prompt})
-
-        exploration_summary = await self._run_explore_phase(task, acc) if task.explore_model else ""
-        plan_text = await self._run_plan_phase(task, acc, exploration_summary) if task.plan_model else ""
-        act_result = await self._run_act_phase(task, acc, exploration_summary, plan_text)
-
-        return acc.to_result(act_result.output, task.model)
-
-    async def _run_explore_phase(self, task: AgentTask, acc: _ResultAccumulator) -> str:
-        """Phase 1: Read-only tool loop to gather codebase context (typically Haiku)."""
-        if task.on_event:
-            await task.on_event("phase_started", {"phase": "explore", "model": task.explore_model})
-
-        result = await self._run_tool_loop(ToolLoopConfig(
-            model=task.explore_model,
-            system_prompt=self._prompts.build_explore_system(task),
-            user_prompt=task.user_prompt,
-            tools=make_tools(task.explore_tools, task.working_directory),
-            working_dir=task.working_directory or ".",
-            max_rounds=task.explore_max_rounds,
-            max_tokens=task.max_tokens,
-            on_event=task.on_event,
-            phase="explore",
-        ))
-        acc.add(result, task.explore_model)
-
-        if task.on_event:
-            await task.on_event("phase_completed", {
-                "phase": "explore", "model": task.explore_model,
-                "summary_length": len(result.output),
-                "rounds": result.round_count,
-                "input_tokens": result.input_tokens, "output_tokens": result.output_tokens,
-                "cost_usd": result.cost_usd,
-                "throttle_count": result.throttle_count, "throttle_seconds": result.throttle_seconds,
-                "cache_read_tokens": result.cache_read_tokens,
-            })
-        logger.info(
-            "Explore phase complete: %d rounds, %d input tokens, summary=%d chars",
-            result.round_count, result.input_tokens, len(result.output),
-        )
-        return result.output
-
-    async def _run_plan_phase(self, task: AgentTask, acc: _ResultAccumulator, exploration_summary: str) -> str:
-        """Phase 2: Single API call to produce an implementation plan (typically Opus)."""
-        if task.on_event:
-            await task.on_event("phase_started", {"phase": "plan", "model": task.plan_model})
-
-        result = await self._run_plan_call(
-            model=task.plan_model,
-            system_prompt=self._prompts.build_plan_system(task),
-            user_prompt=self._prompts.build_plan_user(task, exploration_summary),
-            max_tokens=task.max_tokens,
-        )
-        acc.add(result, task.plan_model)
-
-        if task.on_event and result.output:
-            await task.on_event("output", {"text": result.output, "round": 0})
-        if task.on_event:
-            await task.on_event("phase_completed", {
-                "phase": "plan", "model": task.plan_model,
-                "plan_length": len(result.output), "rounds": 1,
-                "input_tokens": result.input_tokens, "output_tokens": result.output_tokens,
-                "cost_usd": result.cost_usd,
-                "throttle_count": result.throttle_count, "throttle_seconds": result.throttle_seconds,
-                "cache_read_tokens": result.cache_read_tokens,
-            })
-        logger.info(
-            "Plan phase complete: %d input tokens, plan=%d chars",
-            result.input_tokens, len(result.output),
-        )
-        return result.output
-
-    async def _run_act_phase(
-        self, task: AgentTask, acc: _ResultAccumulator, exploration_summary: str, plan_text: str,
-    ) -> _PhaseResult:
-        """Phase 3: Full tool loop to execute the plan (typically Sonnet)."""
-        is_multiphase = bool(task.explore_model or task.plan_model)
-        if task.on_event and is_multiphase:
-            await task.on_event("phase_started", {"phase": "act", "model": task.model})
-
-        act_system_prompt = self._prompts.build_act_system(task, has_plan=bool(plan_text))
-        act_user_prompt = self._prompts.build_act_user(task, exploration_summary, plan_text)
-        if task.on_event and act_user_prompt != task.user_prompt:
-            await task.on_event("prompt", {"text": act_user_prompt})
-
-        result = await self._run_tool_loop(ToolLoopConfig(
-            model=task.model,
-            system_prompt=act_system_prompt,
-            user_prompt=act_user_prompt,
-            tools=make_tools(task.allowed_tools, task.working_directory),
-            working_dir=task.working_directory or ".",
-            max_rounds=task.max_tool_rounds,
-            max_tokens=task.max_tokens,
-            on_event=task.on_event,
-            on_tool_call=task.on_tool_call,
-            nudge_poll=task.nudge_poll,
-            phase="act",
-        ))
-        acc.add(result, task.model)
-
-        if task.on_event and is_multiphase:
-            await task.on_event("phase_completed", {
-                "phase": "act", "model": task.model,
-                "rounds": result.round_count,
-                "input_tokens": result.input_tokens, "output_tokens": result.output_tokens,
-                "cost_usd": result.cost_usd,
-                "throttle_count": result.throttle_count, "throttle_seconds": result.throttle_seconds,
-                "cache_read_tokens": result.cache_read_tokens,
-            })
-        return result
 
     # ------------------------------------------------------------------
-    # Delegation to extracted modules
+    # Override abstract methods
     # ------------------------------------------------------------------
 
-    async def _run_tool_loop(self, cfg: ToolLoopConfig) -> _PhaseResult:
-        """Delegate to the extracted tool loop engine."""
+    async def _call_tool_loop(self, cfg: ToolLoopConfig) -> _PhaseResult:
+        """Delegate to the extracted Anthropic tool loop engine."""
         return await run_tool_loop(self._client, cfg)
 
-    async def _compact_messages(
-        self,
-        messages: list[dict[str, Any]],
-        *,
-        phase: str,
-        on_event: OnAgentEvent | None = None,
-    ) -> list[dict[str, Any]]:
-        """Delegate to the extracted compaction module."""
-        return await compact_messages(self._client, messages, phase=phase, on_event=on_event)
-
-    async def _run_plan_call(
+    async def _call_plan(
         self,
         *,
         model: str,
@@ -299,6 +110,30 @@ class ClaudeAgentBackend:
             cache_creation_tokens=cache_creation,
             cache_read_tokens=cache_read,
         )
+
+    async def _compact(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        phase: str,
+        on_event: OnAgentEvent | None = None,
+    ) -> list[dict[str, Any]]:
+        """Delegate to the extracted compaction module (Haiku-based)."""
+        return await compact_messages(self._client, messages, phase=phase, on_event=on_event)
+
+    # ------------------------------------------------------------------
+    # Keep _compact_messages for backwards compatibility (tests use it)
+    # ------------------------------------------------------------------
+
+    async def _compact_messages(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        phase: str,
+        on_event: OnAgentEvent | None = None,
+    ) -> list[dict[str, Any]]:
+        """Delegate to the extracted compaction module."""
+        return await compact_messages(self._client, messages, phase=phase, on_event=on_event)
 
     # ------------------------------------------------------------------
     # Streaming (unchanged — does not use three-phase yet)

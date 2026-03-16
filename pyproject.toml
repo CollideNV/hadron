@@ -26,6 +26,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+gemini = ["google-genai>=1.0"]
+openai = ["openai>=1.0"]
+opencode = ["openai>=1.0"]
+all-backends = ["google-genai>=1.0", "openai>=1.0"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",

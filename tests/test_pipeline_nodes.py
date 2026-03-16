@@ -1104,16 +1104,24 @@ class TestRebaseNode:
             wm = MockWM.return_value
             wm.rebase_keep_conflicts = AsyncMock(return_value=False)
             wm.get_conflict_files = AsyncMock(return_value=[])
+            wm.abort_rebase = AsyncMock()
             wm.continue_rebase = AsyncMock(return_value=True)
             result = await rebase_node(state, config)
 
         # Agent should NOT have been invoked
         mock_run_agent.assert_not_called()
+        # No conflict files → abort in-progress rebase and treat as clean
+        wm.abort_rebase.assert_called_once()
         assert result["rebase_clean"] is True
 
     @pytest.mark.asyncio
-    async def test_no_conflict_files_abort_on_continue_failure(self) -> None:
-        """Rebase non-clean, no conflict files, continue fails -> abort, rebase_clean=False."""
+    async def test_no_conflict_files_abort_and_treat_as_clean(self) -> None:
+        """Rebase non-clean, no conflict files -> abort in-progress rebase, treat as clean.
+
+        When rebase returns non-clean but there are zero conflict files, the code
+        aborts any in-progress rebase and treats the situation as clean (likely an
+        empty rebase or already-applied patches). continue_rebase is never called.
+        """
         from hadron.pipeline.nodes.rebase import rebase_node
 
         config = _make_config()
@@ -1127,13 +1135,14 @@ class TestRebaseNode:
             wm = MockWM.return_value
             wm.rebase_keep_conflicts = AsyncMock(return_value=False)
             wm.get_conflict_files = AsyncMock(return_value=[])
-            wm.continue_rebase = AsyncMock(return_value=False)
             wm.abort_rebase = AsyncMock()
+            wm.continue_rebase = AsyncMock(return_value=False)
             result = await rebase_node(state, config)
 
         mock_run_agent.assert_not_called()
         wm.abort_rebase.assert_called_once()
-        assert result["rebase_clean"] is False
+        # No conflict files → treated as clean despite non-clean rebase status
+        assert result["rebase_clean"] is True
 
     @pytest.mark.asyncio
     async def test_post_rebase_test_failure(self) -> None:

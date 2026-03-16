@@ -1,4 +1,4 @@
-"""Reusable rate-limit retry logic for Anthropic API calls."""
+"""Reusable rate-limit retry logic for LLM API calls."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Generic, TypeVar
 
 import anthropic
 # InternalServerError covers 500, 503 (ServiceUnavailableError), and 529 (OverloadedError)
-_TRANSIENT_ERRORS = (anthropic.RateLimitError, anthropic.InternalServerError)
+_ANTHROPIC_TRANSIENT = (anthropic.RateLimitError, anthropic.InternalServerError)
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +23,11 @@ MIN_WAIT_SECONDS = 2
 MAX_WAIT_SECONDS = 120
 
 
-def _extract_retry_after(error: anthropic.RateLimitError) -> float | None:
-    """Extract Retry-After header from the API error response, if available."""
+def _extract_retry_after(error: Exception) -> float | None:
+    """Extract Retry-After header from an API error response, if available.
+
+    Works with Anthropic, OpenAI, and any error that has a `response.headers` dict.
+    """
     try:
         response = getattr(error, "response", None)
         if response is None:
@@ -56,23 +59,27 @@ async def call_with_retry(
     on_retry: Callable[[int], Awaitable[None]] | None = None,
     max_retries: int = MAX_RETRIES,
     base_wait: int = BASE_WAIT_SECONDS,
+    transient_errors: tuple[type[Exception], ...] | None = None,
 ) -> RetryResult[_T]:
-    """Call *api_call* with back-off on rate-limit errors.
+    """Call *api_call* with back-off on transient errors.
 
     Uses the server's ``Retry-After`` header when available, falling back to
     exponential back-off based on *base_wait*.
 
     Args:
-        api_call: Async callable (no args) that makes the Anthropic API call.
+        api_call: Async callable (no args) that makes the API call.
         label: Human-readable label for log messages (e.g. "explore", "plan").
         on_retry: Optional async callback invoked with the wait-seconds on each
             retry, allowing callers to emit events / yield before sleeping.
         max_retries: Maximum number of attempts before re-raising.
         base_wait: Base wait time in seconds for fallback exponential back-off.
+        transient_errors: Tuple of exception types to retry on. Defaults to
+            Anthropic's RateLimitError and InternalServerError.
 
     Returns:
         A RetryResult containing the value returned by *api_call* and throttle stats.
     """
+    errors_to_catch = transient_errors or _ANTHROPIC_TRANSIENT
     throttle_count = 0
     throttle_seconds = 0.0
 
@@ -84,11 +91,11 @@ async def call_with_retry(
                 throttle_count=throttle_count,
                 throttle_seconds=throttle_seconds,
             )
-        except _TRANSIENT_ERRORS as e:
+        except errors_to_catch as e:
             if attempt == max_retries - 1:
                 raise
             # Prefer server-provided Retry-After, fall back to linear backoff
-            retry_after = _extract_retry_after(e) if isinstance(e, anthropic.RateLimitError) else None
+            retry_after = _extract_retry_after(e)
             if retry_after is not None:
                 wait = max(MIN_WAIT_SECONDS, min(retry_after, MAX_WAIT_SECONDS))
             else:

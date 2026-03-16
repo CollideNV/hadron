@@ -10,7 +10,7 @@ class PhasePromptBuilder:
 
     def build_explore_system(self, task: AgentTask) -> str:
         """Build the system prompt for the explore phase."""
-        from hadron.agent.prompt import _load_template
+        from hadron.agent.prompt import _load_template_from_disk as _load_template
 
         try:
             return _load_template("explorer")
@@ -23,7 +23,7 @@ class PhasePromptBuilder:
 
     def build_plan_system(self, task: AgentTask) -> str:
         """Build the system prompt for the plan phase."""
-        from hadron.agent.prompt import _load_template
+        from hadron.agent.prompt import _load_template_from_disk as _load_template
 
         try:
             planner_template = _load_template("planner")
