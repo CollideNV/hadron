@@ -44,9 +44,20 @@ async def run_agent(
     loop_iteration: int = 0,
 ) -> AgentRunResult:
     """Run an agent with full event emission, cost tracking, and conversation storage."""
-    effective_model = model or ctx.model
-    effective_explore = explore_model if explore_model is not None else ctx.explore_model
-    effective_plan = plan_model if plan_model is not None else ctx.plan_model
+    # Per-stage model/backend lookup from DB settings (highest priority)
+    stage_cfg = ctx.stage_models.get(stage, {}) if ctx.stage_models else {}
+    act_cfg = stage_cfg.get("act") if stage_cfg else None
+    explore_cfg = stage_cfg.get("explore") if stage_cfg else None
+    plan_cfg = stage_cfg.get("plan") if stage_cfg else None
+
+    # Model precedence: per-stage DB config > explicit kwarg > global ctx default
+    effective_model = (act_cfg["model"] if act_cfg else None) or model or ctx.model
+    effective_explore = (explore_cfg["model"] if explore_cfg else None) if explore_model is None else (explore_model if explore_model else ctx.explore_model)
+    effective_plan = (plan_cfg["model"] if plan_cfg else None) if plan_model is None else (plan_model if plan_model else ctx.plan_model)
+
+    # Backend selection: per-stage > default
+    backend_name = (act_cfg.get("backend") if act_cfg else None) or ctx.default_backend
+    effective_backend = ctx.backend_pool.get(backend_name) if ctx.backend_pool else ctx.agent_backend
 
     if allowed_tools is None:
         allowed_tools = ["read_file", "write_file", "list_directory", "run_command"]
@@ -83,7 +94,7 @@ async def run_agent(
             },
         ))
 
-    result = await ctx.agent_backend.execute(task)
+    result = await effective_backend.execute(task)
     await emit_cost_update(ctx.event_bus, cr_id, stage, result, prior_cost)
 
     conv_key = ""

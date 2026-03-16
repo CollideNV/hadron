@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 load_dotenv()  # read .env before anything else
 from typing import Any
 
+from hadron.agent.prompt import PromptComposer
 from hadron.config.bootstrap import load_bootstrap_config
 from hadron.config.defaults import DEFAULT_MODEL, get_config_snapshot
 from hadron.git.url import extract_repo_name
@@ -89,6 +90,7 @@ async def _execute_pipeline(
     repo_name: str,
     initial_state: dict[str, Any],
     config_snapshot: dict[str, Any],
+    prompt_composer: PromptComposer | None = None,
 ) -> dict[str, Any]:
     """Build, compile, and invoke the LangGraph pipeline. Returns final state."""
     graph = build_pipeline_graph()
@@ -120,11 +122,15 @@ async def _execute_pipeline(
                 "event_bus": infra.event_bus,
                 "intervention_manager": infra.intervention_mgr,
                 "agent_backend": infra.agent_backend,
+                "backend_pool": infra.backend_pool,
                 "workspace_dir": cfg.workspace_dir,
                 "model": pipeline_cfg.get("default_model", DEFAULT_MODEL),
                 "explore_model": pipeline_cfg.get("explore_model", ""),
                 "plan_model": pipeline_cfg.get("plan_model", ""),
+                "stage_models": pipeline_cfg.get("stage_models", {}),
+                "default_backend": pipeline_cfg.get("default_backend", "claude"),
                 "redis": infra.redis_client,
+                "prompt_composer": prompt_composer,
             }
         }
 
@@ -194,8 +200,16 @@ async def run_worker(cr_id: str, repo_url: str, repo_name: str = "", default_bra
         initial_state = build_initial_state(cr_run, cr_id, repo_url, repo_name, default_branch)
         config_snapshot = cr_run.config_snapshot_json or get_config_snapshot()
 
+        # Build PromptComposer from snapshot if available
+        snapshot_prompts = config_snapshot.get("prompts")
+        if snapshot_prompts:
+            prompt_composer = PromptComposer.from_snapshot(snapshot_prompts)
+        else:
+            prompt_composer = PromptComposer()
+
         final_state = await _execute_pipeline(
             infra, cfg, cr_id, repo_name, initial_state, config_snapshot,
+            prompt_composer=prompt_composer,
         )
         await persist_result(infra, cr_id, repo_name, final_state)
 

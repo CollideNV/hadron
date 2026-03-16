@@ -72,13 +72,17 @@ def create_app() -> FastAPI:
     from hadron.controller.routes.intake import router as intake_router
     from hadron.controller.routes.events import router as events_router
     from hadron.controller.routes.pipeline import router as pipeline_router
+    from hadron.controller.routes.prompts import router as prompts_router
     from hadron.controller.routes.release import router as release_router
+    from hadron.controller.routes.settings import router as settings_router
 
     app.include_router(health_router)
     app.include_router(intake_router, prefix="/api")
     app.include_router(events_router, prefix="/api")
     app.include_router(pipeline_router, prefix="/api")
     app.include_router(release_router, prefix="/api")
+    app.include_router(prompts_router, prefix="/api")
+    app.include_router(settings_router, prefix="/api")
 
     # Mount frontend static files (after API routes so they don't shadow them)
     frontend_dir = os.environ.get(

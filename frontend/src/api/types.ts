@@ -165,12 +165,47 @@ export type PipelineEvent = {
   };
 }[EventType];
 
+export interface PromptTemplate {
+  role: string;
+  description: string;
+  version: number;
+  updated_at: string | null;
+}
+
+export interface PromptTemplateDetail extends PromptTemplate {
+  content: string;
+}
+
 export interface RawChangeRequest {
   title: string;
   description: string;
   source?: string;
   repo_urls?: string[];
   repo_default_branch?: string;
+}
+
+/* ── Model settings ── */
+
+export interface PhaseModel {
+  backend: string;
+  model: string;
+}
+
+export interface StageConfig {
+  act: PhaseModel;
+  explore: PhaseModel | null;
+  plan: PhaseModel | null;
+}
+
+export interface ModelSettings {
+  default_backend: string;
+  stages: Record<string, StageConfig>;
+}
+
+export interface BackendModels {
+  name: string;
+  display_name: string;
+  models: string[];
 }
 
 export const EVENT_TYPES = [

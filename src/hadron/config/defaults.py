@@ -18,6 +18,8 @@ PIPELINE_DEFAULTS: dict = {
     "max_verification_loops": 3,
     "max_review_dev_loops": 3,
     "max_cost_usd": 10.0,
+    # Agent backend
+    "default_backend": "claude",
     # Agent models (three-phase execution)
     "default_model": DEFAULT_MODEL,
     "explore_model": DEFAULT_EXPLORE_MODEL,

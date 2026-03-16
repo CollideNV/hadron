@@ -72,6 +72,32 @@ class RepoRun(Base):
     )
 
 
+class PromptTemplate(Base):
+    """Editable prompt template for an agent role."""
+
+    __tablename__ = "prompt_templates"
+
+    role: Mapped[str] = mapped_column(String(64), primary_key=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(String(256), server_default="")
+    version: Mapped[int] = mapped_column(default=1)
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class PipelineSetting(Base):
+    """Key-value store for pipeline configuration (JSON values)."""
+
+    __tablename__ = "pipeline_settings"
+
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class AuditLog(Base):
     """Immutable audit trail for all significant actions."""
 

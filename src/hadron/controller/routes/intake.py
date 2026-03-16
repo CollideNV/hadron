@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from hadron.config.defaults import BRANCH_PREFIX, get_config_snapshot
 from hadron.controller.dependencies import get_job_spawner, get_session_factory
 from hadron.controller.job_spawner import JobSpawner
-from hadron.db.models import CRRun, RepoRun
+from hadron.db.models import CRRun, PipelineSetting, PromptTemplate, RepoRun
 from hadron.git.url import extract_repo_name
 from hadron.models.cr import RawChangeRequest
 
@@ -39,6 +39,26 @@ async def trigger_pipeline(
 
     cr_id = f"CR-{uuid.uuid4().hex[:8]}"
     config_snapshot = get_config_snapshot()
+
+    # Freeze prompt templates and model settings into config snapshot
+    async with session_factory() as session:
+        result = await session.execute(select(PromptTemplate))
+        prompts = {row.role: row.content for row in result.scalars()}
+        if prompts:
+            config_snapshot["prompts"] = prompts
+
+        # Freeze model settings
+        result = await session.execute(
+            select(PipelineSetting).where(
+                PipelineSetting.key.in_(["default_backend", "stage_models"])
+            )
+        )
+        for setting in result.scalars():
+            if setting.key == "default_backend":
+                config_snapshot["pipeline"]["default_backend"] = setting.value_json.get("backend", "claude")
+            elif setting.key == "stage_models":
+                config_snapshot["pipeline"]["stage_models"] = setting.value_json
+
     default_branch = cr.repo_default_branch
 
     # Create CR run + RepoRun records in a single transaction

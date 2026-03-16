@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
 from langgraph.types import RunnableConfig
 
@@ -38,6 +38,9 @@ class NodeContext:
     plan_model: str
     intervention_mgr: InterventionManager | None
     prompt_composer: PromptComposer
+    stage_models: dict[str, dict] = field(default_factory=dict)
+    default_backend: str = "claude"
+    backend_pool: Any = None
 
     @classmethod
     def from_config(cls, config: RunnableConfig) -> NodeContext:
@@ -56,4 +59,7 @@ class NodeContext:
             plan_model=configurable.get("plan_model", ""),
             intervention_mgr=configurable.get("intervention_manager"),
             prompt_composer=configurable.get("prompt_composer") or PromptComposer(),
+            stage_models=configurable.get("stage_models", {}),
+            default_backend=configurable.get("default_backend", "claude"),
+            backend_pool=configurable.get("backend_pool"),
         )

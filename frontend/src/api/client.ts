@@ -1,4 +1,4 @@
-import type { CRRun, CRRunDetail, RawChangeRequest } from "./types";
+import type { BackendModels, CRRun, CRRunDetail, ModelSettings, PromptTemplate, PromptTemplateDetail, RawChangeRequest } from "./types";
 
 const BASE = "/api";
 
@@ -67,6 +67,39 @@ export async function getConversation(
   key: string,
 ): Promise<Record<string, unknown>[]> {
   return fetchJSON(`/pipeline/${crId}/conversation?key=${encodeURIComponent(key)}`);
+}
+
+export async function listPrompts(): Promise<PromptTemplate[]> {
+  return fetchJSON<PromptTemplate[]>("/prompts");
+}
+
+export async function getPrompt(role: string): Promise<PromptTemplateDetail> {
+  return fetchJSON<PromptTemplateDetail>(`/prompts/${encodeURIComponent(role)}`);
+}
+
+export async function updatePrompt(
+  role: string,
+  content: string,
+): Promise<PromptTemplateDetail> {
+  return fetchJSON(`/prompts/${encodeURIComponent(role)}`, {
+    method: "PUT",
+    body: JSON.stringify({ content }),
+  });
+}
+
+export async function getModelSettings(): Promise<ModelSettings> {
+  return fetchJSON<ModelSettings>("/settings/models");
+}
+
+export async function updateModelSettings(settings: ModelSettings): Promise<ModelSettings> {
+  return fetchJSON<ModelSettings>("/settings/models", {
+    method: "PUT",
+    body: JSON.stringify(settings),
+  });
+}
+
+export async function getAvailableBackends(): Promise<BackendModels[]> {
+  return fetchJSON<BackendModels[]>("/settings/backends");
 }
 
 export async function getWorkerLogs(crId: string): Promise<string> {
