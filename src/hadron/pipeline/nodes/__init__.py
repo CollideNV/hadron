@@ -121,6 +121,7 @@ class RepoInfo:
     test_command: str
     languages: list[str]
     test_commands: list[str]
+    e2e_test_commands: list[str]
     agents_md: str
     raw: dict[str, Any]
 
@@ -140,6 +141,7 @@ class RepoInfo:
             test_command=(repo.get("test_commands") or ["pytest"])[0],
             languages=repo.get("languages", []),
             test_commands=repo.get("test_commands", []),
+            e2e_test_commands=repo.get("e2e_test_commands", []),
             agents_md=repo.get("agents_md", ""),
             raw=repo,
         )

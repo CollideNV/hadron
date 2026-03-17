@@ -394,6 +394,28 @@ def build_events() -> list[dict]:
     })
     add("stage_completed", "implementation", {"all_passing": True})
 
+    # --- E2E Testing ---
+    add("stage_entered", "e2e_testing")
+    add("test_run", "e2e_testing", {"passed": False, "repo": REPO, "output_tail": "tests/e2e/auth.spec.ts:12 — Error: expected 'Login' but got 'Sign In'\n\n1 failed, 2 passed in 8.4s"})
+    add("agent_started", "e2e_testing", {"role": "e2e_testing", "repo": REPO, "model": "claude-sonnet-4-6-20250514"})
+    add("agent_tool_call", "e2e_testing", {"role": "e2e_testing", "tool": "read_file", "repo": REPO, "type": "call", "input": {"path": "tests/e2e/auth.spec.ts"}})
+    add("agent_tool_call", "e2e_testing", {"role": "e2e_testing", "tool": "read_file", "repo": REPO, "type": "result", "result_snippet": "test('login page shows login button', async ({ page }) => {\n  await expect(page.getByText('Login')).toBeVisible();\n});"})
+    add("agent_tool_call", "e2e_testing", {"role": "e2e_testing", "tool": "write_file", "repo": REPO, "type": "call", "input": {"path": "tests/e2e/auth.spec.ts"}})
+    add("agent_tool_call", "e2e_testing", {"role": "e2e_testing", "tool": "write_file", "repo": REPO, "type": "result", "result_snippet": "Wrote tests/e2e/auth.spec.ts (updated assertion to match new button text)"})
+    add("agent_tool_call", "e2e_testing", {"role": "e2e_testing", "tool": "write_file", "repo": REPO, "type": "call", "input": {"path": "tests/e2e/jwt-flow.spec.ts"}})
+    add("agent_tool_call", "e2e_testing", {"role": "e2e_testing", "tool": "write_file", "repo": REPO, "type": "result", "result_snippet": "Wrote tests/e2e/jwt-flow.spec.ts (new E2E test for JWT auth flow)"})
+    add("agent_output", "e2e_testing", {"role": "e2e_testing", "repo": REPO, "text": "Fixed the broken assertion in auth.spec.ts (button text changed from 'Login' to 'Sign In'). Added new E2E test jwt-flow.spec.ts covering the full JWT authentication flow: login → get token → access protected endpoint → expired token rejection."})
+    add("agent_completed", "e2e_testing", {"role": "e2e_testing", "repo": REPO, "input_tokens": 6000, "output_tokens": 800, "cost_usd": 0.028, "tool_calls_count": 6, "round_count": 4})
+    add("cost_update", "e2e_testing", {"total_cost_usd": 0.146, "delta_usd": 0.028})
+    add("test_run", "e2e_testing", {"passed": True, "repo": REPO, "output_tail": "tests/e2e/auth.spec.ts — 3 passed\ntests/e2e/jwt-flow.spec.ts — 4 passed\n\n7 passed in 12.1s"})
+    add("stage_diff", "e2e_testing", {
+        "repo": REPO,
+        "diff": "diff --git a/tests/e2e/auth.spec.ts b/tests/e2e/auth.spec.ts\n--- a/tests/e2e/auth.spec.ts\n+++ b/tests/e2e/auth.spec.ts\n@@ -12,1 +12,1 @@\n-  await expect(page.getByText('Login')).toBeVisible();\n+  await expect(page.getByText('Sign In')).toBeVisible();\ndiff --git a/tests/e2e/jwt-flow.spec.ts b/tests/e2e/jwt-flow.spec.ts\nnew file mode 100644\n--- /dev/null\n+++ b/tests/e2e/jwt-flow.spec.ts\n@@ -0,0 +1,30 @@\n+import { test, expect } from '@playwright/test';\n+\n+test('full JWT auth flow', async ({ page }) => {\n+  // Login with valid credentials\n+  await page.goto('/auth/login');\n+  await page.fill('[name=email]', 'alice@example.com');\n+  await page.fill('[name=password]', 'secret123');\n+  await page.click('button[type=submit]');\n+  await expect(page).toHaveURL('/dashboard');\n+});",
+        "diff_truncated": False,
+        "stats": {"files_changed": 2, "insertions": 31, "deletions": 1},
+    })
+    add("stage_completed", "e2e_testing", {"all_passing": True})
+
     # --- Review ---
     add("stage_entered", "review")
 

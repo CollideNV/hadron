@@ -43,6 +43,7 @@ export const STAGE_META: Record<
   behaviour_translation: { label: "Translate", icon: "BT", group: "Specify" },
   behaviour_verification: { label: "Verify", icon: "BV", group: "Specify" },
   implementation: { label: "Implement", icon: "IM", group: "Build" },
+  e2e_testing: { label: "E2E", icon: "E2", group: "Build" },
   review: { label: "Review", icon: "RV", group: "Validate" },
   rebase: { label: "Rebase", icon: "RB", group: "Validate" },
   delivery: { label: "Deliver", icon: "DL", group: "Ship" },

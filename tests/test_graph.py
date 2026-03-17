@@ -15,6 +15,7 @@ EXPECTED_NODES = {
     "verification",
     "implementation",
     "rework",
+    "e2e_testing",
     "review",
     "rebase",
     "delivery",
@@ -70,11 +71,8 @@ class TestLinearEdges:
     def test_translation_to_verification(self) -> None:
         assert ("translation", "verification") in self._get_plain_edges()
 
-    def test_implementation_to_review(self) -> None:
-        assert ("implementation", "review") in self._get_plain_edges()
-
-    def test_rework_to_review(self) -> None:
-        assert ("rework", "review") in self._get_plain_edges()
+    def test_e2e_testing_to_review(self) -> None:
+        assert ("e2e_testing", "review") in self._get_plain_edges()
 
     def test_delivery_to_release(self) -> None:
         assert ("delivery", "release") in self._get_plain_edges()
@@ -104,6 +102,14 @@ class TestConditionalEdges:
     def test_rebase_has_conditional_edge(self) -> None:
         assert "rebase" in self._get_conditional_sources()
 
+    def test_implementation_has_conditional_edge(self) -> None:
+        assert "implementation" in self._get_conditional_sources()
+
+    def test_rework_has_conditional_edge(self) -> None:
+        assert "rework" in self._get_conditional_sources()
+
     def test_conditional_edge_count(self) -> None:
-        """Only verification, review, and rebase should have conditional edges."""
-        assert self._get_conditional_sources() == {"verification", "review", "rebase"}
+        """Verification, review, rebase, implementation, and rework should have conditional edges."""
+        assert self._get_conditional_sources() == {
+            "verification", "review", "rebase", "implementation", "rework",
+        }

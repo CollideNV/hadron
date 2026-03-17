@@ -7,12 +7,19 @@ from langgraph.types import RunnableConfig
 from langgraph.graph import END, StateGraph
 
 from hadron.models.pipeline_state import PipelineState
-from hadron.pipeline.edges import after_rebase, after_review, after_verification
+from hadron.pipeline.edges import (
+    after_implementation,
+    after_rebase,
+    after_review,
+    after_rework,
+    after_verification,
+)
 from hadron.pipeline.nodes.behaviour import (
     behaviour_translation_node,
     behaviour_verification_node,
 )
 from hadron.pipeline.nodes.delivery import delivery_node
+from hadron.pipeline.nodes.e2e_testing import e2e_testing_node
 from hadron.pipeline.nodes.intake import intake_node
 from hadron.pipeline.nodes.rebase import rebase_node
 from hadron.pipeline.nodes.release import release_node
@@ -34,9 +41,12 @@ def build_pipeline_graph() -> StateGraph:
     Graph structure follows adr/orchestration.md §5.3:
         Intake → Repo ID → Worktree Setup → Behaviour Translation → Behaviour Verification
             ↕ (verification loop)
-        → Implementation → Review
-            ↕ (review loop)
+        → Implementation → [E2E Testing] → Review
+            ↕ (review loop via rework → [E2E Testing])
         → Rebase → Delivery → Release
+
+    E2E Testing is conditional — only runs when the repo has E2E test
+    commands configured (auto-detected or via AGENTS.md).
 
     Release gate (human approval) and retrospective are handled by the Controller
     after all repo workers for a CR have completed.
@@ -51,6 +61,7 @@ def build_pipeline_graph() -> StateGraph:
     graph.add_node("verification", behaviour_verification_node)
     graph.add_node("implementation", implementation_node)
     graph.add_node("rework", rework_node)
+    graph.add_node("e2e_testing", e2e_testing_node)
     graph.add_node("review", review_node)
     graph.add_node("rebase", rebase_node)
     graph.add_node("delivery", delivery_node)
@@ -71,7 +82,15 @@ def build_pipeline_graph() -> StateGraph:
         {"translation": "translation", "implementation": "implementation", "paused": "paused"},
     )
 
-    graph.add_edge("implementation", "review")
+    # Conditional: implementation → e2e_testing (if configured) | review (no E2E) | paused
+    graph.add_conditional_edges(
+        "implementation",
+        after_implementation,
+        {"e2e_testing": "e2e_testing", "review": "review", "paused": "paused"},
+    )
+
+    # E2E testing always flows into review
+    graph.add_edge("e2e_testing", "review")
 
     # Conditional: review → rework (retry) | rebase (proceed) | paused (circuit breaker)
     graph.add_conditional_edges(
@@ -80,8 +99,12 @@ def build_pipeline_graph() -> StateGraph:
         {"rework": "rework", "rebase": "rebase", "paused": "paused"},
     )
 
-    # Rework always goes back to review
-    graph.add_edge("rework", "review")
+    # Conditional: rework → e2e_testing (if configured) | review (no E2E) | paused
+    graph.add_conditional_edges(
+        "rework",
+        after_rework,
+        {"e2e_testing": "e2e_testing", "review": "review", "paused": "paused"},
+    )
 
     # Conditional: rebase → delivery (clean) | paused (conflicts)
     graph.add_conditional_edges(

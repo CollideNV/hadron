@@ -57,7 +57,7 @@ def detect_languages_and_tests(
     base = Path(worktree_path)
 
     # --- Phase 1: Check AGENTS.md / CLAUDE.md for explicit overrides ---
-    override_langs, override_tests = _parse_agents_md(agents_md)
+    override_langs, override_tests, _ = _parse_agents_md(agents_md)
     if override_langs or override_tests:
         logger.info(
             "Using AGENTS.md overrides: languages=%s, test_commands=%s",
@@ -146,19 +146,22 @@ def _read_package_json_test(base: Path) -> str | None:
     return None
 
 
-def _parse_agents_md(content: str) -> tuple[list[str], list[str]]:
-    """Extract language and test command overrides from AGENTS.md / CLAUDE.md.
+def _parse_agents_md(content: str) -> tuple[list[str], list[str], list[str] | None]:
+    """Extract language, test command, and E2E test command overrides from AGENTS.md / CLAUDE.md.
 
     Looks for patterns like:
         ## Languages: python, typescript
         ## Test command: pytest tests/ -v
         ## Test commands: pytest, npm test
+        ## E2E test command: npx playwright test
+        ## E2E tests: none
     """
     if not content:
-        return [], []
+        return [], [], None
 
     languages: list[str] = []
     test_commands: list[str] = []
+    e2e_commands: list[str] | None = None
 
     for line in content.splitlines():
         stripped = line.strip()
@@ -186,4 +189,81 @@ def _parse_agents_md(content: str) -> tuple[list[str], list[str]]:
             else:
                 test_commands = [raw] if raw else []
 
-    return languages, test_commands
+        # Match "E2E test command(s): ..." or "E2E tests: none"
+        e2e_match = re.match(
+            r"e2e\s+tests?\s*:\s*(.+)", clean, re.IGNORECASE,
+        ) or re.match(
+            r"e2e\s+test\s+commands?\s*:\s*(.+)", clean, re.IGNORECASE,
+        )
+        if e2e_match:
+            raw = e2e_match.group(1).strip().rstrip("*")
+            if raw.lower() == "none":
+                e2e_commands = []
+            elif ", " in raw:
+                e2e_commands = [t.strip() for t in raw.split(", ") if t.strip()]
+            else:
+                e2e_commands = [raw] if raw else []
+
+    return languages, test_commands, e2e_commands
+
+
+# E2E test framework marker file → (framework, default command)
+_E2E_MARKERS: list[tuple[str, str, str]] = [
+    ("playwright.config.ts", "playwright", "npx playwright test"),
+    ("playwright.config.js", "playwright", "npx playwright test"),
+    ("cypress.config.ts", "cypress", "npx cypress run"),
+    ("cypress.config.js", "cypress", "npx cypress run"),
+    ("wdio.conf.ts", "webdriverio", "npx wdio run"),
+    ("wdio.conf.js", "webdriverio", "npx wdio run"),
+]
+
+
+def detect_e2e_tests(
+    worktree_path: str,
+    agents_md: str = "",
+) -> list[str]:
+    """Detect E2E test commands from a repository.
+
+    Args:
+        worktree_path: Path to the repo worktree.
+        agents_md: Contents of AGENTS.md / CLAUDE.md (if found).
+
+    Returns:
+        List of E2E test commands — empty means no E2E tests detected.
+    """
+    base = Path(worktree_path)
+
+    # --- Phase 1: Check AGENTS.md override ---
+    _, _, e2e_override = _parse_agents_md(agents_md)
+    if e2e_override is not None:
+        logger.info("Using AGENTS.md E2E override: %s", e2e_override)
+        return e2e_override
+
+    # --- Phase 2: Scan marker files ---
+    detected: list[str] = []
+    seen_frameworks: set[str] = set()
+
+    scan_dirs = [base]
+    scan_dirs.extend(
+        d for d in sorted(base.iterdir())
+        if d.is_dir() and not d.name.startswith(".")
+    )
+
+    for scan_dir in scan_dirs:
+        for marker, framework, default_cmd in _E2E_MARKERS:
+            if not (scan_dir / marker).is_file():
+                continue
+
+            if framework in seen_frameworks:
+                continue
+            seen_frameworks.add(framework)
+
+            cmd = default_cmd
+            if scan_dir != base:
+                rel = scan_dir.relative_to(base)
+                cmd = f"cd {rel} && {default_cmd}"
+
+            if cmd not in detected:
+                detected.append(cmd)
+
+    return detected

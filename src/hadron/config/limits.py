@@ -30,6 +30,9 @@ TEST_OUTPUT_BRIEF_CHARS = 2_000  # Abbreviated test output stored in dev/deliver
 TEST_OUTPUT_EVENT_CHARS = 500    # Test output snippet emitted in pipeline events
 REBASE_OUTPUT_TAIL_CHARS = 500   # Post-rebase test failure log snippet
 
+# --- E2E testing ---
+MAX_E2E_RETRIES = 2
+
 # --- Conversation compaction ---
 # Compact conversation when a single round's input tokens exceed this threshold.
 COMPACT_INPUT_TOKEN_THRESHOLD = 80_000

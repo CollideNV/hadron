@@ -39,6 +39,7 @@ class RepoContext(TypedDict, total=False):
     agents_md: str  # contents of AGENTS.md / CLAUDE.md
     languages: list[str]  # auto-detected or from AGENTS.md
     test_commands: list[str]  # auto-detected or from AGENTS.md
+    e2e_test_commands: list[str]  # auto-detected or from AGENTS.md (empty = skip)
 
 
 class BehaviourSpec(TypedDict, total=False):
@@ -49,6 +50,16 @@ class BehaviourSpec(TypedDict, total=False):
     verified: bool
     verification_feedback: str
     verification_iteration: int
+
+
+class E2EResult(TypedDict, total=False):
+    """E2E test result for a single repo."""
+
+    repo_name: str
+    tests_passing: bool
+    test_output: str
+    tests_added: int  # how many new E2E tests the agent wrote
+    tests_updated: int  # how many existing tests the agent fixed
 
 
 class DevResult(TypedDict, total=False):
@@ -115,6 +126,10 @@ class PipelineState(TypedDict, total=False):
     # --- Development ---
     dev_results: list[DevResult]
     dev_loop_count: int
+
+    # --- E2E Testing ---
+    e2e_results: list[E2EResult]
+    e2e_passed: bool
 
     # --- Review ---
     review_results: list[ReviewResult]

@@ -263,6 +263,7 @@ export const STAGES = [
   "behaviour_translation",
   "behaviour_verification",
   "implementation",
+  "e2e_testing",
   "review",
   "rebase",
   "delivery",

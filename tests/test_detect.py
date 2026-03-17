@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from hadron.git.detect import detect_languages_and_tests, _parse_agents_md
+from hadron.git.detect import detect_e2e_tests, detect_languages_and_tests, _parse_agents_md
 
 
 @pytest.fixture
@@ -124,26 +124,44 @@ class TestAgentsMdOverride:
     def test_bold_format(self) -> None:
         """Parse **Languages:** format."""
         content = "**Languages:** go, rust\n**Test commands:** go test ./..., cargo test\n"
-        langs, tests = _parse_agents_md(content)
+        langs, tests, e2e = _parse_agents_md(content)
         assert langs == ["go", "rust"]
         assert tests == ["go test ./...", "cargo test"]
+        assert e2e is None
 
     def test_single_language(self) -> None:
         content = "## Language: python\n## Test command: pytest -x\n"
-        langs, tests = _parse_agents_md(content)
+        langs, tests, _ = _parse_agents_md(content)
         assert langs == ["python"]
         assert tests == ["pytest -x"]
 
     def test_empty_agents_md(self) -> None:
-        langs, tests = _parse_agents_md("")
+        langs, tests, e2e = _parse_agents_md("")
         assert langs == []
         assert tests == []
+        assert e2e is None
 
     def test_agents_md_without_overrides(self) -> None:
         content = "# My Project\n\nThis is a service that does things.\n"
-        langs, tests = _parse_agents_md(content)
+        langs, tests, e2e = _parse_agents_md(content)
         assert langs == []
         assert tests == []
+        assert e2e is None
+
+    def test_e2e_test_command_override(self) -> None:
+        content = "## E2E test command: npx playwright test\n"
+        _, _, e2e = _parse_agents_md(content)
+        assert e2e == ["npx playwright test"]
+
+    def test_e2e_tests_none(self) -> None:
+        content = "## E2E tests: none\n"
+        _, _, e2e = _parse_agents_md(content)
+        assert e2e == []
+
+    def test_e2e_multiple_commands(self) -> None:
+        content = "## E2E test commands: npx playwright test, npx cypress run\n"
+        _, _, e2e = _parse_agents_md(content)
+        assert e2e == ["npx playwright test", "npx cypress run"]
 
     def test_override_takes_precedence(self, repo) -> None:
         """AGENTS.md overrides auto-detection entirely when both lang and test specified."""
@@ -190,3 +208,63 @@ class TestNestedDetection:
 
         langs, tests = detect_languages_and_tests(str(repo))
         assert "javascript" not in langs
+
+
+class TestE2EDetection:
+    """Detect E2E test commands from marker files."""
+
+    def test_playwright_config_ts(self, repo) -> None:
+        (repo / "playwright.config.ts").write_text("export default {}")
+        cmds = detect_e2e_tests(str(repo))
+        assert cmds == ["npx playwright test"]
+
+    def test_playwright_config_js(self, repo) -> None:
+        (repo / "playwright.config.js").write_text("module.exports = {}")
+        cmds = detect_e2e_tests(str(repo))
+        assert cmds == ["npx playwright test"]
+
+    def test_cypress_config(self, repo) -> None:
+        (repo / "cypress.config.ts").write_text("export default {}")
+        cmds = detect_e2e_tests(str(repo))
+        assert cmds == ["npx cypress run"]
+
+    def test_wdio_config(self, repo) -> None:
+        (repo / "wdio.conf.ts").write_text("export const config = {}")
+        cmds = detect_e2e_tests(str(repo))
+        assert cmds == ["npx wdio run"]
+
+    def test_no_e2e_markers(self, repo) -> None:
+        cmds = detect_e2e_tests(str(repo))
+        assert cmds == []
+
+    def test_nested_playwright_config(self, repo) -> None:
+        frontend = repo / "frontend"
+        frontend.mkdir()
+        (frontend / "playwright.config.ts").write_text("export default {}")
+        cmds = detect_e2e_tests(str(repo))
+        assert cmds == ["cd frontend && npx playwright test"]
+
+    def test_no_duplicate_frameworks(self, repo) -> None:
+        """Both .ts and .js configs for same framework should not duplicate."""
+        (repo / "playwright.config.ts").write_text("export default {}")
+        (repo / "playwright.config.js").write_text("module.exports = {}")
+        cmds = detect_e2e_tests(str(repo))
+        assert len(cmds) == 1
+        assert cmds == ["npx playwright test"]
+
+    def test_agents_md_override(self, repo) -> None:
+        (repo / "playwright.config.ts").write_text("export default {}")
+        cmds = detect_e2e_tests(str(repo), agents_md="## E2E test command: npm run e2e\n")
+        assert cmds == ["npm run e2e"]
+
+    def test_agents_md_none_disables(self, repo) -> None:
+        (repo / "playwright.config.ts").write_text("export default {}")
+        cmds = detect_e2e_tests(str(repo), agents_md="## E2E tests: none\n")
+        assert cmds == []
+
+    def test_hidden_dirs_skipped(self, repo) -> None:
+        gitdir = repo / ".git"
+        gitdir.mkdir()
+        (gitdir / "playwright.config.ts").write_text("export default {}")
+        cmds = detect_e2e_tests(str(repo))
+        assert cmds == []

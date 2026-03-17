@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from hadron.git.detect import detect_languages_and_tests
+from hadron.git.detect import detect_e2e_tests, detect_languages_and_tests
 from hadron.git.url import extract_repo_name
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
@@ -90,6 +90,11 @@ async def worktree_setup_node(state: PipelineState, ctx: NodeContext, cr_id: str
         str(worktree_path), agents_md=agents_md,
     )
 
+    # Auto-detect E2E test commands (AGENTS.md overrides marker files)
+    e2e_test_commands = detect_e2e_tests(
+        str(worktree_path), agents_md=agents_md,
+    )
+
     dir_tree = await wm.get_directory_tree(worktree_path)
 
     updated_repo = {
@@ -99,6 +104,7 @@ async def worktree_setup_node(state: PipelineState, ctx: NodeContext, cr_id: str
         "agents_md": agents_md,
         "languages": languages,
         "test_commands": test_commands,
+        "e2e_test_commands": e2e_test_commands,
     }
 
     await ctx.event_bus.emit(PipelineEvent(
@@ -107,6 +113,7 @@ async def worktree_setup_node(state: PipelineState, ctx: NodeContext, cr_id: str
             "worktree_path": str(worktree_path),
             "languages": languages,
             "test_commands": test_commands,
+            "e2e_test_commands": e2e_test_commands,
         },
     ))
 

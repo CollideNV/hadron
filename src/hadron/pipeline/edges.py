@@ -57,6 +57,36 @@ def after_review(state: PipelineState) -> str:
     return "rework"
 
 
+def after_implementation(state: PipelineState) -> str:
+    """Route after implementation.
+
+    Returns:
+        "e2e_testing" — repo has E2E tests configured
+        "review" — no E2E tests, proceed to review
+        "paused" — node errored
+    """
+    if state.get("status") == "paused":
+        return "paused"
+    if state.get("repo", {}).get("e2e_test_commands"):
+        return "e2e_testing"
+    return "review"
+
+
+def after_rework(state: PipelineState) -> str:
+    """Route after rework.
+
+    Returns:
+        "e2e_testing" — repo has E2E tests configured
+        "review" — no E2E tests, proceed to review
+        "paused" — node errored
+    """
+    if state.get("status") == "paused":
+        return "paused"
+    if state.get("repo", {}).get("e2e_test_commands"):
+        return "e2e_testing"
+    return "review"
+
+
 def after_rebase(state: PipelineState) -> str:
     """Route after rebase.
 

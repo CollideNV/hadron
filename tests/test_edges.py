@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from hadron.pipeline.edges import after_verification, after_review, after_rebase
+from hadron.pipeline.edges import (
+    after_implementation,
+    after_rebase,
+    after_review,
+    after_rework,
+    after_verification,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +117,56 @@ class TestAfterReview:
     def test_paused_status_stops_loop(self) -> None:
         state = {"status": "paused", "review_passed": False, "review_loop_count": 0}
         assert after_review(state) == "paused"
+
+
+# ---------------------------------------------------------------------------
+# after_implementation
+# ---------------------------------------------------------------------------
+
+
+class TestAfterImplementation:
+    def test_routes_to_e2e_when_commands_present(self) -> None:
+        state = {"repo": {"e2e_test_commands": ["npx playwright test"]}}
+        assert after_implementation(state) == "e2e_testing"
+
+    def test_routes_to_review_when_no_commands(self) -> None:
+        state = {"repo": {"e2e_test_commands": []}}
+        assert after_implementation(state) == "review"
+
+    def test_routes_to_review_when_no_repo(self) -> None:
+        state = {}
+        assert after_implementation(state) == "review"
+
+    def test_routes_to_review_when_key_missing(self) -> None:
+        state = {"repo": {}}
+        assert after_implementation(state) == "review"
+
+    def test_paused_takes_precedence(self) -> None:
+        state = {"status": "paused", "repo": {"e2e_test_commands": ["npx playwright test"]}}
+        assert after_implementation(state) == "paused"
+
+
+# ---------------------------------------------------------------------------
+# after_rework
+# ---------------------------------------------------------------------------
+
+
+class TestAfterRework:
+    def test_routes_to_e2e_when_commands_present(self) -> None:
+        state = {"repo": {"e2e_test_commands": ["npx playwright test"]}}
+        assert after_rework(state) == "e2e_testing"
+
+    def test_routes_to_review_when_no_commands(self) -> None:
+        state = {"repo": {"e2e_test_commands": []}}
+        assert after_rework(state) == "review"
+
+    def test_routes_to_review_when_no_repo(self) -> None:
+        state = {}
+        assert after_rework(state) == "review"
+
+    def test_paused_takes_precedence(self) -> None:
+        state = {"status": "paused", "repo": {"e2e_test_commands": ["npx cypress run"]}}
+        assert after_rework(state) == "paused"
 
 
 # ---------------------------------------------------------------------------
