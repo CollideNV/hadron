@@ -49,7 +49,7 @@ export default function StageChangesPanel({ stageName, stageDiffs }: Props) {
       {showFeatures && hasFiles && (
         <div>
           <div className="px-3 py-2 border-b border-border-subtle bg-bg-surface">
-            <h4 className="text-[11px] font-semibold text-text-muted uppercase tracking-wider">
+            <h4 className="text-[11px] font-semibold text-text-muted uppercase tracking-wider" data-testid="feature-specs-header">
               Feature Specs
             </h4>
           </div>
@@ -59,7 +59,7 @@ export default function StageChangesPanel({ stageName, stageDiffs }: Props) {
       {showDiff && hasDiff && (
         <div>
           <div className="px-3 py-2 border-b border-border-subtle bg-bg-surface">
-            <h4 className="text-[11px] font-semibold text-text-muted uppercase tracking-wider">
+            <h4 className="text-[11px] font-semibold text-text-muted uppercase tracking-wider" data-testid="code-diff-header">
               Code Diff
             </h4>
           </div>

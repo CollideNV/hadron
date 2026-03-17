@@ -39,6 +39,7 @@ export default function CRDetailHeader({
       <div className="flex items-center gap-3">
         <button
           onClick={onToggleLogs}
+          data-testid="logs-toggle"
           className={`px-2.5 py-1 text-[11px] font-medium rounded cursor-pointer border transition-colors ${
             showLogs
               ? "bg-accent/15 text-accent border-accent/30"

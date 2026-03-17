@@ -30,6 +30,7 @@ export default function StageNode({
       onClick={onClick}
       className="flex flex-col items-center bg-transparent border-none cursor-pointer p-0 group"
       title={`Filter to ${meta.label}`}
+      data-testid={`stage-${stage}`}
     >
       <div
         className={`w-9 h-9 rounded-lg flex items-center justify-center text-[10px] font-bold transition-all duration-300 relative ${

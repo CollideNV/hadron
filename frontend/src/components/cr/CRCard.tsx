@@ -20,6 +20,7 @@ export default function CRCard({ run }: { run: CRRun }) {
     <Link
       to={`/cr/${run.cr_id}`}
       className="block no-underline text-inherit hover:bg-bg-card-hover transition-colors"
+      data-testid={`cr-card-${run.cr_id}`}
     >
       <div className="px-5 py-4 flex items-center gap-4 border-b border-border-subtle">
         <div className="flex-1 min-w-0">

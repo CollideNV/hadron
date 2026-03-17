@@ -12,6 +12,7 @@ export default function CRStatusBadge({ status }: { status: string }) {
   return (
     <span
       className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium ${style}`}
+      data-testid="cr-status"
     >
       {isRunning && (
         <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-glow" />

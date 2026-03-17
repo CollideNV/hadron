@@ -29,6 +29,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         <nav className="flex items-center gap-3 text-sm">
           <Link
             to="/"
+            data-testid="nav-pipelines"
             className={`no-underline px-3 py-1.5 rounded-md transition-colors ${
               location.pathname === "/"
                 ? "bg-accent-dim text-accent"
@@ -39,6 +40,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
           </Link>
           <Link
             to="/prompts"
+            data-testid="nav-prompts"
             className={`no-underline px-3 py-1.5 rounded-md transition-colors ${
               location.pathname === "/prompts"
                 ? "bg-accent-dim text-accent"
@@ -49,6 +51,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
           </Link>
           <Link
             to="/settings"
+            data-testid="nav-settings"
             className={`no-underline px-3 py-1.5 rounded-md transition-colors ${
               location.pathname === "/settings"
                 ? "bg-accent-dim text-accent"

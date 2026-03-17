@@ -182,7 +182,7 @@ describe("StageDetailView", () => {
     expect(screen.getByText("Review 2")).toBeInTheDocument();
   });
 
-  it("filters findings when a review round is selected", () => {
+  it("defaults to latest round and filters findings accordingly", () => {
     const events = [
       makeEvent({
         event_type: "agent_started",
@@ -214,11 +214,53 @@ describe("StageDetailView", () => {
       { events, findings },
     );
 
-    // Click "Review 1" to filter
+    // Defaults to latest round (Review 2) — shows only info finding
+    expect(screen.getByText("1 info")).toBeInTheDocument();
+    expect(screen.queryByText("1 major")).not.toBeInTheDocument();
+
+    // Click "Review 1" to see round 1 findings
     fireEvent.click(screen.getByText("Review 1"));
-    // Should show 1 major finding only
     expect(screen.getByText("1 major")).toBeInTheDocument();
     expect(screen.queryByText("1 info")).not.toBeInTheDocument();
+  });
+
+  it("shows per-round findings in All view", () => {
+    const events = [
+      makeEvent({
+        event_type: "agent_started",
+        stage: "review:security_reviewer",
+        data: { role: "security_reviewer", repo: "hadron", loop_iteration: 0 },
+        timestamp: 1700000000,
+      }),
+      makeEvent({
+        event_type: "agent_started",
+        stage: "review:security_reviewer",
+        data: { role: "security_reviewer", repo: "hadron", loop_iteration: 1 },
+        timestamp: 1700000020,
+      }),
+    ];
+    const findings = [
+      makeEvent({
+        event_type: "review_finding",
+        stage: "review",
+        data: { severity: "major", message: "Round 1 issue", review_round: 0 },
+      }),
+      makeEvent({
+        event_type: "review_finding",
+        stage: "review",
+        data: { severity: "info", message: "Round 2 note", review_round: 1 },
+      }),
+    ];
+    renderWithContext(
+      { stageName: "review", onBack: vi.fn() },
+      { events, findings },
+    );
+
+    // Click "All" to see per-round breakdown
+    fireEvent.click(screen.getByText("All"));
+    // Both rounds' findings should be visible with round labels
+    expect(screen.getByText("1 major")).toBeInTheDocument();
+    expect(screen.getByText("1 info")).toBeInTheDocument();
   });
 
   it("does not show round tabs for non-review stages", () => {

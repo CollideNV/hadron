@@ -82,6 +82,56 @@ describe("AgentSessionList", () => {
     expect(container.querySelectorAll("button")).toHaveLength(0);
   });
 
+  it("shows round headers when showRoundHeaders is true and multiple rounds", () => {
+    const sessions = [
+      makeSession({ role: "security_reviewer", loopIteration: 0 }),
+      makeSession({ role: "quality_reviewer", loopIteration: 0 }),
+      makeSession({ role: "security_reviewer", loopIteration: 1 }),
+      makeSession({ role: "quality_reviewer", loopIteration: 1 }),
+    ];
+    render(
+      <AgentSessionList
+        sessions={sessions}
+        selectedIndex={0}
+        onSelect={() => {}}
+        showRoundHeaders
+      />,
+    );
+    expect(screen.getByText("Review 1")).toBeInTheDocument();
+    expect(screen.getByText("Review 2")).toBeInTheDocument();
+  });
+
+  it("does not show round headers when showRoundHeaders is false", () => {
+    const sessions = [
+      makeSession({ role: "security_reviewer", loopIteration: 0 }),
+      makeSession({ role: "security_reviewer", loopIteration: 1 }),
+    ];
+    render(
+      <AgentSessionList
+        sessions={sessions}
+        selectedIndex={0}
+        onSelect={() => {}}
+      />,
+    );
+    expect(screen.queryByText("Review 1")).not.toBeInTheDocument();
+  });
+
+  it("hides loop suffix (#2) when round headers are shown", () => {
+    const sessions = [
+      makeSession({ role: "security_reviewer", loopIteration: 0 }),
+      makeSession({ role: "security_reviewer", loopIteration: 1 }),
+    ];
+    render(
+      <AgentSessionList
+        sessions={sessions}
+        selectedIndex={0}
+        onSelect={() => {}}
+        showRoundHeaders
+      />,
+    );
+    expect(screen.queryByText("#2")).not.toBeInTheDocument();
+  });
+
   it("highlights selected session with bg-accent/10 class", () => {
     const sessions = [
       makeSession({ role: "spec_writer" }),

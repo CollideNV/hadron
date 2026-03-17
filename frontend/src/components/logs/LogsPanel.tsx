@@ -56,7 +56,7 @@ export default function LogsPanel({ crId, pipelineStatus }: LogsPanelProps) {
     : logs;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" data-testid="logs-panel">
       <div className="px-4 py-2.5 border-b border-border-subtle flex items-center gap-3 flex-shrink-0">
         <h3 className="text-[11px] font-semibold text-text-muted uppercase tracking-wider">
           Worker Logs

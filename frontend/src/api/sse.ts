@@ -33,6 +33,7 @@ export function connectEventStream(
     "test_run",
     "review_finding",
     "intervention_set",
+    "stage_diff",
     "cost_update",
     "error",
   ];

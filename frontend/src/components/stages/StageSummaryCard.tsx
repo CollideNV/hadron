@@ -12,6 +12,8 @@ interface StageSummaryCardProps {
   sessions: AgentSession[];
   testRuns: PipelineEvent[];
   findings: PipelineEvent[];
+  /** When set, show per-round breakdown in the findings section. */
+  reviewRounds?: number[];
 }
 
 export default function StageSummaryCard({
@@ -20,6 +22,7 @@ export default function StageSummaryCard({
   sessions,
   testRuns,
   findings,
+  reviewRounds,
 }: StageSummaryCardProps) {
   const color = getStageColor(stageName);
 
@@ -153,8 +156,41 @@ export default function StageSummaryCard({
           </div>
         )}
 
-        {/* Finding badges */}
-        {findings.length > 0 && (
+        {/* Finding badges — per-round breakdown when viewing "All" with multiple rounds */}
+        {findings.length > 0 && reviewRounds && reviewRounds.length > 1 ? (
+          <div className="space-y-1">
+            <span className="text-text-dim">Findings</span>
+            {reviewRounds.map((round) => {
+              const roundFindings = (findings as ReviewFindingEvent[]).filter(
+                (f) => (f.data.review_round ?? 0) === round,
+              );
+              if (roundFindings.length === 0) return null;
+              const roundSevCounts: Record<string, number> = {};
+              for (const f of roundFindings) {
+                const sev = f.data.severity || "info";
+                roundSevCounts[sev] = (roundSevCounts[sev] || 0) + 1;
+              }
+              return (
+                <div key={round} className="flex items-center justify-between ml-1">
+                  <span className="text-[10px] text-text-dim">Review {round + 1}</span>
+                  <div className="flex items-center gap-1">
+                    {SEVERITY_ORDER.map(
+                      (sev) =>
+                        roundSevCounts[sev] && (
+                          <span
+                            key={sev}
+                            className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${SEVERITY_BADGE_CLASSES[sev] || SEVERITY_BADGE_CLASSES.info}`}
+                          >
+                            {roundSevCounts[sev]} {sev}
+                          </span>
+                        ),
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : findings.length > 0 ? (
           <div className="flex items-center justify-between">
             <span className="text-text-dim">Findings</span>
             <div className="flex items-center gap-1.5">
@@ -171,7 +207,7 @@ export default function StageSummaryCard({
               )}
             </div>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

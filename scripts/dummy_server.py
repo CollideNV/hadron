@@ -1,0 +1,610 @@
+#!/usr/bin/env python3
+"""Dummy backend that serves fake pipeline data for frontend development.
+
+No LLM, no Postgres, no Redis. Just hardcoded events covering all stages.
+
+Usage:
+    python scripts/dummy_server.py          # starts on :8000
+    cd frontend && npm run dev              # Vite proxies /api to :8000
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import time
+from typing import AsyncIterator
+
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sse_starlette.sse import EventSourceResponse
+
+app = FastAPI(title="Hadron Dummy Server")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+CR_ID = "CR-demo-001"
+REPO = "acme-api"
+
+# ---------------------------------------------------------------------------
+# Fake data
+# ---------------------------------------------------------------------------
+
+CR_RUN = {
+    "cr_id": CR_ID,
+    "title": "Add user authentication with JWT tokens",
+    "status": "completed",
+    "source": "api",
+    "external_id": None,
+    "cost_usd": 0.4872,
+    "error": None,
+    "created_at": "2026-03-17T09:00:00Z",
+    "updated_at": "2026-03-17T09:12:00Z",
+    "repos": [
+        {
+            "repo_name": REPO,
+            "repo_url": "https://github.com/acme/acme-api.git",
+            "status": "completed",
+            "branch_name": f"hadron/{CR_ID}",
+            "pr_url": "https://github.com/acme/acme-api/pull/42",
+            "cost_usd": 0.4872,
+            "error": None,
+        }
+    ],
+}
+
+FEATURE_SPEC = """\
+Feature: User Authentication
+  Users can authenticate via JWT tokens to access protected endpoints.
+
+  Background:
+    Given the API is running
+    And a user exists with email "alice@example.com" and password "secret123"
+
+  Scenario: Successful login returns JWT
+    When the user posts valid credentials to /auth/login
+    Then the response status is 200
+    And the response body contains a valid JWT token
+    And the token payload includes the user's email
+
+  Scenario: Invalid credentials rejected
+    When the user posts invalid credentials to /auth/login
+    Then the response status is 401
+    And the response body contains an error message
+
+  Scenario: Protected endpoint requires valid token
+    Given the user has a valid JWT token
+    When the user requests GET /users/me with the token
+    Then the response status is 200
+    And the response contains the user's profile
+
+  Scenario: Expired token rejected
+    Given the user has an expired JWT token
+    When the user requests GET /users/me with the expired token
+    Then the response status is 401"""
+
+IMPL_DIFF = """\
+diff --git a/src/auth/__init__.py b/src/auth/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/src/auth/jwt.py b/src/auth/jwt.py
+new file mode 100644
+index 0000000..a1b2c3d
+--- /dev/null
++++ b/src/auth/jwt.py
+@@ -0,0 +1,42 @@
++\"\"\"JWT token creation and verification.\"\"\"
++
++from datetime import datetime, timedelta
++from typing import Any
++
++import jwt
++from pydantic import BaseModel
++
++SECRET_KEY = "change-me-in-production"
++ALGORITHM = "HS256"
++ACCESS_TOKEN_EXPIRE_MINUTES = 30
++
++
++class TokenPayload(BaseModel):
++    sub: str
++    exp: datetime
++
++
++def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = None) -> str:
++    to_encode = data.copy()
++    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
++    to_encode.update({"exp": expire})
++    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
++
++
++def verify_token(token: str) -> TokenPayload:
++    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
++    return TokenPayload(**payload)
+diff --git a/src/auth/router.py b/src/auth/router.py
+new file mode 100644
+index 0000000..b2c3d4e
+--- /dev/null
++++ b/src/auth/router.py
+@@ -0,0 +1,38 @@
++\"\"\"Authentication API endpoints.\"\"\"
++
++from fastapi import APIRouter, Depends, HTTPException, status
++from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
++from pydantic import BaseModel
++
++from .jwt import create_access_token, verify_token
++from .users import authenticate_user, get_user_by_email
++
++router = APIRouter(prefix="/auth", tags=["auth"])
++security = HTTPBearer()
++
++
++class LoginRequest(BaseModel):
++    email: str
++    password: str
++
++
++class TokenResponse(BaseModel):
++    access_token: str
++    token_type: str = "bearer"
++
++
++@router.post("/login", response_model=TokenResponse)
++async def login(body: LoginRequest):
++    user = authenticate_user(body.email, body.password)
++    if not user:
++        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
++    token = create_access_token({"sub": user.email})
++    return TokenResponse(access_token=token)
++
++
++@router.get("/users/me")
++async def get_me(credentials: HTTPAuthorizationCredentials = Depends(security)):
++    payload = verify_token(credentials.credentials)
++    user = get_user_by_email(payload.sub)
++    if not user:
++        raise HTTPException(status_code=404, detail="User not found")
++    return {"email": user.email, "name": user.name}
+diff --git a/src/auth/users.py b/src/auth/users.py
+new file mode 100644
+index 0000000..c3d4e5f
+--- /dev/null
++++ b/src/auth/users.py
+@@ -0,0 +1,25 @@
++\"\"\"User storage and authentication helpers.\"\"\"
++
++from dataclasses import dataclass
++from hashlib import sha256
++
++
++@dataclass
++class User:
++    email: str
++    name: str
++    password_hash: str
++
++
++USERS_DB: dict[str, User] = {}
++
++
++def hash_password(password: str) -> str:
++    return sha256(password.encode()).hexdigest()
++
++
++def authenticate_user(email: str, password: str) -> User | None:
++    user = USERS_DB.get(email)
++    if user and user.password_hash == hash_password(password):
++        return user
++    return None
++
++
++def get_user_by_email(email: str) -> User | None:
++    return USERS_DB.get(email)
+diff --git a/tests/test_auth.py b/tests/test_auth.py
+new file mode 100644
+index 0000000..d4e5f6a
+--- /dev/null
++++ b/tests/test_auth.py
+@@ -0,0 +1,45 @@
++\"\"\"Tests for authentication endpoints.\"\"\"
++
++import pytest
++from fastapi.testclient import TestClient
++
++from src.auth.jwt import create_access_token, verify_token
++from src.auth.users import USERS_DB, User, hash_password
++from src.main import app
++
++client = TestClient(app)
++
++
++@pytest.fixture(autouse=True)
++def seed_user():
++    USERS_DB["alice@example.com"] = User(
++        email="alice@example.com",
++        name="Alice",
++        password_hash=hash_password("secret123"),
++    )
++    yield
++    USERS_DB.clear()
++
++
++def test_login_success():
++    resp = client.post("/auth/login", json={"email": "alice@example.com", "password": "secret123"})
++    assert resp.status_code == 200
++    data = resp.json()
++    assert "access_token" in data
++    payload = verify_token(data["access_token"])
++    assert payload.sub == "alice@example.com"
++
++
++def test_login_invalid_credentials():
++    resp = client.post("/auth/login", json={"email": "alice@example.com", "password": "wrong"})
++    assert resp.status_code == 401
++
++
++def test_get_me_with_valid_token():
++    token = create_access_token({"sub": "alice@example.com"})
++    resp = client.get("/auth/users/me", headers={"Authorization": f"Bearer {token}"})
++    assert resp.status_code == 200
++    assert resp.json()["email"] == "alice@example.com"
++
++
++def test_get_me_without_token():
++    resp = client.get("/auth/users/me")
++    assert resp.status_code == 403
+diff --git a/pyproject.toml b/pyproject.toml
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -12,6 +12,8 @@
+ dependencies = [
+     "fastapi>=0.100",
+     "uvicorn[standard]>=0.20",
++    "pyjwt>=2.8",
++    "passlib>=1.7",
+ ]
+"""
+
+REVIEW_DIFF = IMPL_DIFF  # Same diff at review time
+
+
+def _ts(offset: float) -> float:
+    """Generate a timestamp with an offset from a base time."""
+    return 1710666000.0 + offset
+
+
+def _ev(event_type: str, stage: str, data: dict, offset: float) -> dict:
+    return {
+        "cr_id": CR_ID,
+        "event_type": event_type,
+        "stage": stage,
+        "data": data,
+        "timestamp": _ts(offset),
+    }
+
+
+def build_events() -> list[dict]:
+    """Build the full sequence of events for a completed pipeline run."""
+    events = []
+    t = 0.0
+
+    def add(event_type: str, stage: str, data: dict | None = None, dt: float = 1.0):
+        nonlocal t
+        t += dt
+        events.append(_ev(event_type, stage, data or {}, t))
+
+    # --- Pipeline start ---
+    add("pipeline_started", "")
+
+    # --- Intake ---
+    add("stage_entered", "intake")
+    add("agent_started", "intake", {"role": "intake_structurer", "repo": REPO, "model": "claude-haiku-4-5-20251001"})
+    add("agent_tool_call", "intake", {"role": "intake_structurer", "tool": "json_output", "repo": REPO, "type": "call"})
+    add("agent_output", "intake", {"role": "intake_structurer", "repo": REPO, "text": "I've analyzed the change request and extracted the structured fields. The CR asks for JWT-based user authentication with login, token verification, and protected endpoints."})
+    add("agent_completed", "intake", {"role": "intake_structurer", "repo": REPO, "input_tokens": 1200, "output_tokens": 350, "cost_usd": 0.002})
+    add("cost_update", "intake", {"total_cost_usd": 0.002, "delta_usd": 0.002})
+    add("stage_completed", "intake")
+
+    # --- Worktree setup ---
+    add("stage_entered", "worktree_setup")
+    add("stage_completed", "worktree_setup", dt=2.0)
+
+    # --- Behaviour Translation ---
+    add("stage_entered", "behaviour_translation")
+    add("agent_started", "behaviour_translation", {"role": "spec_writer", "repo": REPO, "model": "claude-sonnet-4-6-20250514"})
+    add("agent_tool_call", "behaviour_translation", {"role": "spec_writer", "tool": "list_directory", "repo": REPO, "type": "call", "input": {"path": "."}})
+    add("agent_tool_call", "behaviour_translation", {"role": "spec_writer", "tool": "list_directory", "repo": REPO, "type": "result", "result_snippet": "src/\ntests/\npyproject.toml\nREADME.md"})
+    add("agent_tool_call", "behaviour_translation", {"role": "spec_writer", "tool": "write_file", "repo": REPO, "type": "call", "input": {"path": "features/auth.feature"}})
+    add("agent_tool_call", "behaviour_translation", {"role": "spec_writer", "tool": "write_file", "repo": REPO, "type": "result", "result_snippet": "Wrote features/auth.feature (42 lines)"})
+    add("agent_output", "behaviour_translation", {"role": "spec_writer", "repo": REPO, "text": "I've written the feature specification for user authentication. The spec covers:\n\n1. **Successful login** — POST valid credentials, receive JWT\n2. **Invalid credentials** — POST wrong password, get 401\n3. **Protected endpoint** — GET /users/me with valid token\n4. **Expired token** — GET with expired token, get 401\n\nThe scenarios use Background for shared setup and cover the core auth flows."})
+    add("agent_completed", "behaviour_translation", {"role": "spec_writer", "repo": REPO, "input_tokens": 3500, "output_tokens": 800, "cost_usd": 0.018})
+    add("cost_update", "behaviour_translation", {"total_cost_usd": 0.020, "delta_usd": 0.018})
+
+    # Stage diff for behaviour translation
+    add("stage_diff", "behaviour_translation", {
+        "repo": REPO,
+        "diff": "diff --git a/features/auth.feature b/features/auth.feature\nnew file mode 100644\n--- /dev/null\n+++ b/features/auth.feature\n@@ -0,0 +1,30 @@\n+" + "\n+".join(FEATURE_SPEC.splitlines()),
+        "diff_truncated": False,
+        "files": [{"path": "features/auth.feature", "content": FEATURE_SPEC}],
+        "files_truncated": False,
+        "stats": {"files_changed": 1, "insertions": 30, "deletions": 0},
+    })
+    add("stage_completed", "behaviour_translation")
+
+    # --- Behaviour Verification ---
+    add("stage_entered", "behaviour_verification")
+    add("agent_started", "behaviour_verification", {"role": "spec_verifier", "repo": REPO, "model": "claude-haiku-4-5-20251001"})
+    add("agent_output", "behaviour_verification", {"role": "spec_verifier", "repo": REPO, "text": 'Verification result: all scenarios are consistent with the CR requirements.\n\n```json\n{"verified": true, "feedback": "", "missing_scenarios": [], "issues": []}\n```'})
+    add("agent_completed", "behaviour_verification", {"role": "spec_verifier", "repo": REPO, "input_tokens": 2000, "output_tokens": 200, "cost_usd": 0.003})
+    add("cost_update", "behaviour_verification", {"total_cost_usd": 0.023, "delta_usd": 0.003})
+    add("stage_diff", "behaviour_verification", {
+        "repo": REPO,
+        "diff": "",
+        "diff_truncated": False,
+        "files": [{"path": "features/auth.feature", "content": FEATURE_SPEC}],
+        "files_truncated": False,
+        "stats": {"files_changed": 0, "insertions": 0, "deletions": 0},
+    })
+    add("stage_completed", "behaviour_verification", {"all_verified": True, "iteration": 1})
+
+    # --- Implementation ---
+    add("stage_entered", "implementation")
+    add("phase_started", "implementation", {"role": "implementation", "repo": REPO, "phase": "explore"})
+    add("agent_started", "implementation:explore", {"role": "implementation", "repo": REPO, "model": "claude-haiku-4-5-20251001", "models": ["claude-haiku-4-5-20251001"]})
+    add("agent_tool_call", "implementation:explore", {"role": "implementation", "tool": "list_directory", "repo": REPO, "type": "call", "input": {"path": "src/"}})
+    add("agent_tool_call", "implementation:explore", {"role": "implementation", "tool": "list_directory", "repo": REPO, "type": "result", "result_snippet": "main.py\nroutes/\nmodels/"})
+    add("agent_tool_call", "implementation:explore", {"role": "implementation", "tool": "read_file", "repo": REPO, "type": "call", "input": {"path": "src/main.py"}})
+    add("agent_tool_call", "implementation:explore", {"role": "implementation", "tool": "read_file", "repo": REPO, "type": "result", "result_snippet": 'from fastapi import FastAPI\n\napp = FastAPI(title="Acme API")\n\n@app.get("/health")\ndef health():\n    return {"status": "ok"}'})
+    add("agent_completed", "implementation:explore", {"role": "implementation", "repo": REPO, "input_tokens": 4000, "output_tokens": 600, "cost_usd": 0.006})
+    add("phase_completed", "implementation", {"role": "implementation", "repo": REPO, "phase": "explore"})
+
+    add("phase_started", "implementation", {"role": "implementation", "repo": REPO, "phase": "plan"})
+    add("agent_started", "implementation:plan", {"role": "implementation", "repo": REPO, "model": "claude-haiku-4-5-20251001"})
+    add("agent_output", "implementation:plan", {"role": "implementation", "repo": REPO, "text": "## Implementation Plan\n\n1. Create `src/auth/jwt.py` — JWT token creation and verification\n2. Create `src/auth/users.py` — user storage and password hashing\n3. Create `src/auth/router.py` — `/auth/login` and `/auth/users/me` endpoints\n4. Wire auth router into `src/main.py`\n5. Add `pyjwt` and `passlib` to `pyproject.toml`\n6. Write tests in `tests/test_auth.py`"})
+    add("agent_completed", "implementation:plan", {"role": "implementation", "repo": REPO, "input_tokens": 5000, "output_tokens": 400, "cost_usd": 0.007})
+    add("phase_completed", "implementation", {"role": "implementation", "repo": REPO, "phase": "plan"})
+
+    add("phase_started", "implementation", {"role": "implementation", "repo": REPO, "phase": "act"})
+    add("agent_started", "implementation", {"role": "implementation", "repo": REPO, "model": "claude-sonnet-4-6-20250514", "models": ["claude-sonnet-4-6-20250514"]})
+    add("agent_tool_call", "implementation", {"role": "implementation", "tool": "write_file", "repo": REPO, "type": "call", "input": {"path": "src/auth/__init__.py"}})
+    add("agent_tool_call", "implementation", {"role": "implementation", "tool": "write_file", "repo": REPO, "type": "result", "result_snippet": "Wrote src/auth/__init__.py"})
+    add("agent_tool_call", "implementation", {"role": "implementation", "tool": "write_file", "repo": REPO, "type": "call", "input": {"path": "src/auth/jwt.py"}})
+    add("agent_tool_call", "implementation", {"role": "implementation", "tool": "write_file", "repo": REPO, "type": "result", "result_snippet": "Wrote src/auth/jwt.py (42 lines)"})
+    add("agent_tool_call", "implementation", {"role": "implementation", "tool": "write_file", "repo": REPO, "type": "call", "input": {"path": "src/auth/users.py"}})
+    add("agent_tool_call", "implementation", {"role": "implementation", "tool": "write_file", "repo": REPO, "type": "result", "result_snippet": "Wrote src/auth/users.py (25 lines)"})
+    add("agent_tool_call", "implementation", {"role": "implementation", "tool": "write_file", "repo": REPO, "type": "call", "input": {"path": "src/auth/router.py"}})
+    add("agent_tool_call", "implementation", {"role": "implementation", "tool": "write_file", "repo": REPO, "type": "result", "result_snippet": "Wrote src/auth/router.py (38 lines)"})
+    add("agent_tool_call", "implementation", {"role": "implementation", "tool": "write_file", "repo": REPO, "type": "call", "input": {"path": "tests/test_auth.py"}})
+    add("agent_tool_call", "implementation", {"role": "implementation", "tool": "write_file", "repo": REPO, "type": "result", "result_snippet": "Wrote tests/test_auth.py (45 lines)"})
+    add("agent_tool_call", "implementation", {"role": "implementation", "tool": "run_tests", "repo": REPO, "type": "call", "input": {"command": "pytest tests/test_auth.py -v"}})
+    add("agent_tool_call", "implementation", {"role": "implementation", "tool": "run_tests", "repo": REPO, "type": "result", "result_snippet": "4 passed in 0.82s"})
+    add("agent_output", "implementation", {"role": "implementation", "repo": REPO, "text": "All 4 tests pass. I've implemented:\n\n- **JWT module** (`src/auth/jwt.py`): `create_access_token()` and `verify_token()` using PyJWT\n- **User storage** (`src/auth/users.py`): in-memory user DB with SHA256 password hashing\n- **Auth router** (`src/auth/router.py`): POST `/auth/login` and GET `/auth/users/me`\n- **Tests** (`tests/test_auth.py`): login success, invalid creds, protected endpoint, missing token"})
+    add("agent_completed", "implementation", {"role": "implementation", "repo": REPO, "input_tokens": 15000, "output_tokens": 3200, "cost_usd": 0.082, "tool_calls_count": 14, "round_count": 8, "conversation_key": f"{CR_ID}:implementation:{REPO}"})
+    add("phase_completed", "implementation", {"role": "implementation", "repo": REPO, "phase": "act"})
+    add("cost_update", "implementation", {"total_cost_usd": 0.118, "delta_usd": 0.095})
+
+    add("test_run", "implementation", {"passed": True, "repo": REPO, "output_tail": "tests/test_auth.py::test_login_success PASSED\ntests/test_auth.py::test_login_invalid_credentials PASSED\ntests/test_auth.py::test_get_me_with_valid_token PASSED\ntests/test_auth.py::test_get_me_without_token PASSED\n\n4 passed in 0.82s"})
+
+    add("stage_diff", "implementation", {
+        "repo": REPO,
+        "diff": IMPL_DIFF,
+        "diff_truncated": False,
+        "stats": {"files_changed": 6, "insertions": 150, "deletions": 0},
+    })
+    add("stage_completed", "implementation", {"all_passing": True})
+
+    # --- Review ---
+    add("stage_entered", "review")
+
+    # Stage diff showing what reviewers see
+    add("stage_diff", "review", {
+        "repo": REPO,
+        "diff": REVIEW_DIFF,
+        "diff_truncated": False,
+        "files": [{"path": "features/auth.feature", "content": FEATURE_SPEC}],
+        "files_truncated": False,
+        "stats": {"files_changed": 6, "insertions": 150, "deletions": 0},
+    })
+
+    # Security reviewer
+    add("agent_started", "review:security_reviewer", {"role": "security_reviewer", "repo": REPO, "model": "claude-sonnet-4-6-20250514", "loop_iteration": 0})
+    add("agent_output", "review:security_reviewer", {"role": "security_reviewer", "repo": REPO, "text": '```json\n{"findings": [{"severity": "major", "category": "security", "message": "SECRET_KEY is hardcoded. Use environment variable.", "file": "src/auth/jwt.py", "line": 8}]}\n```'})
+    add("agent_completed", "review:security_reviewer", {"role": "security_reviewer", "repo": REPO, "input_tokens": 8000, "output_tokens": 400, "cost_usd": 0.032, "loop_iteration": 0})
+
+    # Quality reviewer
+    add("agent_started", "review:quality_reviewer", {"role": "quality_reviewer", "repo": REPO, "model": "claude-haiku-4-5-20251001", "loop_iteration": 0})
+    add("agent_output", "review:quality_reviewer", {"role": "quality_reviewer", "repo": REPO, "text": '```json\n{"findings": [{"severity": "minor", "category": "quality", "message": "Consider using bcrypt instead of SHA256 for password hashing.", "file": "src/auth/users.py", "line": 17}]}\n```'})
+    add("agent_completed", "review:quality_reviewer", {"role": "quality_reviewer", "repo": REPO, "input_tokens": 7000, "output_tokens": 300, "cost_usd": 0.010, "loop_iteration": 0})
+
+    # Spec compliance reviewer
+    add("agent_started", "review:spec_compliance_reviewer", {"role": "spec_compliance_reviewer", "repo": REPO, "model": "claude-haiku-4-5-20251001", "loop_iteration": 0})
+    add("agent_output", "review:spec_compliance_reviewer", {"role": "spec_compliance_reviewer", "repo": REPO, "text": '```json\n{"findings": []}\n```'})
+    add("agent_completed", "review:spec_compliance_reviewer", {"role": "spec_compliance_reviewer", "repo": REPO, "input_tokens": 6000, "output_tokens": 200, "cost_usd": 0.008, "loop_iteration": 0})
+
+    add("cost_update", "review", {"total_cost_usd": 0.168, "delta_usd": 0.050})
+
+    # Review findings
+    add("review_finding", "review", {"repo": REPO, "severity": "major", "category": "security", "message": "SECRET_KEY is hardcoded. Use environment variable.", "file": "src/auth/jwt.py", "line": 8, "review_round": 0})
+    add("review_finding", "review", {"repo": REPO, "severity": "minor", "category": "quality", "message": "Consider using bcrypt instead of SHA256 for password hashing.", "file": "src/auth/users.py", "line": 17, "review_round": 0})
+    add("stage_completed", "review", {"all_passed": False})
+
+    # --- Rework (review round 1) ---
+    # The rework node emits under stage "implementation" for UI continuity
+    add("stage_entered", "implementation")
+    add("agent_started", "implementation", {"role": "implementation_rework", "repo": REPO, "model": "claude-sonnet-4-6-20250514", "loop_iteration": 1})
+    add("agent_tool_call", "implementation", {"role": "implementation_rework", "tool": "read_file", "repo": REPO, "type": "call", "input": {"path": "src/auth/jwt.py"}})
+    add("agent_tool_call", "implementation", {"role": "implementation_rework", "tool": "read_file", "repo": REPO, "type": "result", "result_snippet": '"""JWT token creation..."""\nimport jwt\n\nSECRET_KEY = "change-me-in-production"'})
+    add("agent_tool_call", "implementation", {"role": "implementation_rework", "tool": "write_file", "repo": REPO, "type": "call", "input": {"path": "src/auth/jwt.py"}})
+    add("agent_tool_call", "implementation", {"role": "implementation_rework", "tool": "write_file", "repo": REPO, "type": "result", "result_snippet": "Wrote src/auth/jwt.py (updated SECRET_KEY to use env var)"})
+    add("agent_tool_call", "implementation", {"role": "implementation_rework", "tool": "run_tests", "repo": REPO, "type": "call", "input": {"command": "pytest tests/test_auth.py -v"}})
+    add("agent_tool_call", "implementation", {"role": "implementation_rework", "tool": "run_tests", "repo": REPO, "type": "result", "result_snippet": "4 passed in 0.78s"})
+    add("agent_output", "implementation", {"role": "implementation_rework", "repo": REPO, "text": "Fixed the hardcoded SECRET_KEY — now reads from `HADRON_JWT_SECRET` environment variable with a fallback for development. All tests still pass."})
+    add("agent_completed", "implementation", {"role": "implementation_rework", "repo": REPO, "input_tokens": 4000, "output_tokens": 600, "cost_usd": 0.022, "tool_calls_count": 6, "round_count": 4, "conversation_key": f"{CR_ID}:implementation_rework:{REPO}", "loop_iteration": 1})
+    add("cost_update", "implementation", {"total_cost_usd": 0.190, "delta_usd": 0.022})
+    add("test_run", "implementation", {"passed": True, "repo": REPO, "output_tail": "4 passed in 0.78s"})
+    add("stage_diff", "implementation", {
+        "repo": REPO,
+        "diff": IMPL_DIFF.replace(
+            'SECRET_KEY = "change-me-in-production"',
+            'SECRET_KEY = os.environ.get("HADRON_JWT_SECRET", "dev-only-fallback")'
+        ),
+        "diff_truncated": False,
+        "stats": {"files_changed": 6, "insertions": 152, "deletions": 0},
+    })
+    add("stage_completed", "implementation", {"all_passing": True})
+
+    # --- Review round 2 ---
+    add("stage_entered", "review")
+    add("agent_started", "review:security_reviewer", {"role": "security_reviewer", "repo": REPO, "model": "claude-sonnet-4-6-20250514", "loop_iteration": 1})
+    add("agent_output", "review:security_reviewer", {"role": "security_reviewer", "repo": REPO, "text": '```json\n{"findings": []}\n```'})
+    add("agent_completed", "review:security_reviewer", {"role": "security_reviewer", "repo": REPO, "input_tokens": 8000, "output_tokens": 200, "cost_usd": 0.028, "loop_iteration": 1})
+    add("agent_started", "review:quality_reviewer", {"role": "quality_reviewer", "repo": REPO, "model": "claude-haiku-4-5-20251001", "loop_iteration": 1})
+    add("agent_output", "review:quality_reviewer", {"role": "quality_reviewer", "repo": REPO, "text": '```json\n{"findings": [{"severity": "info", "category": "quality", "message": "SHA256 hashing for passwords is acceptable for the demo scope.", "file": "src/auth/users.py", "line": 17}]}\n```'})
+    add("agent_completed", "review:quality_reviewer", {"role": "quality_reviewer", "repo": REPO, "input_tokens": 7000, "output_tokens": 250, "cost_usd": 0.009, "loop_iteration": 1})
+    add("agent_started", "review:spec_compliance_reviewer", {"role": "spec_compliance_reviewer", "repo": REPO, "model": "claude-haiku-4-5-20251001", "loop_iteration": 1})
+    add("agent_output", "review:spec_compliance_reviewer", {"role": "spec_compliance_reviewer", "repo": REPO, "text": '```json\n{"findings": []}\n```'})
+    add("agent_completed", "review:spec_compliance_reviewer", {"role": "spec_compliance_reviewer", "repo": REPO, "input_tokens": 6000, "output_tokens": 150, "cost_usd": 0.007, "loop_iteration": 1})
+    add("cost_update", "review", {"total_cost_usd": 0.234, "delta_usd": 0.044})
+    add("review_finding", "review", {"repo": REPO, "severity": "info", "category": "quality", "message": "SHA256 hashing for passwords is acceptable for the demo scope.", "file": "src/auth/users.py", "line": 17, "review_round": 1})
+
+    add("stage_diff", "review", {
+        "repo": REPO,
+        "diff": REVIEW_DIFF.replace('SECRET_KEY = "change-me-in-production"', 'SECRET_KEY = os.environ.get("HADRON_JWT_SECRET", "dev-only-fallback")'),
+        "diff_truncated": False,
+        "files": [{"path": "features/auth.feature", "content": FEATURE_SPEC}],
+        "files_truncated": False,
+        "stats": {"files_changed": 6, "insertions": 152, "deletions": 0},
+    })
+    add("stage_completed", "review", {"all_passed": True})
+
+    # --- Rebase ---
+    add("stage_entered", "rebase")
+    add("stage_completed", "rebase", dt=1.5)
+
+    # --- Delivery ---
+    add("stage_entered", "delivery")
+    add("stage_diff", "delivery", {
+        "repo": REPO,
+        "diff": REVIEW_DIFF.replace('SECRET_KEY = "change-me-in-production"', 'SECRET_KEY = os.environ.get("HADRON_JWT_SECRET", "dev-only-fallback")'),
+        "diff_truncated": False,
+        "stats": {"files_changed": 6, "insertions": 152, "deletions": 0},
+    })
+    add("stage_completed", "delivery", {"all_delivered": True})
+
+    # --- Release ---
+    add("stage_entered", "release")
+    add("stage_completed", "release")
+
+    # --- Done ---
+    add("pipeline_completed", "", dt=0.5)
+
+    return events
+
+
+ALL_EVENTS = build_events()
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/pipeline/list")
+async def list_pipelines():
+    return [CR_RUN]
+
+
+@app.get("/api/pipeline/{cr_id}")
+async def get_pipeline(cr_id: str):
+    if cr_id != CR_ID:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return CR_RUN
+
+
+@app.post("/api/pipeline/trigger")
+async def trigger_pipeline(request: Request):
+    body = await request.json()
+    return {"cr_id": CR_ID, "status": "running"}
+
+
+@app.post("/api/pipeline/{cr_id}/intervene")
+async def intervene(cr_id: str):
+    return {"status": "intervention_set"}
+
+
+@app.post("/api/pipeline/{cr_id}/resume")
+async def resume(cr_id: str):
+    return {"status": "resumed", "cr_id": cr_id, "overrides": {}}
+
+
+@app.post("/api/pipeline/{cr_id}/nudge")
+async def nudge(cr_id: str):
+    return {"status": "nudge_set"}
+
+
+@app.get("/api/pipeline/{cr_id}/conversation")
+async def conversation(cr_id: str, key: str = ""):
+    return []
+
+
+@app.get("/api/pipeline/{cr_id}/logs")
+async def logs(cr_id: str):
+    return "2026-03-17 09:00:01 INFO  Pipeline started for CR-demo-001\n2026-03-17 09:00:02 INFO  Intake complete\n2026-03-17 09:12:00 INFO  Pipeline completed\n"
+
+
+@app.get("/api/prompts")
+async def list_prompts():
+    return [
+        {"role": "spec_writer", "description": "Writes Gherkin feature specs", "version": 1, "updated_at": None},
+        {"role": "implementation", "description": "Implements code and tests", "version": 1, "updated_at": None},
+    ]
+
+
+@app.get("/api/prompts/{role}")
+async def get_prompt(role: str):
+    return {"role": role, "description": f"{role} prompt", "version": 1, "updated_at": None, "content": f"You are the {role} agent."}
+
+
+@app.get("/api/settings/models")
+async def get_model_settings():
+    return {"default_backend": "anthropic", "stages": {}}
+
+
+@app.get("/api/settings/backends")
+async def get_backends():
+    return [{"name": "anthropic", "display_name": "Anthropic", "models": ["claude-sonnet-4-6-20250514", "claude-haiku-4-5-20251001"]}]
+
+
+@app.get("/api/settings/opencode-endpoints")
+async def get_opencode():
+    return []
+
+
+@app.get("/api/events/stream")
+async def event_stream(cr_id: str, request: Request):
+    """SSE endpoint — streams all events with a small delay to simulate real-time."""
+
+    async def generate() -> AsyncIterator[dict]:
+        for event in ALL_EVENTS:
+            if await request.is_disconnected():
+                break
+            yield {
+                "event": event["event_type"],
+                "data": json.dumps(event),
+            }
+            await asyncio.sleep(0.04)  # ~25 events/sec — fast but watchable
+
+    return EventSourceResponse(generate())
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    import uvicorn
+    print(f"\n  Dummy server starting on http://localhost:8000")
+    print(f"  CR ID: {CR_ID}")
+    print(f"  Events: {len(ALL_EVENTS)} total across all stages")
+    print(f"\n  Start the frontend:  cd frontend && npm run dev\n")
+    uvicorn.run(app, host="0.0.0.0", port=8000)

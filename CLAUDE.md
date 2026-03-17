@@ -28,7 +28,7 @@ hadron/
 │
 ├── frontend/                React 19 + Vite + TypeScript dashboard
 │   ├── src/api/             API client, SSE stream, TypeScript types
-│   ├── src/components/      UI components (pipeline, agents, events, etc.)
+│   ├── src/components/      UI components (pipeline, agents, events, diff, etc.)
 │   ├── src/hooks/           Custom React hooks
 │   └── src/pages/           Route pages (CR list, new CR, CR detail)
 │
@@ -106,7 +106,25 @@ The roadmap in `adr/roadmap.md` §22 defines 8 phases:
 - **Backend:** `pytest` — tests in `tests/`, async auto-detected, all infra mocked (no DB/Redis needed). Run: `pytest`
 - **Frontend:** `vitest` — tests co-located as `*.test.ts(x)` next to source. Run: `cd frontend && npm test`
 - **BDD specs:** `features/*.feature` — Gherkin files describing pipeline behaviour
+- **Dummy server:** `scripts/dummy_server.py` — standalone FastAPI server serving 114 fake events across all stages. No LLM, no Postgres, no Redis. Use for frontend development and E2E testing.
 - **See `AGENTS.md`** for detailed test patterns, mocking conventions, and example code.
+
+## How to Run the Dummy Server (Frontend Development)
+
+No Docker, no Postgres, no Redis, no LLM keys needed:
+
+```bash
+# Terminal 1: start dummy backend (port 8000)
+source .venv/bin/activate
+python scripts/dummy_server.py
+
+# Terminal 2: start frontend (port 5173, proxies /api → :8000)
+cd frontend && npm run dev
+```
+
+Open http://localhost:5173/ — `CR-demo-001` streams 114 events across all stages (intake through delivery), including review feedback loops and rework cycles. Useful for:
+- Developing/testing frontend components visually
+- Running E2E tests (Playwright/Cypress) against a deterministic backend
 
 ## Key Design Decisions
 

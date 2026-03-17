@@ -58,7 +58,10 @@ export default function StageDetailView({
   const [rightTab, setRightTab] = useState<RightTab>(
     stageDiffs.length > 0 && allSessions.length === 0 ? "changes" : "conversation",
   );
-  const [selectedRound, setSelectedRound] = useState<number | null>(null);
+  // Default to the latest round when there are multiple — "All" view is confusing
+  const [selectedRound, setSelectedRound] = useState<number | null>(
+    hasMultipleRounds ? reviewRounds[reviewRounds.length - 1] : null,
+  );
 
   // Filter sessions and findings by selected review round
   const sessions = useMemo(() => {
@@ -86,6 +89,7 @@ export default function StageDetailView({
           <button
             onClick={onBack}
             className="text-[11px] text-text-dim hover:text-accent cursor-pointer bg-transparent border-none transition-colors"
+            data-testid="back-button"
           >
             &larr; Back
           </button>
@@ -107,6 +111,7 @@ export default function StageDetailView({
                   ? "bg-accent/15 border-accent/30 text-accent font-medium"
                   : "border-border-subtle text-text-dim hover:text-text-muted bg-transparent"
               }`}
+              data-testid="round-tab-all"
             >
               All
             </button>
@@ -119,6 +124,7 @@ export default function StageDetailView({
                     ? "bg-accent/15 border-accent/30 text-accent font-medium"
                     : "border-border-subtle text-text-dim hover:text-text-muted bg-transparent"
                 }`}
+                data-testid={`round-tab-${round + 1}`}
               >
                 Review {round + 1}
               </button>
@@ -133,12 +139,13 @@ export default function StageDetailView({
           sessions={sessions}
           testRuns={testRuns}
           findings={filteredFindings}
+          reviewRounds={isReview && selectedRound === null ? reviewRounds : undefined}
         />
 
         {/* Session list */}
         <div className="flex-1 overflow-y-auto">
           {sessions.length === 0 ? (
-            <p className="text-xs text-text-dim py-4 text-center">
+            <p className="text-xs text-text-dim py-4 text-center" data-testid="no-sessions">
               No agent sessions
             </p>
           ) : (
@@ -146,6 +153,7 @@ export default function StageDetailView({
               sessions={sessions}
               selectedIndex={selectedIndex}
               onSelect={setSelectedIndex}
+              showRoundHeaders={isReview && selectedRound === null}
             />
           )}
         </div>
@@ -162,6 +170,7 @@ export default function StageDetailView({
                 ? "bg-accent/15 border-accent/30 text-accent font-medium"
                 : "border-border-subtle text-text-dim hover:text-text-muted bg-transparent"
             }`}
+            data-testid="tab-conversation"
           >
             Conversation
           </button>
@@ -172,6 +181,7 @@ export default function StageDetailView({
                 ? "bg-accent/15 border-accent/30 text-accent font-medium"
                 : "border-border-subtle text-text-dim hover:text-text-muted bg-transparent"
             }`}
+            data-testid="tab-changes"
           >
             Changes
           </button>
