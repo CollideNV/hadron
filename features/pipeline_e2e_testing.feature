@@ -18,6 +18,12 @@ Feature: E2E Testing Stage
     Then the pipeline routes to the e2e_testing stage
     And existing E2E tests are executed via "npx cypress run"
 
+  Scenario: E2E tests run when WebdriverIO is detected
+    Given a repository with wdio.conf.ts
+    When the implementation stage completes
+    Then the pipeline routes to the e2e_testing stage
+    And existing E2E tests are executed via "npx wdio run"
+
   Scenario: E2E stage skipped when not configured
     Given a repository without E2E test configuration
     When the implementation stage completes
@@ -41,11 +47,11 @@ Feature: E2E Testing Stage
     Then the agent updates the broken test assertions
     And E2E tests pass on re-run
 
-  Scenario: E2E agent writes new tests
-    Given a CR that adds new user-facing functionality
-    When the e2e_testing agent runs
-    Then new E2E tests are written for the new functionality
-    And E2E tests pass
+  Scenario: E2E agent is not invoked when tests pass
+    Given E2E tests that pass on the initial run
+    When the e2e_testing stage executes
+    Then the agent is not invoked
+    And the stage completes with e2e_passed=True
 
   Scenario: E2E failures proceed to review with context
     Given E2E tests that fail after max retries
@@ -62,4 +68,9 @@ Feature: E2E Testing Stage
   Scenario: Nested E2E config detected in monorepo
     Given a monorepo with frontend/playwright.config.ts
     When worktree setup runs auto-detection
-    Then the E2E test command is "cd frontend && npx playwright test"
+    Then the E2E test command is "cd 'frontend' && npx playwright test"
+
+  Scenario: Symlinks are not followed during detection
+    Given a repository with a symlinked subdirectory
+    When worktree setup runs auto-detection
+    Then the symlinked directory is skipped

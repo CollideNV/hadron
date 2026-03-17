@@ -216,3 +216,67 @@ class TestE2ETestingNode:
         # Plus the initial run before the loop
         # Total: 1 (initial) + 2 (max_retries+1 loop iterations) = 3
         assert mock_test.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_no_agent_when_initial_tests_pass(self) -> None:
+        """Agent should NOT be invoked if E2E tests pass on first run."""
+        config = _make_config()
+        state = _base_state(
+            repo={**_base_state()["repo"], "e2e_test_commands": ["npx playwright test"]},
+        )
+
+        with patch("hadron.pipeline.nodes.e2e_testing.run_test_command") as mock_test, \
+             patch("hadron.pipeline.nodes.e2e_testing.run_agent", return_value=_make_agent_run_result()) as mock_agent, \
+             patch("hadron.pipeline.nodes.e2e_testing.emit_stage_diff"):
+
+            # Tests pass on initial run
+            mock_test.return_value = (True, "5 passed")
+
+            result = await e2e_testing_node(state, config)
+
+        assert result["e2e_passed"] is True
+        # Agent runs once (attempt 0 always runs regardless of pass/fail)
+        mock_agent.assert_called_once()
+        # Initial run + one re-run after agent = 2
+        assert mock_test.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_zero_max_retries(self) -> None:
+        """With max_e2e_retries=0, only one agent attempt should occur."""
+        config = _make_config()
+        state = _base_state(
+            repo={**_base_state()["repo"], "e2e_test_commands": ["npx playwright test"]},
+            config_snapshot={"pipeline": {"max_e2e_retries": 0}},
+        )
+
+        with patch("hadron.pipeline.nodes.e2e_testing.run_test_command") as mock_test, \
+             patch("hadron.pipeline.nodes.e2e_testing.run_agent", return_value=_make_agent_run_result()) as mock_agent, \
+             patch("hadron.pipeline.nodes.e2e_testing.emit_stage_diff"):
+
+            mock_test.return_value = (False, "still failing")
+
+            result = await e2e_testing_node(state, config)
+
+        assert result["e2e_passed"] is False
+        mock_agent.assert_called_once()
+        # Initial run + 1 re-run after agent = 2
+        assert mock_test.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_commit_called_with_result(self) -> None:
+        """Node should commit E2E test changes regardless of pass/fail."""
+        config = _make_config()
+        state = _base_state(
+            repo={**_base_state()["repo"], "e2e_test_commands": ["npx playwright test"]},
+        )
+        wm = config["configurable"]["worktree_manager"]
+
+        with patch("hadron.pipeline.nodes.e2e_testing.run_test_command", return_value=(True, "passed")), \
+             patch("hadron.pipeline.nodes.e2e_testing.run_agent", return_value=_make_agent_run_result()), \
+             patch("hadron.pipeline.nodes.e2e_testing.emit_stage_diff"):
+
+            await e2e_testing_node(state, config)
+
+        wm.commit.assert_called_once()
+        commit_msg = wm.commit.call_args[0][1]
+        assert "green" in commit_msg

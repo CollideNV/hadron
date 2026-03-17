@@ -32,6 +32,7 @@ REBASE_OUTPUT_TAIL_CHARS = 500   # Post-rebase test failure log snippet
 
 # --- E2E testing ---
 MAX_E2E_RETRIES = 2
+E2E_TEST_TIMEOUT_SECONDS = 300
 
 # --- Conversation compaction ---
 # Compact conversation when a single round's input tokens exceed this threshold.

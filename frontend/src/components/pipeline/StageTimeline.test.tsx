@@ -19,7 +19,7 @@ describe("StageTimeline", () => {
     expect(screen.getByText("Ship")).toBeInTheDocument();
   });
 
-  it("renders all 12 stage labels", () => {
+  it("renders all 13 stage labels", () => {
     render(
       <StageTimeline
         currentStage=""
@@ -33,6 +33,7 @@ describe("StageTimeline", () => {
     expect(screen.getByText("Translate")).toBeInTheDocument();
     expect(screen.getByText("Verify")).toBeInTheDocument();
     expect(screen.getByText("Implement")).toBeInTheDocument();
+    expect(screen.getByText("E2E")).toBeInTheDocument();
     expect(screen.getByText("Review")).toBeInTheDocument();
     expect(screen.getByText("Rebase")).toBeInTheDocument();
     expect(screen.getByText("Deliver")).toBeInTheDocument();

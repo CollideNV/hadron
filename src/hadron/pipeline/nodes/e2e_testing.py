@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from hadron.agent.base import CostAccumulator
-from hadron.config.limits import MAX_E2E_RETRIES, TEST_OUTPUT_BRIEF_CHARS, TEST_OUTPUT_EVENT_CHARS
+from hadron.config.limits import E2E_TEST_TIMEOUT_SECONDS, MAX_E2E_RETRIES, TEST_OUTPUT_BRIEF_CHARS, TEST_OUTPUT_EVENT_CHARS
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import NodeContext, RepoInfo, pipeline_node, run_agent
@@ -53,7 +53,7 @@ async def e2e_testing_node(state: PipelineState, ctx: NodeContext, cr_id: str) -
 
     # Initial E2E test run
     tests_passing, test_output = await run_test_command(
-        ri.worktree_path, e2e_command, cr_id, timeout=300,
+        ri.worktree_path, e2e_command, cr_id, timeout=E2E_TEST_TIMEOUT_SECONDS,
     )
 
     await ctx.event_bus.emit(PipelineEvent(
@@ -65,10 +65,7 @@ async def e2e_testing_node(state: PipelineState, ctx: NodeContext, cr_id: str) -
         },
     ))
 
-    tests_added = 0
-    tests_updated = 0
-
-    # If tests fail or to expand coverage, use the agent
+    # Re-run agent on failure (up to max_retries), accumulating costs
     for attempt in range(max_retries + 1):
         if tests_passing and attempt > 0:
             break
@@ -106,7 +103,7 @@ async def e2e_testing_node(state: PipelineState, ctx: NodeContext, cr_id: str) -
 
         # Re-run E2E tests after agent modifications
         tests_passing, test_output = await run_test_command(
-            ri.worktree_path, e2e_command, cr_id, timeout=300,
+            ri.worktree_path, e2e_command, cr_id, timeout=E2E_TEST_TIMEOUT_SECONDS,
         )
 
         await ctx.event_bus.emit(PipelineEvent(
@@ -134,8 +131,6 @@ async def e2e_testing_node(state: PipelineState, ctx: NodeContext, cr_id: str) -
         "repo_name": ri.repo_name,
         "tests_passing": tests_passing,
         "test_output": test_output[-TEST_OUTPUT_BRIEF_CHARS:],
-        "tests_added": tests_added,
-        "tests_updated": tests_updated,
     }
 
     await ctx.event_bus.emit(PipelineEvent(

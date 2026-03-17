@@ -36,7 +36,7 @@ describe("STAGE_GROUP", () => {
     const expectedStages = [
       "intake", "repo_id", "worktree_setup",
       "behaviour_translation", "behaviour_verification",
-      "implementation", "review", "rebase",
+      "implementation", "e2e_testing", "review", "rebase",
       "delivery", "release_gate", "release", "retrospective",
     ];
     for (const stage of expectedStages) {

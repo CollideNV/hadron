@@ -57,8 +57,8 @@ def after_review(state: PipelineState) -> str:
     return "rework"
 
 
-def after_implementation(state: PipelineState) -> str:
-    """Route after implementation.
+def _route_to_e2e_or_review(state: PipelineState) -> str:
+    """Shared routing logic for post-implementation and post-rework.
 
     Returns:
         "e2e_testing" — repo has E2E tests configured
@@ -70,21 +70,16 @@ def after_implementation(state: PipelineState) -> str:
     if state.get("repo", {}).get("e2e_test_commands"):
         return "e2e_testing"
     return "review"
+
+
+def after_implementation(state: PipelineState) -> str:
+    """Route after implementation."""
+    return _route_to_e2e_or_review(state)
 
 
 def after_rework(state: PipelineState) -> str:
-    """Route after rework.
-
-    Returns:
-        "e2e_testing" — repo has E2E tests configured
-        "review" — no E2E tests, proceed to review
-        "paused" — node errored
-    """
-    if state.get("status") == "paused":
-        return "paused"
-    if state.get("repo", {}).get("e2e_test_commands"):
-        return "e2e_testing"
-    return "review"
+    """Route after rework."""
+    return _route_to_e2e_or_review(state)
 
 
 def after_rebase(state: PipelineState) -> str:

@@ -77,7 +77,7 @@ def detect_languages_and_tests(
     scan_dirs = [base]
     scan_dirs.extend(
         d for d in sorted(base.iterdir())
-        if d.is_dir() and not d.name.startswith(".")
+        if d.is_dir() and not d.is_symlink() and not d.name.startswith(".")
     )
 
     for scan_dir in scan_dirs:
@@ -105,7 +105,7 @@ def detect_languages_and_tests(
                     # Prefix with subdir path for nested packages
                     if scan_dir != base:
                         rel = scan_dir.relative_to(base)
-                        test_cmd = f"cd {rel} && {test_cmd}"
+                        test_cmd = f"cd '{rel}' && {test_cmd}"
             elif lang not in seen_langs:
                 detected_langs.append(lang)
                 seen_langs.add(lang)
@@ -189,11 +189,9 @@ def _parse_agents_md(content: str) -> tuple[list[str], list[str], list[str] | No
             else:
                 test_commands = [raw] if raw else []
 
-        # Match "E2E test command(s): ..." or "E2E tests: none"
+        # Match "E2E test(s): ...", "E2E test command(s): ...", "E2E tests: none"
         e2e_match = re.match(
-            r"e2e\s+tests?\s*:\s*(.+)", clean, re.IGNORECASE,
-        ) or re.match(
-            r"e2e\s+test\s+commands?\s*:\s*(.+)", clean, re.IGNORECASE,
+            r"e2e\s+(?:tests?|test\s+commands?)\s*:\s*(.+)", clean, re.IGNORECASE,
         )
         if e2e_match:
             raw = e2e_match.group(1).strip().rstrip("*")
@@ -246,7 +244,7 @@ def detect_e2e_tests(
     scan_dirs = [base]
     scan_dirs.extend(
         d for d in sorted(base.iterdir())
-        if d.is_dir() and not d.name.startswith(".")
+        if d.is_dir() and not d.is_symlink() and not d.name.startswith(".")
     )
 
     for scan_dir in scan_dirs:
@@ -261,7 +259,7 @@ def detect_e2e_tests(
             cmd = default_cmd
             if scan_dir != base:
                 rel = scan_dir.relative_to(base)
-                cmd = f"cd {rel} && {default_cmd}"
+                cmd = f"cd '{rel}' && {default_cmd}"
 
             if cmd not in detected:
                 detected.append(cmd)

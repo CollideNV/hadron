@@ -58,8 +58,6 @@ class E2EResult(TypedDict, total=False):
     repo_name: str
     tests_passing: bool
     test_output: str
-    tests_added: int  # how many new E2E tests the agent wrote
-    tests_updated: int  # how many existing tests the agent fixed
 
 
 class DevResult(TypedDict, total=False):
