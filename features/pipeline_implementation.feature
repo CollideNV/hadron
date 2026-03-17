@@ -14,13 +14,15 @@ Feature: Implementation
     When the test suite result is recorded
     Then the changes are committed to the feature branch
 
-  Scenario: Post-review rework
+  Scenario: Post-review rework uses a dedicated rework node
     Given the review stage has rejected the code with findings
-    When the implementation stage runs again
-    Then a rework agent is invoked with the review findings
-    And the agent addresses the specific findings without restarting from scratch
+    When the rework node executes
+    Then it uses the implementation_rework role and prompt template
+    And it skips explore and plan phases (act only)
+    And it receives only the CR title and review findings as payload
+    And it runs tests and commits after applying fixes
 
   Scenario: Review feedback included in rework prompt
     Given the review stage produced security and quality findings
-    When the rework agent is invoked
+    When the rework node is invoked
     Then the findings are included in the agent prompt with severity, message, file, and line

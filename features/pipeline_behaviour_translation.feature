@@ -10,12 +10,6 @@ Feature: Behaviour Translation
     And the agent writes feature files directly to the repo worktree
     And the behaviour specs metadata is stored in the pipeline state
 
-  Scenario: Run spec writer per repo in parallel
-    Given a CR affects multiple repos
-    When the behaviour translation stage executes
-    Then a Spec Writer agent runs for each repo
-    And all agents can execute in parallel
-
   Scenario: Include feedback on retry from verification
     Given the verification stage has rejected the specs with feedback
     When the behaviour translation stage executes again

@@ -72,20 +72,10 @@ Feature: Worktree Setup
     When the worktree setup stage executes
     Then the AGENTS.md test command takes precedence over auto-detected commands
 
-  # --- Git operations ---
+  # --- Dependency installation ---
 
-  Scenario: Commit and push changes
-    Given changes have been made in a worktree
-    When the pipeline commits and pushes
-    Then all changes are staged and committed
-    And the branch is pushed to the remote
-
-  Scenario: Get diff against base branch
-    Given changes exist on the feature branch
-    When the pipeline requests a diff
-    Then a unified diff comparing the feature branch to the base branch is returned
-
-  Scenario: Authenticate with repository token
-    Given a repository access token is configured
-    When git operations require remote access
-    Then the token is used for authentication
+  Scenario: Install dependencies during worktree setup
+    Given the repo has been cloned and the worktree created
+    When the worktree setup stage detects dependency files
+    Then it installs Python dependencies via pip if pyproject.toml or requirements.txt are present
+    And it installs Node dependencies via npm if package.json is present

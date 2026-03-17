@@ -20,17 +20,12 @@ Feature: Release Gate
     Then it presents a unified release summary to the human
     And the summary includes per-repo specs, diffs, test results, review findings, and total cost
 
-  Scenario: Auto-approve at release gate in MVP
-    Given all workers for a CR have pushed their PRs
-    When the release gate executes in MVP mode
-    Then it auto-approves the release
-    And the Controller merges all PRs
-
   Scenario: Human approves release
     Given all workers for a CR have pushed their PRs
     And the release gate is presented to the human
     When the human approves
-    Then the Controller merges all PRs across all repos
+    Then the CR status is updated to completed
+    And a pipeline completed event is emitted
 
   Scenario: Partial completion blocks release gate
     Given a CR affects 3 repos
@@ -44,9 +39,8 @@ Feature: Release Gate
     Then the release gate does not open
     And the human can act on the failed repo without affecting successful ones
 
-  Scenario: Stale approval triggers re-rebase
-    Given the human has approved the release
-    But the base branch has moved since the last rebase for one repo
-    When the Controller performs the merge check
-    Then it spawns a new worker for the stale repo to rebase and re-test
-    And the human does not need to re-approve unless tests fail
+  Scenario: Approve rejects when repos are not all completed
+    Given a CR affects multiple repos
+    And not all repo workers have completed
+    When the human attempts to approve
+    Then the request is rejected with details of which repos are not ready

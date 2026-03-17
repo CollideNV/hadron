@@ -36,7 +36,9 @@ Feature: Code Review
     Given at least one reviewer returns a critical or major finding
     And the review loop count is below the maximum (default 3)
     When the review routing decision is made
-    Then the pipeline routes back to the implementation stage with the findings
+    Then the pipeline routes to the rework node with the findings
+    And the rework node skips explore and plan phases for faster, cheaper fixes
+    And the rework node loops back to review after applying fixes
     And the review loop count is incremented
 
   Scenario: Review fails with no retries remaining

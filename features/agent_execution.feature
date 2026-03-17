@@ -1,9 +1,7 @@
 Feature: Agent Execution
   Agents execute tasks via a tool-use loop, with file system and
-  command execution tools confined to the working directory. Agents
-  can run in up to three phases (explore, plan, act) to optimise
-  for cost and quality. Cost and throttle metrics are tracked per
-  invocation and accumulated across the pipeline.
+  command execution tools confined to the working directory. Rate
+  limiting is handled with automatic retry and backoff.
 
   # --- Tool-use loop ---
 
@@ -42,106 +40,3 @@ Feature: Agent Execution
     When no retry-after hint is provided
     Then it falls back to linear backoff
     And it retries up to the maximum number of attempts before failing
-
-  # --- Three-phase execution ---
-
-  Scenario: Three-phase execution for code agents
-    Given a code-writing agent with explore and plan models configured
-    When the agent executes
-    Then phase 1 (Explore) runs with read-only tools to survey the codebase
-    And phase 2 (Plan) runs with no tools to produce an implementation plan
-    And phase 3 (Act) runs with all tools to implement the plan
-    And the act phase receives the exploration summary and plan in its prompt
-
-  Scenario: Single-phase execution for reviewers
-    Given a reviewer agent with no explore or plan models configured
-    When the agent executes
-    Then only the act phase runs
-    And the prompt is passed through unchanged
-
-  Scenario: Phase events are emitted
-    Given an agent with multiple phases configured
-    When the agent executes
-    Then a phase started event is emitted before each phase
-    And a phase completed event is emitted after each phase
-
-  # --- Cost tracking ---
-
-  Scenario: Track cost per agent invocation
-    When an agent completes execution
-    Then input tokens, output tokens, and cost are recorded
-    And the model used is recorded
-
-  Scenario: Accumulate cost across stages
-    Given multiple agents execute across different pipeline stages
-    When each agent completes
-    Then token counts and cost are accumulated in the pipeline state
-    And the running total reflects all agent invocations
-
-  Scenario: Per-model cost breakdown
-    Given an agent uses different models across phases
-    When the agent completes
-    Then a per-model breakdown is produced with tokens, cost, and throttle time
-    And the breakdown is accumulated across stages in the pipeline state
-
-  Scenario: Store final cost in database
-    When the pipeline completes
-    Then the total cost is persisted in the run record
-
-  # --- Throttle tracking ---
-
-  Scenario: Throttle time tracked across phases and stages
-    Given rate limiting occurs during agent execution
-    When the agent completes
-    Then retry count and total wait time are recorded
-    And throttle metrics are accumulated across phases and pipeline stages
-
-  # --- Conversation storage ---
-
-  Scenario: Store and retrieve agent conversation
-    When an agent completes execution
-    Then the full conversation is persisted and retrievable via the API
-
-  # --- Multi-backend support ---
-
-  Scenario: Select agent backend per stage and phase
-    Given stage model settings assign different backends to different stages
-    When a stage executes its agent
-    Then the agent uses the backend and model configured for that stage and phase
-    And if no per-stage override exists it falls back to the default backend
-
-  Scenario: Backend pool caches and reuses backends
-    Given multiple stages use the same backend
-    When each stage requests that backend from the pool
-    Then the same backend instance is returned without re-creation
-
-  Scenario: Named OpenCode endpoint as backend
-    Given an OpenCode endpoint "local-ollama" is configured with a base URL and models
-    When a stage is configured to use backend "opencode:local-ollama"
-    Then the agent connects to that endpoint's base URL
-    And the endpoint's model list is available for selection
-
-  Scenario: Plain OpenCode backend with free-text model
-    Given no named OpenCode endpoints are configured
-    When a stage uses the "opencode" backend
-    Then the agent connects to the global OpenCode base URL from environment
-    And any model name can be entered as free text
-
-  Scenario: Unknown backend name is rejected
-    When a stage references an unrecognised backend name
-    Then backend creation fails with a descriptive error
-
-  # --- Prompt composition ---
-
-  Scenario: Compose agent prompts in four layers
-    When an agent prompt is composed
-    Then Layer 1 is the role system prompt from the template
-    And Layer 2 is the repo context including agent instructions, language, and directory tree
-    And Layer 3 is the task payload with CR details, specs, and code
-    And Layer 4 is loop feedback from previous stages
-
-  Scenario: Custom prompt templates override defaults
-    Given a custom prompt template has been saved for a role
-    When that role's agent prompt is composed
-    Then the custom template is used instead of the default
-    And templates are frozen into the config snapshot at intake

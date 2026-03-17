@@ -25,8 +25,8 @@ Feature: Pipeline Flow
   Scenario: Review feedback loop
     Given the code review rejects the code
     And retries remain
-    When the pipeline routes back to implementation
-    Then the implementation-review loop repeats up to the configured maximum
+    When the pipeline routes to the rework node
+    Then the rework-review loop repeats up to the configured maximum
 
   Scenario: Circuit breaker pauses pipeline
     Given a feedback loop has exhausted its maximum retries
