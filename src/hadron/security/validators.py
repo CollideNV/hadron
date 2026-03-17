@@ -51,7 +51,7 @@ def _strip_cd_prefix(cmd: str) -> str | None:
     Returns None if there's no ``cd`` prefix (caller uses original cmd).
     """
     import re
-    m = re.match(r"^cd\s+\S+\s*&&\s*(.+)$", cmd)
+    m = re.match(r"^cd\s+(?:\S+|'[^']*'|\"[^\"]*\")\s*&&\s*(.+)$", cmd)
     return m.group(1).strip() if m else None
 
 
@@ -126,7 +126,20 @@ def validate_test_command(cmd: str) -> bool:
 
     Stricter than agent validation: also rejects ``&``, parentheses, and
     angle brackets, and only accepts known test runner patterns.
+
+    Allows a single ``cd <dir> && <allowed_cmd>`` prefix for monorepo
+    test commands (e.g. ``cd 'frontend' && npx playwright test``).
     """
+    # Allow a single cd prefix — validate the inner command (non-recursive)
+    inner = _strip_cd_prefix(cmd)
+    if inner is not None:
+        return _validate_bare_test_command(inner)
+
+    return _validate_bare_test_command(cmd)
+
+
+def _validate_bare_test_command(cmd: str) -> bool:
+    """Validate a test command without cd-prefix stripping."""
     if _has_dangerous_shell_chars(cmd):
         return False
     if any(c in cmd for c in _TEST_EXTRA_DANGEROUS):

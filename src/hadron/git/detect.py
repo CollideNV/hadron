@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import shlex
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -105,7 +106,7 @@ def detect_languages_and_tests(
                     # Prefix with subdir path for nested packages
                     if scan_dir != base:
                         rel = scan_dir.relative_to(base)
-                        test_cmd = f"cd '{rel}' && {test_cmd}"
+                        test_cmd = f"cd {shlex.quote(str(rel))} && {test_cmd}"
             elif lang not in seen_langs:
                 detected_langs.append(lang)
                 seen_langs.add(lang)
@@ -259,7 +260,7 @@ def detect_e2e_tests(
             cmd = default_cmd
             if scan_dir != base:
                 rel = scan_dir.relative_to(base)
-                cmd = f"cd '{rel}' && {default_cmd}"
+                cmd = f"cd {shlex.quote(str(rel))} && {default_cmd}"
 
             if cmd not in detected:
                 detected.append(cmd)

@@ -28,6 +28,10 @@ TEST_RUNNER_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"^phpunit(\s|$)"),
     re.compile(r"^dotnet\s+test(\s|$)"),
     re.compile(r"^make\s+(test|check)(\s|$)"),
+    # E2E test frameworks
+    re.compile(r"^npx\s+playwright\s+test(\s|$)"),
+    re.compile(r"^npx\s+cypress\s+run(\s|$)"),
+    re.compile(r"^npx\s+wdio\s+run(\s|$)"),
 ]
 
 # ---------------------------------------------------------------------------

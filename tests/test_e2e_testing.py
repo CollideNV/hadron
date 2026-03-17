@@ -263,8 +263,8 @@ class TestE2ETestingNode:
         assert mock_test.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_commit_called_with_result(self) -> None:
-        """Node should commit E2E test changes regardless of pass/fail."""
+    async def test_commit_called_with_green_result(self) -> None:
+        """Node should commit with 'green' when tests pass."""
         config = _make_config()
         state = _base_state(
             repo={**_base_state()["repo"], "e2e_test_commands": ["npx playwright test"]},
@@ -280,3 +280,81 @@ class TestE2ETestingNode:
         wm.commit.assert_called_once()
         commit_msg = wm.commit.call_args[0][1]
         assert "green" in commit_msg
+
+    @pytest.mark.asyncio
+    async def test_commit_called_with_red_result(self) -> None:
+        """Node should commit with 'red' when tests fail after retries."""
+        config = _make_config()
+        state = _base_state(
+            repo={**_base_state()["repo"], "e2e_test_commands": ["npx playwright test"]},
+            config_snapshot={"pipeline": {"max_e2e_retries": 0}},
+        )
+        wm = config["configurable"]["worktree_manager"]
+
+        with patch("hadron.pipeline.nodes.e2e_testing.run_test_command", return_value=(False, "failing")), \
+             patch("hadron.pipeline.nodes.e2e_testing.run_agent", return_value=_make_agent_run_result()), \
+             patch("hadron.pipeline.nodes.e2e_testing.emit_stage_diff"):
+
+            await e2e_testing_node(state, config)
+
+        wm.commit.assert_called_once()
+        commit_msg = wm.commit.call_args[0][1]
+        assert "red" in commit_msg
+
+    @pytest.mark.asyncio
+    async def test_cost_accumulation_across_retries(self) -> None:
+        """Costs should accumulate across multiple agent retry calls."""
+        config = _make_config()
+        state = _base_state(
+            repo={**_base_state()["repo"], "e2e_test_commands": ["npx playwright test"]},
+            config_snapshot={"pipeline": {"max_e2e_retries": 1}},
+        )
+
+        with patch("hadron.pipeline.nodes.e2e_testing.run_test_command", return_value=(False, "failing")), \
+             patch("hadron.pipeline.nodes.e2e_testing.run_agent", return_value=_make_agent_run_result(cost_usd=0.03, input_tokens=200, output_tokens=100)), \
+             patch("hadron.pipeline.nodes.e2e_testing.emit_stage_diff"):
+
+            result = await e2e_testing_node(state, config)
+
+        # 2 agent calls (max_retries=1 → loop runs twice)
+        assert result["cost_usd"] == pytest.approx(0.06)
+        assert result["cost_input_tokens"] == 400
+        assert result["cost_output_tokens"] == 200
+
+    @pytest.mark.asyncio
+    async def test_agent_exception_pauses_pipeline(self) -> None:
+        """If run_agent raises, the @pipeline_node decorator catches and pauses."""
+        config = _make_config()
+        state = _base_state(
+            repo={**_base_state()["repo"], "e2e_test_commands": ["npx playwright test"]},
+        )
+
+        with patch("hadron.pipeline.nodes.e2e_testing.run_test_command", return_value=(False, "failing")), \
+             patch("hadron.pipeline.nodes.e2e_testing.run_agent", side_effect=RuntimeError("agent backend down")), \
+             patch("hadron.pipeline.nodes.e2e_testing.emit_stage_diff"):
+
+            result = await e2e_testing_node(state, config)
+
+        assert result["status"] == "paused"
+        assert "agent backend down" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_loop_iteration_passed_to_agent(self) -> None:
+        """Agent should receive the current attempt as loop_iteration."""
+        config = _make_config()
+        state = _base_state(
+            repo={**_base_state()["repo"], "e2e_test_commands": ["npx playwright test"]},
+            config_snapshot={"pipeline": {"max_e2e_retries": 1}},
+        )
+
+        with patch("hadron.pipeline.nodes.e2e_testing.run_test_command", return_value=(False, "failing")), \
+             patch("hadron.pipeline.nodes.e2e_testing.run_agent", return_value=_make_agent_run_result()) as mock_agent, \
+             patch("hadron.pipeline.nodes.e2e_testing.emit_stage_diff"):
+
+            await e2e_testing_node(state, config)
+
+        # Should have been called twice (max_retries=1 → attempts 0 and 1)
+        assert mock_agent.call_count == 2
+        # First call: loop_iteration=0, second: loop_iteration=1
+        assert mock_agent.call_args_list[0].kwargs["loop_iteration"] == 0
+        assert mock_agent.call_args_list[1].kwargs["loop_iteration"] == 1

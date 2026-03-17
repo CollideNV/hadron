@@ -188,7 +188,7 @@ class TestNestedDetection:
         assert "python" in langs
         assert "typescript" in langs
         assert "pytest" in tests
-        assert any("'frontend'" in t and "npm test" in t for t in tests)
+        assert any("frontend" in t and "npm test" in t for t in tests)
 
     def test_nested_package_json_without_tsconfig(self, repo) -> None:
         """Nested package.json without tsconfig → javascript, not typescript."""
@@ -242,7 +242,7 @@ class TestE2EDetection:
         frontend.mkdir()
         (frontend / "playwright.config.ts").write_text("export default {}")
         cmds = detect_e2e_tests(str(repo))
-        assert cmds == ["cd 'frontend' && npx playwright test"]
+        assert cmds == ["cd frontend && npx playwright test"]
 
     def test_no_duplicate_frameworks(self, repo) -> None:
         """Both .ts and .js configs for same framework should not duplicate."""
@@ -277,7 +277,7 @@ class TestE2EDetection:
         (repo / "linked").symlink_to(real_dir)
         cmds = detect_e2e_tests(str(repo))
         # Only the real directory should be scanned, not the symlink
-        assert cmds == ["cd 'real' && npx playwright test"]
+        assert cmds == ["cd real && npx playwright test"]
 
 
 class TestSymlinkSkipping:

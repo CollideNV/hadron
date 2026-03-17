@@ -96,6 +96,7 @@ async def e2e_testing_node(state: PipelineState, ctx: NodeContext, cr_id: str) -
             stage="e2e_testing",
             repo_name=ri.repo_name,
             working_directory=ri.worktree_path,
+            loop_iteration=attempt,
             explore_model="",   # Skip explore phase
             plan_model="",      # Skip plan phase
         )

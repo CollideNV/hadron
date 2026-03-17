@@ -439,3 +439,49 @@ class TestSymlinkTraversal:
             "read_file", {"path": "link.txt"}, str(tmp_workdir)
         )
         assert result == "content"
+
+
+# ---------------------------------------------------------------------------
+# Test command validation for E2E runners and cd-prefix
+# ---------------------------------------------------------------------------
+
+from hadron.security.validators import validate_test_command as _validate_test_command
+
+
+class TestE2ETestCommandValidation:
+    """E2E test runner commands should be accepted by the test command validator."""
+
+    @pytest.mark.parametrize("cmd", [
+        "npx playwright test",
+        "npx playwright test --headed",
+        "npx cypress run",
+        "npx cypress run --spec tests/e2e",
+        "npx wdio run",
+    ])
+    def test_e2e_commands_accepted(self, cmd: str) -> None:
+        assert _validate_test_command(cmd) is True
+
+    @pytest.mark.parametrize("cmd", [
+        "cd frontend && npx playwright test",
+        "cd 'my frontend' && npx playwright test",
+        "cd client && npx cypress run",
+        "cd web && npx wdio run",
+    ])
+    def test_cd_prefix_e2e_commands_accepted(self, cmd: str) -> None:
+        assert _validate_test_command(cmd) is True
+
+    @pytest.mark.parametrize("cmd", [
+        "cd frontend && pytest",
+        "cd frontend && npm test",
+        "cd frontend && cargo test",
+    ])
+    def test_cd_prefix_standard_commands_accepted(self, cmd: str) -> None:
+        assert _validate_test_command(cmd) is True
+
+    def test_nested_cd_rejected(self) -> None:
+        """Double cd-prefix chaining should be rejected."""
+        assert _validate_test_command("cd a && cd b && pytest") is False
+
+    def test_cd_with_injection_rejected(self) -> None:
+        """Malicious directory names should not enable injection."""
+        assert _validate_test_command("cd x && rm -rf /") is False

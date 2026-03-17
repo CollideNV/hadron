@@ -47,11 +47,30 @@ Feature: E2E Testing Stage
     Then the agent updates the broken test assertions
     And E2E tests pass on re-run
 
-  Scenario: E2E agent is not invoked when tests pass
+  Scenario: E2E agent runs once when tests pass initially
     Given E2E tests that pass on the initial run
     When the e2e_testing stage executes
-    Then the agent is not invoked
+    Then the agent runs once (attempt 0 always executes)
     And the stage completes with e2e_passed=True
+
+  Scenario: E2E retries exhaust max_e2e_retries
+    Given E2E tests that fail after implementation changes
+    And max_e2e_retries is configured to 1
+    When the e2e_testing agent retries and tests still fail
+    Then the stage completes after 1 initial + 2 agent attempts
+    And e2e_passed is False
+
+  Scenario: E2E test changes are committed
+    Given the e2e_testing agent has modified test files
+    When the e2e_testing stage completes
+    Then the agent's changes are committed with a descriptive message
+    And the commit message indicates whether tests are green or red
+
+  Scenario: E2E stage diff is emitted for review visibility
+    Given the e2e_testing agent has modified test files
+    When the e2e_testing stage completes
+    Then a STAGE_DIFF event is emitted with the test file changes
+    And reviewers can see what the E2E agent changed
 
   Scenario: E2E failures proceed to review with context
     Given E2E tests that fail after max retries
@@ -68,7 +87,7 @@ Feature: E2E Testing Stage
   Scenario: Nested E2E config detected in monorepo
     Given a monorepo with frontend/playwright.config.ts
     When worktree setup runs auto-detection
-    Then the E2E test command is "cd 'frontend' && npx playwright test"
+    Then the E2E test command is "cd frontend && npx playwright test"
 
   Scenario: Symlinks are not followed during detection
     Given a repository with a symlinked subdirectory
