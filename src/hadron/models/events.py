@@ -28,6 +28,7 @@ class EventType(str, Enum):
     INTERVENTION_SET = "intervention_set"
     PHASE_STARTED = "phase_started"
     PHASE_COMPLETED = "phase_completed"
+    STAGE_DIFF = "stage_diff"
     COST_UPDATE = "cost_update"
     ERROR = "error"
 

@@ -19,6 +19,7 @@ export interface FilteredStageData {
   agentNudges: PipelineEvent[];
   testRuns: PipelineEvent[];
   findings: PipelineEvent[];
+  stageDiffs: PipelineEvent[];
 }
 
 function filterEvents(events: PipelineEvent[], stage: string | null): PipelineEvent[] {
@@ -86,8 +87,9 @@ export function useCRDetail(crId: string | undefined): CRDetailState {
       agentNudges: filterByStagePrefix(stream.agentNudges, stage),
       testRuns: filterByStageExact(stream.testRuns, stage),
       findings: filterByStageExact(stream.reviewFindings, stage),
+      stageDiffs: filterByStageExact(stream.stageDiffs, stage),
     }),
-    [stream.events, stream.toolCalls, stream.agentOutputs, stream.agentNudges, stream.testRuns, stream.reviewFindings],
+    [stream.events, stream.toolCalls, stream.agentOutputs, stream.agentNudges, stream.testRuns, stream.reviewFindings, stream.stageDiffs],
   );
 
   return { crRun, displayStatus, title, stream, filterByStage };

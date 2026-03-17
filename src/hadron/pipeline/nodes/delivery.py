@@ -9,6 +9,7 @@ from hadron.config.limits import TEST_OUTPUT_BRIEF_CHARS
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import NodeContext, RepoInfo, pipeline_node
+from hadron.pipeline.nodes.diff_capture import emit_stage_diff
 from hadron.pipeline.testing import run_test_command
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,13 @@ async def delivery_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> d
             branch_pushed = True
         except RuntimeError as e:
             logger.warning("Push failed for %s: %s", ri.repo_name, e)
+
+    # Emit final "what shipped" diff
+    if branch_pushed:
+        await emit_stage_diff(
+            ctx.event_bus, cr_id, "delivery", ri.repo_name,
+            ctx.worktree_manager, ri.worktree_path, ri.default_branch,
+        )
 
     delivery_results = [{
         "repo_name": ri.repo_name,

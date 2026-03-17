@@ -20,6 +20,10 @@ MAX_CONTEXT_CHARS = 24_000  # ~6k tokens — keep injected context lean
 # --- Code review ---
 MAX_DIFF_CHARS = 30_000
 
+# --- Stage diff events ---
+MAX_DIFF_EVENT_CHARS = 50_000
+MAX_FEATURE_CONTENT_EVENT_CHARS = 30_000
+
 # --- Test output truncation ---
 TEST_OUTPUT_TAIL_CHARS = 3_000   # Last N chars of test output in implementation payload
 TEST_OUTPUT_BRIEF_CHARS = 2_000  # Abbreviated test output stored in dev/delivery results

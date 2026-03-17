@@ -15,6 +15,7 @@ function makeStageData(overrides: Partial<Parameters<typeof StageDataProvider>[0
     agentNudges: [] as PipelineEvent[],
     testRuns: [] as PipelineEvent[],
     findings: [] as PipelineEvent[],
+    stageDiffs: [] as PipelineEvent[],
     ...overrides,
   };
 }

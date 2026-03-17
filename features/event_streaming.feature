@@ -39,6 +39,12 @@ Feature: Event Streaming
     When an agent completes execution
     Then a cost update event is emitted with token counts, incremental cost, and cumulative total cost
 
+  Scenario: Stage diff events
+    When a stage produces code or spec changes
+    Then a stage diff event is emitted with the unified diff
+    And the diff includes file change statistics
+    And large diffs are truncated with a flag
+
   Scenario: Failure and pause events
     When the pipeline encounters a fatal error
     Then a pipeline failed event is emitted

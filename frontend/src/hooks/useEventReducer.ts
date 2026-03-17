@@ -10,6 +10,7 @@ export interface EventStreamState {
   agentNudges: PipelineEvent[];
   testRuns: PipelineEvent[];
   reviewFindings: PipelineEvent[];
+  stageDiffs: PipelineEvent[];
   costUsd: number;
   status: "connecting" | "running" | "completed" | "failed" | "paused";
   error: string | null;
@@ -25,6 +26,7 @@ export const INITIAL_STATE: EventStreamState = {
   agentNudges: [],
   testRuns: [],
   reviewFindings: [],
+  stageDiffs: [],
   costUsd: 0,
   status: "connecting",
   error: null,
@@ -47,6 +49,7 @@ export function reduceEvent(
     agentNudges,
     testRuns,
     reviewFindings,
+    stageDiffs,
     costUsd,
     status,
     error,
@@ -94,6 +97,9 @@ export function reduceEvent(
     case "review_finding":
       reviewFindings = [...reviewFindings, event];
       break;
+    case "stage_diff":
+      stageDiffs = [...stageDiffs, event];
+      break;
     case "cost_update":
       if (typeof event.data.total_cost_usd === "number") {
         costUsd = event.data.total_cost_usd;
@@ -116,6 +122,7 @@ export function reduceEvent(
     agentNudges,
     testRuns,
     reviewFindings,
+    stageDiffs,
     costUsd,
     status,
     error,

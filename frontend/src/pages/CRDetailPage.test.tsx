@@ -41,6 +41,7 @@ function makeStreamState(overrides: Partial<EventStreamState> = {}): EventStream
     agentNudges: [],
     testRuns: [],
     reviewFindings: [],
+    stageDiffs: [],
     costUsd: 0,
     status: "running",
     error: null,
@@ -61,6 +62,7 @@ function makeCRDetailState(overrides: Partial<CRDetailState> = {}): CRDetailStat
       agentNudges: [],
       testRuns: [],
       findings: [],
+      stageDiffs: [],
     }),
     ...overrides,
   };

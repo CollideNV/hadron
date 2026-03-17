@@ -25,6 +25,7 @@ from hadron.pipeline.nodes import (
     NodeContext, RepoInfo, emit_cost_update, pipeline_node,
     run_agent,
 )
+from hadron.pipeline.nodes.diff_capture import emit_stage_diff
 from hadron.pipeline.nodes.review_exec import REVIEWER_REGISTRY, run_single_reviewer
 from hadron.pipeline.nodes.review_payload import (
     format_diff_section,
@@ -71,6 +72,13 @@ async def review_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
                 spec["feature_content_from_disk"] = feature_content
 
     spec_text = format_repo_specs(behaviour_specs, ri.repo_name)
+
+    # Emit diff capturing what reviewers will evaluate
+    await emit_stage_diff(
+        ctx.event_bus, cr_id, "review", ri.repo_name,
+        ctx.worktree_manager, ri.worktree_path, ri.default_branch,
+        feature_content=feature_content,
+    )
 
     # 3. Build payloads and run all reviewers in parallel
     payload_args = (structured_cr, diff_section, scope_section, spec_text, behaviour_specs, ri.repo_name)

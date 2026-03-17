@@ -13,6 +13,7 @@ const mockStream = {
   agentNudges: [] as PipelineEvent[],
   testRuns: [] as PipelineEvent[],
   reviewFindings: [] as PipelineEvent[],
+  stageDiffs: [] as PipelineEvent[],
   costUsd: 0,
   currentStage: "intake",
 };
@@ -51,6 +52,7 @@ beforeEach(() => {
   mockStream.agentNudges = [];
   mockStream.testRuns = [];
   mockStream.reviewFindings = [];
+  mockStream.stageDiffs = [];
   mockGetPipelineStatus.mockResolvedValue(makeCRRunDetail());
 });
 

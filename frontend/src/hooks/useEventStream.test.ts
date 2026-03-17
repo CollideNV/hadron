@@ -182,6 +182,27 @@ describe("useEventStream", () => {
     expect(result.current.testRuns).toHaveLength(1);
   });
 
+  it("tracks stage diffs", () => {
+    const { result } = renderHook(() => useEventStream("cr-1"));
+
+    act(() => {
+      capturedOnEvent!(
+        makeEvent({
+          event_type: "stage_diff",
+          stage: "implementation",
+          data: {
+            repo: "backend",
+            diff: "+hello",
+            diff_truncated: false,
+            stats: { files_changed: 1, insertions: 1, deletions: 0 },
+          },
+        }),
+      );
+    });
+
+    expect(result.current.stageDiffs).toHaveLength(1);
+  });
+
   it("tracks review findings", () => {
     const { result } = renderHook(() => useEventStream("cr-1"));
 

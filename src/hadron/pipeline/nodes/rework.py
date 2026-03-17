@@ -10,6 +10,7 @@ from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import NodeContext, RepoInfo, pipeline_node, run_agent
 from hadron.config.limits import TEST_OUTPUT_BRIEF_CHARS, TEST_OUTPUT_EVENT_CHARS
+from hadron.pipeline.nodes.diff_capture import emit_stage_diff
 from hadron.pipeline.testing import run_test_command
 
 logger = logging.getLogger(__name__)
@@ -92,6 +93,12 @@ async def rework_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
     await ctx.worktree_manager.commit(
         ri.worktree_path,
         f"fix: rework for {cr_id} ({'green' if tests_passing else 'red'})",
+    )
+
+    # Emit diff of rework changes
+    await emit_stage_diff(
+        ctx.event_bus, cr_id, "implementation", ri.repo_name,
+        ctx.worktree_manager, ri.worktree_path, ri.default_branch,
     )
 
     dev_result = {

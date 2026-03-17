@@ -16,6 +16,11 @@ Feature: Behaviour Translation
     Then the Spec Writer agent receives the previous feedback in its prompt
     And it generates revised feature files incorporating the feedback
 
+  Scenario: Emit diff of generated feature files
+    When the behaviour translation stage completes
+    Then a stage diff event is emitted containing the new feature files
+    And the feature file contents are structured with path and content
+
   Scenario: Spec Writer operates within repo worktree
     When the Spec Writer agent executes
     Then it can read, write, and list files within the repo worktree

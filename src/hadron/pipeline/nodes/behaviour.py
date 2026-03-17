@@ -12,6 +12,7 @@ from hadron.pipeline.nodes import (
     NodeContext, RepoInfo, extract_json, gather_changed_files, pipeline_node, run_agent,
 )
 from hadron.pipeline.nodes.cr_format import format_cr_section, format_cr_summary
+from hadron.pipeline.nodes.diff_capture import emit_stage_diff
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,14 @@ async def behaviour_translation_node(state: PipelineState, ctx: NodeContext, cr_
         "verification_feedback": "",
         "verification_iteration": state.get("verification_loop_count", 0),
     }]
+
+    # Emit diff of generated feature files
+    bt_feature_content = gather_changed_files(ri.worktree_path, "features/**/*.feature", ri.default_branch)
+    await emit_stage_diff(
+        ctx.event_bus, cr_id, "behaviour_translation", ri.repo_name,
+        ctx.worktree_manager, ri.worktree_path, ri.default_branch,
+        feature_content=bt_feature_content,
+    )
 
     await ctx.event_bus.emit(PipelineEvent(
         cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage="behaviour_translation",
@@ -153,6 +162,13 @@ Verify the above specifications against the CR.
     # Cache feature content in state so downstream nodes (implementation, review) can skip
     # expensive git operations to re-gather the same files.
     cached_feature_content = feature_content or ""
+
+    # Emit diff with final verified specs
+    await emit_stage_diff(
+        ctx.event_bus, cr_id, "behaviour_verification", ri.repo_name,
+        ctx.worktree_manager, ri.worktree_path, ri.default_branch,
+        feature_content=feature_content,
+    )
 
     await ctx.event_bus.emit(PipelineEvent(
         cr_id=cr_id, event_type=EventType.STAGE_COMPLETED,

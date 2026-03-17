@@ -14,6 +14,10 @@ Feature: Implementation
     When the test suite result is recorded
     Then the changes are committed to the feature branch
 
+  Scenario: Emit diff after implementation
+    When the implementation stage commits changes
+    Then a stage diff event is emitted with the full code diff against the base branch
+
   Scenario: Post-review rework uses a dedicated rework node
     Given the review stage has rejected the code with findings
     When the rework node executes

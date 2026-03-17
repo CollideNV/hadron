@@ -4,6 +4,7 @@ import { buildSessions } from "../agents/buildSessions";
 import { useAutoSelectSession } from "../agents/useAutoSelectSession";
 import AgentSessionList from "../agents/AgentSessionList";
 import RichConversationView from "../agents/RichConversationView";
+import StageChangesPanel from "../diff/StageChangesPanel";
 import StageSummaryCard, { getStageColor } from "./StageSummaryCard";
 import type { PipelineEvent, ReviewFindingData } from "../../api/types";
 
@@ -38,6 +39,7 @@ export default function StageDetailView({
     agentNudges,
     testRuns,
     findings,
+    stageDiffs,
   } = useStageData();
 
   const allSessions = useMemo(
@@ -52,6 +54,10 @@ export default function StageDetailView({
   );
   const hasMultipleRounds = reviewRounds.length > 1;
 
+  type RightTab = "conversation" | "changes";
+  const [rightTab, setRightTab] = useState<RightTab>(
+    stageDiffs.length > 0 && allSessions.length === 0 ? "changes" : "conversation",
+  );
   const [selectedRound, setSelectedRound] = useState<number | null>(null);
 
   // Filter sessions and findings by selected review round
@@ -145,25 +151,56 @@ export default function StageDetailView({
         </div>
       </div>
 
-      {/* Right content: rich conversation */}
-      <div className="flex-1 overflow-hidden">
-        {selectedSession ? (
-          <RichConversationView
-            session={selectedSession}
-            crId={crId}
-            pipelineStatus={pipelineStatus}
-            testRuns={testRuns}
-            findings={filteredFindings}
-          />
-        ) : (
-          <div className="flex items-center justify-center h-full">
-            <p className="text-xs text-text-dim">
-              {sessions.length === 0
-                ? "No agent activity for this stage yet"
-                : "Select a session"}
-            </p>
-          </div>
-        )}
+      {/* Right content */}
+      <div className="flex-1 overflow-hidden flex flex-col">
+        {/* Tab bar */}
+        <div className="flex items-center gap-1 px-3 py-1.5 border-b border-border-subtle bg-bg-surface flex-shrink-0">
+          <button
+            onClick={() => setRightTab("conversation")}
+            className={`text-[10px] px-2 py-0.5 rounded border cursor-pointer transition-colors ${
+              rightTab === "conversation"
+                ? "bg-accent/15 border-accent/30 text-accent font-medium"
+                : "border-border-subtle text-text-dim hover:text-text-muted bg-transparent"
+            }`}
+          >
+            Conversation
+          </button>
+          <button
+            onClick={() => setRightTab("changes")}
+            className={`text-[10px] px-2 py-0.5 rounded border cursor-pointer transition-colors ${
+              rightTab === "changes"
+                ? "bg-accent/15 border-accent/30 text-accent font-medium"
+                : "border-border-subtle text-text-dim hover:text-text-muted bg-transparent"
+            }`}
+          >
+            Changes
+          </button>
+        </div>
+
+        {/* Tab content */}
+        <div className="flex-1 overflow-hidden">
+          {rightTab === "conversation" ? (
+            selectedSession ? (
+              <RichConversationView
+                session={selectedSession}
+                crId={crId}
+                pipelineStatus={pipelineStatus}
+                testRuns={testRuns}
+                findings={filteredFindings}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <p className="text-xs text-text-dim">
+                  {sessions.length === 0
+                    ? "No agent activity for this stage yet"
+                    : "Select a session"}
+                </p>
+              </div>
+            )
+          ) : (
+            <StageChangesPanel stageName={stageName} stageDiffs={stageDiffs} />
+          )}
+        </div>
       </div>
     </div>
   );

@@ -72,6 +72,7 @@ export default function CRDetailPage() {
               agentNudges={filtered.agentNudges}
               testRuns={filtered.testRuns}
               findings={filtered.findings}
+              stageDiffs={filtered.stageDiffs}
             >
               <StageDetailView
                 stageName={selectedStage}

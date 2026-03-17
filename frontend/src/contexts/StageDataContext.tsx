@@ -10,6 +10,7 @@ interface StageData {
   agentNudges: PipelineEvent[];
   testRuns: PipelineEvent[];
   findings: PipelineEvent[];
+  stageDiffs: PipelineEvent[];
 }
 
 const StageDataContext = createContext<StageData | null>(null);

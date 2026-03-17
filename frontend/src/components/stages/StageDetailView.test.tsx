@@ -20,6 +20,7 @@ function renderWithContext(
     agentNudges: PipelineEvent[];
     testRuns: PipelineEvent[];
     findings: PipelineEvent[];
+    stageDiffs: PipelineEvent[];
   }> = {},
 ) {
   const contextDefaults = {
@@ -31,6 +32,7 @@ function renderWithContext(
     agentNudges: [],
     testRuns: [],
     findings: [],
+    stageDiffs: [],
     ...contextOverrides,
   };
   return render(
@@ -224,6 +226,40 @@ describe("StageDetailView", () => {
       { stageName: "implementation", onBack: vi.fn() },
     );
     expect(screen.queryByText("Review 1")).not.toBeInTheDocument();
+  });
+
+  it("shows Conversation and Changes tabs", () => {
+    renderWithContext({ stageName: "implementation", onBack: vi.fn() });
+    expect(screen.getByText("Conversation")).toBeInTheDocument();
+    expect(screen.getByText("Changes")).toBeInTheDocument();
+  });
+
+  it("switches to Changes tab when clicked", () => {
+    const stageDiffs = [
+      makeEvent({
+        event_type: "stage_diff",
+        stage: "implementation",
+        data: {
+          repo: "backend",
+          diff: "diff --git a/main.py b/main.py\n+hello",
+          diff_truncated: false,
+          stats: { files_changed: 1, insertions: 1, deletions: 0 },
+        },
+      }),
+    ];
+    renderWithContext(
+      { stageName: "implementation", onBack: vi.fn() },
+      { stageDiffs },
+    );
+    fireEvent.click(screen.getByText("Changes"));
+    expect(screen.getByText("Code Diff")).toBeInTheDocument();
+    expect(screen.getByText("1 file changed")).toBeInTheDocument();
+  });
+
+  it("shows (no changes captured) when no diffs", () => {
+    renderWithContext({ stageName: "implementation", onBack: vi.fn() });
+    fireEvent.click(screen.getByText("Changes"));
+    expect(screen.getByText("(no changes captured)")).toBeInTheDocument();
   });
 
   it("does not show round tabs for single review round", () => {

@@ -123,6 +123,20 @@ export interface AgentPromptData {
   text: string;
   repo?: string;
 }
+export interface StageDiffFile {
+  path: string;
+  content: string;
+}
+
+export interface StageDiffData {
+  repo?: string;
+  diff: string;
+  diff_truncated: boolean;
+  files?: StageDiffFile[];
+  files_truncated?: boolean;
+  stats?: { files_changed: number; insertions: number; deletions: number };
+}
+
 export interface ErrorData {
   message?: string;
   error?: string;
@@ -149,6 +163,7 @@ export interface PipelineEventMap {
   test_run: TestRunData;
   review_finding: ReviewFindingData;
   intervention_set: InterventionSetData;
+  stage_diff: StageDiffData;
   cost_update: CostUpdateData;
   error: ErrorData;
 }
@@ -234,6 +249,7 @@ export const EVENT_TYPES = [
   "test_run",
   "review_finding",
   "intervention_set",
+  "stage_diff",
   "cost_update",
   "error",
 ] as const;

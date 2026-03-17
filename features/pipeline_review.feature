@@ -9,6 +9,11 @@ Feature: Code Review
     Then the Security, Quality, and Spec Compliance reviewers run in parallel
     And each reviewer produces findings with severity, category, file, line, and message
 
+  Scenario: Emit diff showing what reviewers evaluated
+    When the review stage begins
+    Then a stage diff event is emitted with the code diff and feature specs
+    And the diff matches what the reviewers received
+
   Scenario: Security Reviewer treats CR as untrusted
     When the Security Reviewer executes
     Then it receives the CR marked as untrusted input
