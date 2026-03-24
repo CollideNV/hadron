@@ -11,6 +11,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import time
 from typing import AsyncIterator
@@ -677,6 +678,152 @@ async def event_stream(cr_id: str, request: Request):
                 "data": json.dumps(event),
             }
             await asyncio.sleep(0.04)  # ~25 events/sec — fast but watchable
+
+    return EventSourceResponse(generate())
+
+
+# ---------------------------------------------------------------------------
+# Analytics & Global Stream
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/analytics/summary")
+async def analytics_summary(days: int = 30):
+    """Aggregate pipeline analytics across all CRs."""
+    now = "2026-03-20T12:00:00Z"
+
+    status_counts = {}
+    for r in DUMMY_RUNS:
+        s = r["status"]
+        status_counts[s] = status_counts.get(s, 0) + 1
+
+    total = len(DUMMY_RUNS)
+    completed = status_counts.get("completed", 0)
+    failed = status_counts.get("failed", 0)
+
+    total_cost = sum(r["cost_usd"] for r in DUMMY_RUNS)
+    avg_cost = total_cost / total if total > 0 else 0
+
+    # Fake stage duration stats (seconds)
+    stage_durations = [
+        {"stage": "intake", "label": "Intake", "avg_seconds": 8, "p50_seconds": 6, "p95_seconds": 15},
+        {"stage": "worktree_setup", "label": "Worktree", "avg_seconds": 4, "p50_seconds": 3, "p95_seconds": 8},
+        {"stage": "behaviour_translation", "label": "Translate", "avg_seconds": 25, "p50_seconds": 22, "p95_seconds": 45},
+        {"stage": "behaviour_verification", "label": "Verify", "avg_seconds": 12, "p50_seconds": 10, "p95_seconds": 20},
+        {"stage": "implementation", "label": "Implement", "avg_seconds": 120, "p50_seconds": 95, "p95_seconds": 240},
+        {"stage": "e2e_testing", "label": "E2E", "avg_seconds": 45, "p50_seconds": 38, "p95_seconds": 80},
+        {"stage": "review", "label": "Review", "avg_seconds": 65, "p50_seconds": 55, "p95_seconds": 110},
+        {"stage": "rebase", "label": "Rebase", "avg_seconds": 5, "p50_seconds": 4, "p95_seconds": 10},
+        {"stage": "delivery", "label": "Deliver", "avg_seconds": 8, "p50_seconds": 6, "p95_seconds": 15},
+    ]
+
+    # Fake daily trend data (last 14 days)
+    daily_stats = []
+    base = datetime.datetime(2026, 3, 7)
+    for i in range(14):
+        day = base + datetime.timedelta(days=i)
+        daily_stats.append({
+            "date": day.strftime("%Y-%m-%d"),
+            "total": 2 + (i % 3),
+            "completed": 1 + (i % 2),
+            "failed": 1 if i % 5 == 0 else 0,
+            "cost_usd": round(0.3 + (i % 4) * 0.15, 4),
+        })
+
+    return {
+        "total_runs": total,
+        "status_counts": status_counts,
+        "success_rate": completed / (completed + failed) if (completed + failed) > 0 else 0,
+        "total_cost_usd": round(total_cost, 4),
+        "avg_cost_usd": round(avg_cost, 4),
+        "stage_durations": stage_durations,
+        "daily_stats": daily_stats,
+    }
+
+
+@app.get("/api/analytics/cost")
+async def analytics_cost(group_by: str = "stage"):
+    """Aggregate cost data across all completed CRs."""
+    if group_by == "stage":
+        groups = [
+            {"key": "intake", "label": "Intake", "cost_usd": 0.004, "runs": 3, "tokens": 4800},
+            {"key": "behaviour_translation", "label": "Translate", "cost_usd": 0.052, "runs": 3, "tokens": 12900},
+            {"key": "behaviour_verification", "label": "Verify", "cost_usd": 0.009, "runs": 3, "tokens": 6600},
+            {"key": "implementation", "label": "Implement", "cost_usd": 0.312, "runs": 3, "tokens": 72000},
+            {"key": "e2e_testing", "label": "E2E", "cost_usd": 0.084, "runs": 2, "tokens": 20400},
+            {"key": "review", "label": "Review", "cost_usd": 0.188, "runs": 3, "tokens": 63000},
+            {"key": "delivery", "label": "Deliver", "cost_usd": 0.002, "runs": 2, "tokens": 1200},
+        ]
+    elif group_by == "model":
+        groups = [
+            {"key": "claude-sonnet-4-20250514", "label": "Sonnet 4", "cost_usd": 0.42, "runs": 5, "tokens": 98000},
+            {"key": "claude-haiku-4-5-20251001", "label": "Haiku 4.5", "cost_usd": 0.065, "runs": 5, "tokens": 32000},
+            {"key": "claude-sonnet-4-6-20250514", "label": "Sonnet 4.6", "cost_usd": 0.165, "runs": 3, "tokens": 45000},
+        ]
+    elif group_by == "repo":
+        groups = [
+            {"key": "acme-api", "label": "acme-api", "cost_usd": 0.487, "runs": 3, "tokens": 120000},
+            {"key": "acme-web", "label": "acme-web", "cost_usd": 0.163, "runs": 2, "tokens": 55000},
+        ]
+    else:  # day
+        import datetime
+        groups = []
+        base = datetime.datetime(2026, 3, 7)
+        for i in range(14):
+            day = base + datetime.timedelta(days=i)
+            groups.append({
+                "key": day.strftime("%Y-%m-%d"),
+                "label": day.strftime("%b %d"),
+                "cost_usd": round(0.3 + (i % 4) * 0.15, 4),
+                "runs": 2 + (i % 3),
+                "tokens": 15000 + i * 3000,
+            })
+
+    total_cost = sum(g["cost_usd"] for g in groups)
+    return {
+        "group_by": group_by,
+        "total_cost_usd": round(total_cost, 4),
+        "groups": groups,
+    }
+
+
+@app.get("/api/events/global-stream")
+async def global_event_stream(request: Request):
+    """SSE endpoint — streams activity across all active CRs."""
+
+    # Simulate activity from running CRs
+    active_crs = [
+        {"cr_id": "CR-demo-002", "title": "Fix pagination bug in user list", "stage": "implementation"},
+        {"cr_id": "CR-demo-004", "title": "Refactor auth module", "stage": "review"},
+    ]
+
+    fake_global_events = [
+        {"cr_id": "CR-demo-002", "event_type": "stage_entered", "stage": "implementation", "data": {}, "timestamp": time.time()},
+        {"cr_id": "CR-demo-002", "event_type": "agent_started", "stage": "implementation", "data": {"role": "implementation", "repo": "acme-api", "model": "claude-sonnet-4-6-20250514"}, "timestamp": time.time() + 1},
+        {"cr_id": "CR-demo-004", "event_type": "stage_entered", "stage": "review", "data": {}, "timestamp": time.time() + 2},
+        {"cr_id": "CR-demo-004", "event_type": "agent_started", "stage": "review:security_reviewer", "data": {"role": "security_reviewer", "repo": "acme-api", "model": "claude-sonnet-4-6-20250514"}, "timestamp": time.time() + 3},
+        {"cr_id": "CR-demo-002", "event_type": "agent_tool_call", "stage": "implementation", "data": {"role": "implementation", "tool": "write_file", "repo": "acme-api", "type": "call"}, "timestamp": time.time() + 5},
+        {"cr_id": "CR-demo-004", "event_type": "agent_completed", "stage": "review:security_reviewer", "data": {"role": "security_reviewer", "repo": "acme-api", "input_tokens": 8000, "output_tokens": 400, "cost_usd": 0.032}, "timestamp": time.time() + 8},
+        {"cr_id": "CR-demo-002", "event_type": "cost_update", "stage": "implementation", "data": {"total_cost_usd": 0.15, "delta_usd": 0.03}, "timestamp": time.time() + 10},
+    ]
+
+    async def generate() -> AsyncIterator[dict]:
+        # First send current state snapshot
+        for cr in active_crs:
+            yield {
+                "event": "cr_status",
+                "data": json.dumps({"cr_id": cr["cr_id"], "title": cr["title"], "stage": cr["stage"], "status": "running"}),
+            }
+
+        # Then stream events
+        for event in fake_global_events:
+            if await request.is_disconnected():
+                break
+            yield {
+                "event": event["event_type"],
+                "data": json.dumps(event),
+            }
+            await asyncio.sleep(1.5)  # Slower than per-CR stream — more realistic for global view
 
     return EventSourceResponse(generate())
 

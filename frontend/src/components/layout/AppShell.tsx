@@ -39,6 +39,17 @@ export default function AppShell({ children }: { children: ReactNode }) {
             Pipelines
           </Link>
           <Link
+            to="/analytics"
+            data-testid="nav-analytics"
+            className={`no-underline px-3 py-1.5 rounded-md transition-colors ${
+              location.pathname === "/analytics"
+                ? "bg-accent-dim text-accent"
+                : "text-text-muted hover:text-text"
+            }`}
+          >
+            Analytics
+          </Link>
+          <Link
             to="/prompts"
             data-testid="nav-prompts"
             className={`no-underline px-3 py-1.5 rounded-md transition-colors ${

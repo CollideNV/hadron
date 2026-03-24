@@ -258,6 +258,55 @@ export interface AuditLogPage {
   page_size: number;
 }
 
+/* ── Analytics ── */
+
+export interface StageDuration {
+  stage: string;
+  label: string;
+  avg_seconds: number;
+  p50_seconds: number;
+  p95_seconds: number;
+}
+
+export interface DailyStat {
+  date: string;
+  total: number;
+  completed: number;
+  failed: number;
+  cost_usd: number;
+}
+
+export interface AnalyticsSummary {
+  total_runs: number;
+  status_counts: Record<string, number>;
+  success_rate: number;
+  total_cost_usd: number;
+  avg_cost_usd: number;
+  stage_durations: StageDuration[];
+  daily_stats: DailyStat[];
+}
+
+export interface CostGroup {
+  key: string;
+  label: string;
+  cost_usd: number;
+  runs: number;
+  tokens: number;
+}
+
+export interface AnalyticsCost {
+  group_by: string;
+  total_cost_usd: number;
+  groups: CostGroup[];
+}
+
+export interface GlobalCRStatus {
+  cr_id: string;
+  title: string;
+  stage: string;
+  status: string;
+}
+
 export const EVENT_TYPES = [
   "pipeline_started",
   "pipeline_resumed",

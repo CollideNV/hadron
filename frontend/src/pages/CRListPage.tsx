@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useCRList } from "../hooks/useCRList";
 import CRCard from "../components/cr/CRCard";
 import CRCreationDialog from "../components/cr/CRCreationDialog";
+import LiveActivityFeed from "../components/activity/LiveActivityFeed";
 import { BTN_ACCENT } from "../utils/styles";
 
 const STATUSES = ["running", "pending", "paused", "completed", "failed"] as const;
@@ -129,6 +130,11 @@ export default function CRListPage() {
         {runs.map((run) => (
           <CRCard key={run.cr_id} run={run} />
         ))}
+      </div>
+
+      {/* Live activity feed */}
+      <div className="mt-6">
+        <LiveActivityFeed />
       </div>
 
       <CRCreationDialog

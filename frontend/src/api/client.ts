@@ -1,4 +1,4 @@
-import type { AuditLogPage, BackendModels, CRRun, CRRunDetail, ModelSettings, OpenCodeEndpoint, PipelineDefaults, PromptTemplate, PromptTemplateDetail, RawChangeRequest } from "./types";
+import type { AnalyticsCost, AnalyticsSummary, AuditLogPage, BackendModels, CRRun, CRRunDetail, ModelSettings, OpenCodeEndpoint, PipelineDefaults, PromptTemplate, PromptTemplateDetail, RawChangeRequest } from "./types";
 
 const BASE = "/api";
 
@@ -151,4 +151,12 @@ export async function getWorkerLogs(crId: string): Promise<string> {
     throw new Error(`${res.status}: ${text}`);
   }
   return res.text();
+}
+
+export async function getAnalyticsSummary(days = 30): Promise<AnalyticsSummary> {
+  return fetchJSON<AnalyticsSummary>(`/analytics/summary?days=${days}`);
+}
+
+export async function getAnalyticsCost(groupBy = "stage"): Promise<AnalyticsCost> {
+  return fetchJSON<AnalyticsCost>(`/analytics/cost?group_by=${encodeURIComponent(groupBy)}`);
 }
