@@ -194,6 +194,34 @@ class TestAnalyticsCost:
         assert body["total_cost_usd"] == 0
 
     @pytest.mark.asyncio
+    async def test_group_by_model_stub(self):
+        factory, _ = _build_factory([])
+        app = _make_app(factory)
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/analytics/cost?group_by=model")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["group_by"] == "model"
+        assert body["groups"] == []
+        assert body["total_cost_usd"] == 0
+
+    @pytest.mark.asyncio
+    async def test_group_by_day_stub(self):
+        factory, _ = _build_factory([])
+        app = _make_app(factory)
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/analytics/cost?group_by=day")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["group_by"] == "day"
+        assert body["groups"] == []
+        assert body["total_cost_usd"] == 0
+
+    @pytest.mark.asyncio
     async def test_invalid_group_by_rejected(self):
         factory, _ = _build_factory([])
         app = _make_app(factory)
