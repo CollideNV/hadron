@@ -79,7 +79,7 @@ def create_app() -> FastAPI:
     from hadron.controller.routes.settings import router as settings_router
 
     app.include_router(health_router)
-    app.include_router(analytics_router)
+    app.include_router(analytics_router, prefix="/api")
     app.include_router(audit_router, prefix="/api")
     app.include_router(intake_router, prefix="/api")
     app.include_router(events_router, prefix="/api")
