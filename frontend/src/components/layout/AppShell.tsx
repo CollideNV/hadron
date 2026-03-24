@@ -50,6 +50,17 @@ export default function AppShell({ children }: { children: ReactNode }) {
             Prompts
           </Link>
           <Link
+            to="/audit"
+            data-testid="nav-audit"
+            className={`no-underline px-3 py-1.5 rounded-md transition-colors ${
+              location.pathname === "/audit"
+                ? "bg-accent-dim text-accent"
+                : "text-text-muted hover:text-text"
+            }`}
+          >
+            Audit
+          </Link>
+          <Link
             to="/settings"
             data-testid="nav-settings"
             className={`no-underline px-3 py-1.5 rounded-md transition-colors ${

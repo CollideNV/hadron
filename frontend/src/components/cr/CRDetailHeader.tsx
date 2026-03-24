@@ -3,12 +3,14 @@ import CRStatusBadge from "./CRStatusBadge";
 import CostTracker from "../cost/CostTracker";
 import InterventionModal from "../intervention/InterventionModal";
 import ResumeModal from "../intervention/ResumeModal";
+import type { PipelineEvent } from "../../api/types";
 
 interface CRDetailHeaderProps {
   crId: string;
   title: string;
   displayStatus: string;
   costUsd: number;
+  events?: PipelineEvent[];
   showLogs: boolean;
   onToggleLogs: () => void;
 }
@@ -18,6 +20,7 @@ export default function CRDetailHeader({
   title,
   displayStatus,
   costUsd,
+  events,
   showLogs,
   onToggleLogs,
 }: CRDetailHeaderProps) {
@@ -48,7 +51,7 @@ export default function CRDetailHeader({
         >
           Logs
         </button>
-        <CostTracker costUsd={costUsd} />
+        <CostTracker costUsd={costUsd} events={events} />
         <ResumeModal crId={crId} status={displayStatus} />
         <InterventionModal crId={crId} />
       </div>

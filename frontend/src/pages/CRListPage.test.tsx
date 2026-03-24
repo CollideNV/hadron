@@ -61,7 +61,7 @@ describe("CRListPage", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/no pipeline runs yet/i)).toBeInTheDocument();
+      expect(screen.getByText(/no pipeline runs found/i)).toBeInTheDocument();
     });
   });
 

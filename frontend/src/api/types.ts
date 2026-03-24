@@ -230,6 +230,34 @@ export interface OpenCodeEndpoint {
   models: string[];
 }
 
+export interface PipelineDefaults {
+  max_verification_loops: number;
+  max_review_dev_loops: number;
+  max_cost_usd: number;
+  default_backend: string;
+  default_model: string;
+  explore_model: string;
+  plan_model: string;
+  delivery_strategy: string;
+  agent_timeout: number;
+  test_timeout: number;
+}
+
+export interface AuditLogEntry {
+  id: number;
+  cr_id: string | null;
+  action: string;
+  details: Record<string, unknown> | null;
+  timestamp: string;
+}
+
+export interface AuditLogPage {
+  items: AuditLogEntry[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 export const EVENT_TYPES = [
   "pipeline_started",
   "pipeline_resumed",

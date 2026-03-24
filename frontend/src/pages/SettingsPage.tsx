@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import type { BackendModels, ModelSettings, OpenCodeEndpoint } from "../api/types";
-import { getAvailableBackends, getModelSettings, getOpenCodeEndpoints, updateModelSettings, updateOpenCodeEndpoints } from "../api/client";
+import type { BackendModels, ModelSettings, OpenCodeEndpoint, PipelineDefaults } from "../api/types";
+import { getAvailableBackends, getModelSettings, getOpenCodeEndpoints, getPipelineDefaults, updateModelSettings, updateOpenCodeEndpoints, updatePipelineDefaults } from "../api/client";
 import ModelGrid from "../components/settings/ModelGrid";
 import OpenCodeEndpointEditor from "../components/settings/OpenCodeEndpointEditor";
+import PipelineDefaultsEditor from "../components/settings/PipelineDefaultsEditor";
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<ModelSettings | null>(null);
@@ -10,17 +11,21 @@ export default function SettingsPage() {
   const [backends, setBackends] = useState<BackendModels[]>([]);
   const [endpoints, setEndpoints] = useState<OpenCodeEndpoint[]>([]);
   const [savedEndpoints, setSavedEndpoints] = useState<OpenCodeEndpoint[]>([]);
+  const [defaults, setDefaults] = useState<PipelineDefaults | null>(null);
+  const [savedDefaults, setSavedDefaults] = useState<PipelineDefaults | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([getModelSettings(), getAvailableBackends(), getOpenCodeEndpoints()])
-      .then(([s, b, ep]) => {
+    Promise.all([getModelSettings(), getAvailableBackends(), getOpenCodeEndpoints(), getPipelineDefaults()])
+      .then(([s, b, ep, d]) => {
         setSettings(s);
         setSavedSettings(s);
         setBackends(b);
         setEndpoints(ep);
         setSavedEndpoints(ep);
+        setDefaults(d);
+        setSavedDefaults(d);
       })
       .catch((e) => setError(e.message));
   }, []);
@@ -30,13 +35,16 @@ export default function SettingsPage() {
     setSaving(true);
     setError(null);
     try {
-      const [updated] = await Promise.all([
+      const saves: Promise<unknown>[] = [
         updateModelSettings(settings),
         updateOpenCodeEndpoints(endpoints),
-      ]);
+      ];
+      if (defaults) saves.push(updatePipelineDefaults(defaults));
+      const [updated] = await Promise.all(saves) as [ModelSettings, ...unknown[]];
       setSettings(updated);
       setSavedSettings(updated);
       setSavedEndpoints(endpoints);
+      if (defaults) setSavedDefaults(defaults);
       // Re-fetch backends so new endpoints appear in dropdowns
       const b = await getAvailableBackends();
       setBackends(b);
@@ -45,16 +53,18 @@ export default function SettingsPage() {
     } finally {
       setSaving(false);
     }
-  }, [settings, endpoints]);
+  }, [settings, endpoints, defaults]);
 
   const handleDiscard = useCallback(() => {
     if (savedSettings) setSettings(savedSettings);
     setEndpoints(savedEndpoints);
-  }, [savedSettings, savedEndpoints]);
+    if (savedDefaults) setDefaults(savedDefaults);
+  }, [savedSettings, savedEndpoints, savedDefaults]);
 
   const dirty =
     (settings !== null && savedSettings !== null && JSON.stringify(settings) !== JSON.stringify(savedSettings)) ||
-    JSON.stringify(endpoints) !== JSON.stringify(savedEndpoints);
+    JSON.stringify(endpoints) !== JSON.stringify(savedEndpoints) ||
+    (defaults !== null && savedDefaults !== null && JSON.stringify(defaults) !== JSON.stringify(savedDefaults));
 
   if (!settings) {
     return (
@@ -112,6 +122,11 @@ export default function SettingsPage() {
           ))}
         </select>
       </div>
+
+      {/* Pipeline Defaults */}
+      {defaults && (
+        <PipelineDefaultsEditor defaults={defaults} onChange={setDefaults} />
+      )}
 
       {/* OpenCode Endpoints */}
       <OpenCodeEndpointEditor endpoints={endpoints} onChange={setEndpoints} />

@@ -35,6 +35,7 @@ export default function CRDetailPage() {
         title={title}
         displayStatus={displayStatus}
         costUsd={stream.costUsd || crRun?.cost_usd || 0}
+        events={stream.events}
         showLogs={showLogs}
         onToggleLogs={() => setShowLogs(!showLogs)}
       />

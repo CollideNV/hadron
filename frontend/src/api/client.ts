@@ -1,4 +1,4 @@
-import type { BackendModels, CRRun, CRRunDetail, ModelSettings, OpenCodeEndpoint, PromptTemplate, PromptTemplateDetail, RawChangeRequest } from "./types";
+import type { AuditLogPage, BackendModels, CRRun, CRRunDetail, ModelSettings, OpenCodeEndpoint, PipelineDefaults, PromptTemplate, PromptTemplateDetail, RawChangeRequest } from "./types";
 
 const BASE = "/api";
 
@@ -14,8 +14,19 @@ async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
-export async function listPipelines(): Promise<CRRun[]> {
-  return fetchJSON<CRRun[]>("/pipeline/list");
+export interface ListPipelinesParams {
+  search?: string;
+  status?: string;
+  sort?: string;
+}
+
+export async function listPipelines(params: ListPipelinesParams = {}): Promise<CRRun[]> {
+  const qs = new URLSearchParams();
+  if (params.search) qs.set("search", params.search);
+  if (params.status) qs.set("status", params.status);
+  if (params.sort) qs.set("sort", params.sort);
+  const query = qs.toString();
+  return fetchJSON<CRRun[]>(`/pipeline/list${query ? `?${query}` : ""}`);
 }
 
 export async function getPipelineStatus(crId: string): Promise<CRRunDetail> {
@@ -111,6 +122,26 @@ export async function updateOpenCodeEndpoints(endpoints: OpenCodeEndpoint[]): Pr
     method: "PUT",
     body: JSON.stringify(endpoints),
   });
+}
+
+export async function getPipelineDefaults(): Promise<PipelineDefaults> {
+  return fetchJSON<PipelineDefaults>("/settings/pipeline-defaults");
+}
+
+export async function updatePipelineDefaults(defaults: PipelineDefaults): Promise<PipelineDefaults> {
+  return fetchJSON<PipelineDefaults>("/settings/pipeline-defaults", {
+    method: "PUT",
+    body: JSON.stringify(defaults),
+  });
+}
+
+export async function getAuditLog(params: { page?: number; page_size?: number; action?: string } = {}): Promise<AuditLogPage> {
+  const qs = new URLSearchParams();
+  if (params.page) qs.set("page", String(params.page));
+  if (params.page_size) qs.set("page_size", String(params.page_size));
+  if (params.action) qs.set("action", params.action);
+  const query = qs.toString();
+  return fetchJSON<AuditLogPage>(`/audit-log${query ? `?${query}` : ""}`);
 }
 
 export async function getWorkerLogs(crId: string): Promise<string> {

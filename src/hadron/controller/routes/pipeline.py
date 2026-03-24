@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 
 from hadron.controller.dependencies import (
     get_event_bus,
@@ -36,13 +36,39 @@ def _extract_title(cr_run: CRRun) -> str:
 
 @router.get("/pipeline/list")
 async def list_pipelines(
+    search: str | None = None,
+    status: str | None = None,
+    sort: str = "newest",
     session_factory: Any = Depends(get_session_factory),
 ) -> list[dict]:
-    """List all pipeline runs, ordered by creation time (newest first)."""
-    async with session_factory() as session:
-        result = await session.execute(
-            select(CRRun).order_by(CRRun.created_at.desc()).limit(100)
+    """List pipeline runs with optional search, status filter, and sort."""
+    query = select(CRRun)
+
+    if status:
+        statuses = [s.strip() for s in status.split(",") if s.strip()]
+        if statuses:
+            query = query.where(CRRun.status.in_(statuses))
+
+    if search:
+        pattern = f"%{search}%"
+        query = query.where(
+            or_(
+                CRRun.cr_id.ilike(pattern),
+                CRRun.raw_cr_json["title"].astext.ilike(pattern),
+            )
         )
+
+    if sort == "oldest":
+        query = query.order_by(CRRun.created_at.asc())
+    elif sort == "cost":
+        query = query.order_by(CRRun.cost_usd.desc())
+    else:
+        query = query.order_by(CRRun.created_at.desc())
+
+    query = query.limit(100)
+
+    async with session_factory() as session:
+        result = await session.execute(query)
         runs = result.scalars().all()
         return [
             {

@@ -23,6 +23,11 @@ test.describe("Navigation", () => {
     await page.goto("/");
     await expect(page.getByText("Pipeline Runs")).toBeVisible();
 
+    // Navigate to Audit
+    await page.getByTestId("nav-audit").click();
+    await expect(page).toHaveURL("/audit");
+    await expect(page.getByText("Audit Log")).toBeVisible();
+
     // Navigate to Settings
     await page.getByTestId("nav-settings").click();
     await expect(page).toHaveURL("/settings");
@@ -262,6 +267,41 @@ test.describe("Logs Panel", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Cost Dashboard
+// ---------------------------------------------------------------------------
+
+test.describe("Cost Dashboard", () => {
+  test("clicking cost tracker opens the cost breakdown modal", async ({ page }) => {
+    await openCR(page);
+    await page.getByTestId("cost-tracker").click();
+    await expect(page.getByText("Cost Breakdown")).toBeVisible();
+    await expect(page.getByText("Total Pipeline Cost")).toBeVisible();
+  });
+
+  test("cost dashboard shows by-stage breakdown", async ({ page }) => {
+    await openCR(page);
+    await page.getByTestId("cost-tracker").click();
+    await expect(page.getByText("By Stage")).toBeVisible();
+    await expect(page.getByText("Implement")).toBeVisible();
+    await expect(page.getByText("Review")).toBeVisible();
+  });
+
+  test("cost dashboard shows by-model breakdown", async ({ page }) => {
+    await openCR(page);
+    await page.getByTestId("cost-tracker").click();
+    await expect(page.getByText("By Model")).toBeVisible();
+  });
+
+  test("cost dashboard closes on escape", async ({ page }) => {
+    await openCR(page);
+    await page.getByTestId("cost-tracker").click();
+    await expect(page.getByText("Cost Breakdown")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByText("Cost Breakdown")).not.toBeVisible();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Settings Page
 // ---------------------------------------------------------------------------
 
@@ -271,6 +311,131 @@ test.describe("Settings Page", () => {
     await expect(page.getByText("Model Settings")).toBeVisible();
     // Should show backend/model grid (dummy server returns settings data)
     await expect(page.getByText("Default Backend")).toBeVisible();
+  });
+
+  test("shows pipeline defaults section", async ({ page }) => {
+    await page.goto("/settings");
+    await expect(page.getByText("Pipeline Defaults")).toBeVisible();
+    await expect(page.getByTestId("defaults-max-cost-usd")).toBeVisible();
+    await expect(page.getByTestId("defaults-delivery-strategy")).toBeVisible();
+    await expect(page.getByTestId("defaults-agent-timeout")).toBeVisible();
+  });
+
+  test("editing a pipeline default enables save button", async ({ page }) => {
+    await page.goto("/settings");
+    await expect(page.getByTestId("defaults-max-cost-usd")).toBeVisible();
+
+    // Save button should be disabled initially
+    const saveBtn = page.getByRole("button", { name: "Save" });
+    await expect(saveBtn).toBeDisabled();
+
+    // Change a value
+    await page.getByTestId("defaults-max-cost-usd").fill("25");
+    await expect(saveBtn).toBeEnabled();
+
+    // Discard should also appear
+    await expect(page.getByRole("button", { name: "Discard" })).toBeVisible();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Audit Log Page
+// ---------------------------------------------------------------------------
+
+test.describe("Audit Log Page", () => {
+  test("navigates to audit log from nav", async ({ page }) => {
+    await page.goto("/");
+    await page.getByTestId("nav-audit").click();
+    await expect(page).toHaveURL("/audit");
+    await expect(page.getByText("Audit Log")).toBeVisible();
+  });
+
+  test("displays audit entries with timestamps and actions", async ({ page }) => {
+    await page.goto("/audit");
+    await expect(page.getByText("pipeline triggered")).toBeVisible();
+    await expect(page.getByText("model settings updated")).toBeVisible();
+    await expect(page.getByText("pipeline defaults updated")).toBeVisible();
+  });
+
+  test("filter by action type", async ({ page }) => {
+    await page.goto("/audit");
+    await page.getByTestId("audit-filter-pipeline_triggered").click();
+    // Only pipeline_triggered entries should be visible
+    await expect(page.getByText("pipeline triggered").first()).toBeVisible();
+    // Other action types should not be visible
+    await expect(page.getByText("model settings updated")).not.toBeVisible();
+  });
+
+  test("clear filter shows all entries", async ({ page }) => {
+    await page.goto("/audit");
+    // Apply filter
+    await page.getByTestId("audit-filter-pipeline_triggered").click();
+    await expect(page.getByText("model settings updated")).not.toBeVisible();
+
+    // Clear filter
+    await page.getByTestId("audit-filter-all").click();
+    await expect(page.getByText("model settings updated")).toBeVisible();
+  });
+
+  test("CR ID links to CR detail page", async ({ page }) => {
+    await page.goto("/audit");
+    await page.getByText("CR-demo-001").first().click();
+    await expect(page).toHaveURL(/\/cr\/CR-demo-001/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CR List Search & Filters
+// ---------------------------------------------------------------------------
+
+test.describe("CR List Search & Filters", () => {
+  test("search bar filters by title", async ({ page }) => {
+    await page.goto("/");
+    // Should show multiple CRs initially
+    await expect(page.getByText("5 runs")).toBeVisible();
+
+    // Search for "auth"
+    await page.getByTestId("cr-search").fill("auth");
+    // Wait for debounce + results
+    await expect(page.getByText("Add user authentication with JWT tokens")).toBeVisible();
+    await expect(page.getByText("Refactor auth module")).toBeVisible();
+    await expect(page.getByText("Fix pagination bug")).not.toBeVisible();
+  });
+
+  test("status filter chips filter by status", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByText("5 runs")).toBeVisible();
+
+    await page.getByTestId("status-filter-failed").click();
+    // Only failed CR should be visible
+    await expect(page.getByText("Add dark mode support")).toBeVisible();
+    await expect(page.getByText("Fix pagination bug")).not.toBeVisible();
+  });
+
+  test("multiple status filters combine", async ({ page }) => {
+    await page.goto("/");
+    await page.getByTestId("status-filter-running").click();
+    await page.getByTestId("status-filter-paused").click();
+
+    await expect(page.getByText("Fix pagination bug")).toBeVisible();
+    await expect(page.getByText("Refactor auth module")).toBeVisible();
+    await expect(page.getByText("Add dark mode support")).not.toBeVisible();
+  });
+
+  test("sort by highest cost", async ({ page }) => {
+    await page.goto("/");
+    await page.getByTestId("cr-sort").selectOption("cost");
+
+    // First CR card should be the most expensive one
+    const cards = page.locator("[data-testid^='cr-card-']");
+    await expect(cards.first()).toContainText("Add user authentication");
+  });
+
+  test("empty state with filters shows helpful message", async ({ page }) => {
+    await page.goto("/");
+    await page.getByTestId("cr-search").fill("zzz-nonexistent-query");
+    await expect(page.getByText("No pipeline runs found")).toBeVisible();
+    await expect(page.getByText("Try adjusting")).toBeVisible();
   });
 });
 

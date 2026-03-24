@@ -1,4 +1,4 @@
-"""Model settings management routes."""
+"""Model and pipeline settings management routes."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hadron.agent.cost import _MODEL_COSTS
+from hadron.config.defaults import PIPELINE_DEFAULTS
 from hadron.controller.dependencies import get_session_factory
 from hadron.db.models import AuditLog, PipelineSetting
 
@@ -275,3 +276,80 @@ async def update_opencode_endpoints(
         await session.commit()
 
     return body
+
+
+# ---------------------------------------------------------------------------
+# Pipeline Defaults
+# ---------------------------------------------------------------------------
+
+
+class PipelineDefaultsResponse(BaseModel):
+    max_verification_loops: int
+    max_review_dev_loops: int
+    max_cost_usd: float
+    default_backend: str
+    default_model: str
+    explore_model: str
+    plan_model: str
+    delivery_strategy: str
+    agent_timeout: int
+    test_timeout: int
+
+
+class PipelineDefaultsUpdate(BaseModel):
+    max_verification_loops: int
+    max_review_dev_loops: int
+    max_cost_usd: float
+    default_backend: str
+    default_model: str
+    explore_model: str
+    plan_model: str
+    delivery_strategy: str
+    agent_timeout: int
+    test_timeout: int
+
+
+@router.get("/settings/pipeline-defaults")
+async def get_pipeline_defaults(
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> PipelineDefaultsResponse:
+    """Return current pipeline defaults (falls back to hardcoded defaults)."""
+    values = {**PIPELINE_DEFAULTS}
+
+    async with session_factory() as session:
+        result = await session.execute(
+            select(PipelineSetting).where(PipelineSetting.key == "pipeline_defaults")
+        )
+        row = result.scalar_one_or_none()
+        if row and isinstance(row.value_json, dict):
+            values.update(row.value_json)
+
+    return PipelineDefaultsResponse(**values)
+
+
+@router.put("/settings/pipeline-defaults")
+async def update_pipeline_defaults(
+    body: PipelineDefaultsUpdate,
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> PipelineDefaultsResponse:
+    """Update pipeline defaults. Writes AuditLog entry."""
+    values = body.model_dump()
+
+    async with session_factory() as session:
+        result = await session.execute(
+            select(PipelineSetting).where(PipelineSetting.key == "pipeline_defaults")
+        )
+        row = result.scalar_one_or_none()
+        if row:
+            row.value_json = values
+        else:
+            session.add(PipelineSetting(key="pipeline_defaults", value_json=values))
+
+        session.add(AuditLog(
+            action="pipeline_defaults_updated",
+            details=values,
+        ))
+
+        await session.commit()
+
+    return PipelineDefaultsResponse(**values)

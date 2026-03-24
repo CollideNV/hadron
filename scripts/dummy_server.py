@@ -302,7 +302,7 @@ def build_events() -> list[dict]:
     add("agent_started", "intake", {"role": "intake_structurer", "repo": REPO, "model": "claude-haiku-4-5-20251001"})
     add("agent_tool_call", "intake", {"role": "intake_structurer", "tool": "json_output", "repo": REPO, "type": "call"})
     add("agent_output", "intake", {"role": "intake_structurer", "repo": REPO, "text": "I've analyzed the change request and extracted the structured fields. The CR asks for JWT-based user authentication with login, token verification, and protected endpoints."})
-    add("agent_completed", "intake", {"role": "intake_structurer", "repo": REPO, "input_tokens": 1200, "output_tokens": 350, "cost_usd": 0.002})
+    add("agent_completed", "intake", {"role": "intake_structurer", "repo": REPO, "input_tokens": 1200, "output_tokens": 350, "cost_usd": 0.002, "model": "claude-haiku-4-5-20251001", "model_breakdown": {"claude-haiku-4-5-20251001": {"input_tokens": 1200, "output_tokens": 350, "cost_usd": 0.002, "throttle_count": 0, "throttle_seconds": 0, "api_calls": 1}}})
     add("cost_update", "intake", {"total_cost_usd": 0.002, "delta_usd": 0.002})
     add("stage_completed", "intake")
 
@@ -318,7 +318,7 @@ def build_events() -> list[dict]:
     add("agent_tool_call", "behaviour_translation", {"role": "spec_writer", "tool": "write_file", "repo": REPO, "type": "call", "input": {"path": "features/auth.feature"}})
     add("agent_tool_call", "behaviour_translation", {"role": "spec_writer", "tool": "write_file", "repo": REPO, "type": "result", "result_snippet": "Wrote features/auth.feature (42 lines)"})
     add("agent_output", "behaviour_translation", {"role": "spec_writer", "repo": REPO, "text": "I've written the feature specification for user authentication. The spec covers:\n\n1. **Successful login** — POST valid credentials, receive JWT\n2. **Invalid credentials** — POST wrong password, get 401\n3. **Protected endpoint** — GET /users/me with valid token\n4. **Expired token** — GET with expired token, get 401\n\nThe scenarios use Background for shared setup and cover the core auth flows."})
-    add("agent_completed", "behaviour_translation", {"role": "spec_writer", "repo": REPO, "input_tokens": 3500, "output_tokens": 800, "cost_usd": 0.018})
+    add("agent_completed", "behaviour_translation", {"role": "spec_writer", "repo": REPO, "input_tokens": 3500, "output_tokens": 800, "cost_usd": 0.018, "model": "claude-sonnet-4-20250514", "model_breakdown": {"claude-sonnet-4-20250514": {"input_tokens": 3500, "output_tokens": 800, "cost_usd": 0.018, "throttle_count": 0, "throttle_seconds": 0, "api_calls": 2}}})
     add("cost_update", "behaviour_translation", {"total_cost_usd": 0.020, "delta_usd": 0.018})
 
     # Stage diff for behaviour translation
@@ -380,7 +380,7 @@ def build_events() -> list[dict]:
     add("agent_tool_call", "implementation", {"role": "implementation", "tool": "run_tests", "repo": REPO, "type": "call", "input": {"command": "pytest tests/test_auth.py -v"}})
     add("agent_tool_call", "implementation", {"role": "implementation", "tool": "run_tests", "repo": REPO, "type": "result", "result_snippet": "4 passed in 0.82s"})
     add("agent_output", "implementation", {"role": "implementation", "repo": REPO, "text": "All 4 tests pass. I've implemented:\n\n- **JWT module** (`src/auth/jwt.py`): `create_access_token()` and `verify_token()` using PyJWT\n- **User storage** (`src/auth/users.py`): in-memory user DB with SHA256 password hashing\n- **Auth router** (`src/auth/router.py`): POST `/auth/login` and GET `/auth/users/me`\n- **Tests** (`tests/test_auth.py`): login success, invalid creds, protected endpoint, missing token"})
-    add("agent_completed", "implementation", {"role": "implementation", "repo": REPO, "input_tokens": 15000, "output_tokens": 3200, "cost_usd": 0.082, "tool_calls_count": 14, "round_count": 8, "conversation_key": f"{CR_ID}:implementation:{REPO}"})
+    add("agent_completed", "implementation", {"role": "implementation", "repo": REPO, "input_tokens": 15000, "output_tokens": 3200, "cost_usd": 0.082, "tool_calls_count": 14, "round_count": 8, "conversation_key": f"{CR_ID}:implementation:{REPO}", "model": "claude-sonnet-4-20250514", "model_breakdown": {"claude-sonnet-4-20250514": {"input_tokens": 12000, "output_tokens": 2800, "cost_usd": 0.068, "throttle_count": 0, "throttle_seconds": 0, "api_calls": 8}, "claude-haiku-4-5-20251001": {"input_tokens": 3000, "output_tokens": 400, "cost_usd": 0.014, "throttle_count": 0, "throttle_seconds": 0, "api_calls": 3}}})
     add("phase_completed", "implementation", {"role": "implementation", "repo": REPO, "phase": "act"})
     add("cost_update", "implementation", {"total_cost_usd": 0.118, "delta_usd": 0.095})
 
@@ -531,9 +531,31 @@ ALL_EVENTS = build_events()
 # ---------------------------------------------------------------------------
 
 
+DUMMY_RUNS = [
+    CR_RUN,
+    {**CR_RUN, "cr_id": "CR-demo-002", "title": "Fix pagination bug in user list", "status": "running", "cost_usd": 0.12, "error": None, "created_at": "2026-03-18T10:00:00Z", "updated_at": "2026-03-18T10:05:00Z", "repos": []},
+    {**CR_RUN, "cr_id": "CR-demo-003", "title": "Add dark mode support", "status": "failed", "cost_usd": 0.08, "error": "Max cost exceeded", "created_at": "2026-03-16T14:00:00Z", "updated_at": "2026-03-16T14:10:00Z", "repos": []},
+    {**CR_RUN, "cr_id": "CR-demo-004", "title": "Refactor auth module", "status": "paused", "cost_usd": 0.25, "error": None, "created_at": "2026-03-19T08:00:00Z", "updated_at": "2026-03-19T08:03:00Z", "repos": []},
+    {**CR_RUN, "cr_id": "CR-demo-005", "title": "Add rate limiting to API", "status": "pending", "cost_usd": 0.0, "error": None, "created_at": "2026-03-20T09:00:00Z", "updated_at": "2026-03-20T09:00:00Z", "repos": []},
+]
+
+
 @app.get("/api/pipeline/list")
-async def list_pipelines():
-    return [CR_RUN]
+async def list_pipelines(search: str | None = None, status: str | None = None, sort: str = "newest"):
+    results = list(DUMMY_RUNS)
+    if search:
+        s = search.lower()
+        results = [r for r in results if s in r["title"].lower() or s in r["cr_id"].lower()]
+    if status:
+        statuses = [x.strip() for x in status.split(",") if x.strip()]
+        results = [r for r in results if r["status"] in statuses]
+    if sort == "oldest":
+        results = sorted(results, key=lambda r: r["created_at"])
+    elif sort == "cost":
+        results = sorted(results, key=lambda r: r["cost_usd"], reverse=True)
+    else:
+        results = sorted(results, key=lambda r: r["created_at"], reverse=True)
+    return results
 
 
 @app.get("/api/pipeline/{cr_id}")
@@ -595,6 +617,46 @@ async def get_model_settings():
 @app.get("/api/settings/backends")
 async def get_backends():
     return [{"name": "anthropic", "display_name": "Anthropic", "models": ["claude-sonnet-4-6-20250514", "claude-haiku-4-5-20251001"]}]
+
+
+@app.get("/api/settings/pipeline-defaults")
+async def get_pipeline_defaults():
+    return {
+        "max_verification_loops": 3,
+        "max_review_dev_loops": 3,
+        "max_cost_usd": 10.0,
+        "default_backend": "claude",
+        "default_model": "claude-sonnet-4-6",
+        "explore_model": "claude-haiku-4-5-20251001",
+        "plan_model": "claude-opus-4-6",
+        "delivery_strategy": "self_contained",
+        "agent_timeout": 300,
+        "test_timeout": 120,
+    }
+
+
+@app.put("/api/settings/pipeline-defaults")
+async def update_pipeline_defaults(request: Request):
+    body = await request.json()
+    return body
+
+
+@app.get("/api/audit-log")
+async def get_audit_log(page: int = 1, page_size: int = 50, action: str | None = None):
+    fake_entries = [
+        {"id": 1, "cr_id": "CR-demo-001", "action": "pipeline_triggered", "details": {"source": "api"}, "timestamp": "2026-03-17T09:00:00Z"},
+        {"id": 2, "cr_id": None, "action": "model_settings_updated", "details": {"stages": ["implementation", "review:security_reviewer"]}, "timestamp": "2026-03-17T08:30:00Z"},
+        {"id": 3, "cr_id": None, "action": "pipeline_defaults_updated", "details": {"max_cost_usd": 15.0}, "timestamp": "2026-03-17T08:00:00Z"},
+        {"id": 4, "cr_id": None, "action": "prompt_updated", "details": {"role": "spec_writer"}, "timestamp": "2026-03-16T14:00:00Z"},
+        {"id": 5, "cr_id": "CR-demo-002", "action": "pipeline_triggered", "details": {"source": "api"}, "timestamp": "2026-03-18T10:00:00Z"},
+        {"id": 6, "cr_id": None, "action": "opencode_endpoints_updated", "details": {"slugs": ["local-ollama"]}, "timestamp": "2026-03-15T11:00:00Z"},
+    ]
+    if action:
+        fake_entries = [e for e in fake_entries if e["action"] == action]
+    total = len(fake_entries)
+    start = (page - 1) * page_size
+    items = fake_entries[start:start + page_size]
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 @app.get("/api/settings/opencode-endpoints")

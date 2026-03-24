@@ -5,6 +5,7 @@ import CRListPage from "./pages/CRListPage";
 import CRDetailPage from "./pages/CRDetailPage";
 import PromptsPage from "./pages/PromptsPage";
 import SettingsPage from "./pages/SettingsPage";
+import AuditLogPage from "./pages/AuditLogPage";
 
 export default function App() {
   return (
@@ -14,6 +15,7 @@ export default function App() {
         <Route path="/cr/:crId/:stage?" element={<ErrorBoundary><CRDetailPage /></ErrorBoundary>} />
         <Route path="/prompts" element={<PromptsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/audit" element={<AuditLogPage />} />
         <Route path="/new" element={<Navigate to="/" replace />} />
       </Routes>
     </AppShell>
