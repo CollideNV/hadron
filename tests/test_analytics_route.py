@@ -29,8 +29,6 @@ def _build_factory(rows):
     """Build a mock session factory where execute returns rows via .all()."""
     result_mock = MagicMock()
     result_mock.all.return_value = rows
-    # Make result iterable (used by analytics_cost repo branch)
-    result_mock.__iter__ = MagicMock(return_value=iter(rows))
 
     session = AsyncMock()
     session.execute = AsyncMock(return_value=result_mock)
@@ -94,6 +92,40 @@ class TestAnalyticsSummary:
 
         assert resp.status_code == 200
         session.execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_days_validation_rejects_zero(self):
+        factory, _ = _build_factory([])
+        app = _make_app(factory)
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/analytics/summary?days=0")
+
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_full_success_rate(self):
+        rows = [SimpleNamespace(status="completed", cnt=10, cost=5.0)]
+        factory, _ = _build_factory(rows)
+        app = _make_app(factory)
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/analytics/summary")
+
+        body = resp.json()
+        assert body["success_rate"] == 1.0
+
+    @pytest.mark.asyncio
+    async def test_zero_success_rate(self):
+        rows = [SimpleNamespace(status="failed", cnt=3, cost=1.0)]
+        factory, _ = _build_factory(rows)
+        app = _make_app(factory)
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/analytics/summary")
+
+        body = resp.json()
+        assert body["success_rate"] == 0.0
 
 
 # ---------------------------------------------------------------------------
