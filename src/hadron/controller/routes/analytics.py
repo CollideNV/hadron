@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -26,8 +27,8 @@ class AnalyticsSummaryResponse(BaseModel):
     success_rate: float
     total_cost_usd: float
     avg_cost_usd: float
-    stage_durations: list
-    daily_stats: list
+    stage_durations: list[dict[str, object]]
+    daily_stats: list[dict[str, object]]
 
 
 class CostGroupResponse(BaseModel):
@@ -94,7 +95,7 @@ async def analytics_summary(
 
 @router.get("/analytics/cost")
 async def analytics_cost(
-    group_by: str = "stage",
+    group_by: Literal["stage", "model", "repo", "day"] = "stage",
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> AnalyticsCostResponse:
     """Aggregate cost data across completed CRs."""

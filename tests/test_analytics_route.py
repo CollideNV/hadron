@@ -104,6 +104,16 @@ class TestAnalyticsSummary:
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
+    async def test_days_validation_rejects_over_365(self):
+        factory, _ = _build_factory([])
+        app = _make_app(factory)
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/analytics/summary?days=366")
+
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
     async def test_full_success_rate(self):
         rows = [SimpleNamespace(status="completed", cnt=10, cost=5.0)]
         factory, _ = _build_factory(rows)
@@ -182,3 +192,13 @@ class TestAnalyticsCost:
         body = resp.json()
         assert body["groups"] == []
         assert body["total_cost_usd"] == 0
+
+    @pytest.mark.asyncio
+    async def test_invalid_group_by_rejected(self):
+        factory, _ = _build_factory([])
+        app = _make_app(factory)
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/analytics/cost?group_by=invalid")
+
+        assert resp.status_code == 422
