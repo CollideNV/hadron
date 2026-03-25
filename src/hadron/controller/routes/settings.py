@@ -118,8 +118,11 @@ async def _build_backends_list(
     return backends
 
 
-def _parse_stages(raw: dict) -> dict[str, StageConfig]:
+def _parse_stages(raw: dict | str) -> dict[str, StageConfig]:
     """Parse raw JSON stage_models into StageConfig dict."""
+    import json
+    if isinstance(raw, str):
+        raw = json.loads(raw)
     result: dict[str, StageConfig] = {}
     for stage_name, phase_dict in raw.items():
         if not isinstance(phase_dict, dict):
@@ -153,7 +156,11 @@ async def get_model_settings(
         )
         for setting in result.scalars():
             if setting.key == "default_backend":
-                default_backend = setting.value_json.get("backend", _DEFAULT_BACKEND)
+                val = setting.value_json
+                if isinstance(val, dict):
+                    default_backend = val.get("backend", _DEFAULT_BACKEND)
+                elif isinstance(val, str):
+                    default_backend = val
             elif setting.key == "stage_models":
                 stages_raw = setting.value_json
 
