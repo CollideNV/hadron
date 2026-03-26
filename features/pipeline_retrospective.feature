@@ -9,7 +9,7 @@ Feature: Retrospective
     Then it logs a summary of the pipeline run
     And a pipeline completed event is emitted with final stats
 
-  Scenario: Record final status in database
+  Scenario: Record final status and cost in database
     When a worker completes
     Then the per-repo run status is updated to the worker's final status
     And the final cost is stored in the per-repo run record
