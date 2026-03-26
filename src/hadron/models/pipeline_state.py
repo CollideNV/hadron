@@ -180,4 +180,5 @@ class PipelineState(TypedDict, total=False):
     current_stage: str
     status: str  # running | paused | completed | failed
     error: str | None
+    pause_reason: str | None  # budget_exceeded | circuit_breaker | rebase_conflict | error
     stage_history: Annotated[list[dict[str, Any]], operator.add]

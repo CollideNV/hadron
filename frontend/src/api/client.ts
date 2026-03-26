@@ -62,6 +62,19 @@ export async function resumePipeline(
   });
 }
 
+export async function sendCIResult(
+  crId: string,
+  repoName: string,
+  passed: boolean,
+  buildUrl = "",
+  logTail = "",
+): Promise<{ status: string; cr_id: string; ci_passed: boolean }> {
+  return fetchJSON(`/pipeline/${crId}/ci-result`, {
+    method: "POST",
+    body: JSON.stringify({ repo_name: repoName, passed, build_url: buildUrl, log_tail: logTail }),
+  });
+}
+
 export async function sendNudge(
   crId: string,
   role: string,

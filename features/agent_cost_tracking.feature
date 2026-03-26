@@ -46,6 +46,34 @@ Feature: Agent Cost Tracking
     When a conditional edge evaluates
     Then the pipeline routes based on normal logic (not paused)
 
+  # --- Pause reasons ---
+
+  Scenario: Paused node infers and records pause reason
+    When the pipeline routes to the paused node
+    Then the pause_reason field is set in the pipeline state
+    And a pipeline_paused event is emitted with the reason
+
+  Scenario: Budget exceeded pause reason
+    Given the pipeline cost has exceeded max_cost_usd
+    When the paused node executes
+    Then the pause_reason is "budget_exceeded"
+
+  Scenario: Circuit breaker pause reason
+    Given a loop count has reached its configured maximum
+    When the paused node executes
+    Then the pause_reason is "circuit_breaker"
+
+  Scenario: Rebase conflict pause reason
+    Given the rebase resulted in unresolvable conflicts
+    When the paused node executes
+    Then the pause_reason is "rebase_conflict"
+
+  Scenario: Error pause reason
+    Given a pipeline node raised an unhandled exception
+    When the paused node executes
+    Then the pause_reason is "error"
+    And the error field contains the exception message
+
   # --- Throttle tracking ---
 
   Scenario: Throttle time tracked across phases and stages

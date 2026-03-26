@@ -447,9 +447,9 @@ def build_events() -> list[dict]:
 
     add("cost_update", "review", {"total_cost_usd": 0.168, "delta_usd": 0.050})
 
-    # Review findings
-    add("review_finding", "review", {"repo": REPO, "severity": "major", "category": "security", "message": "SECRET_KEY is hardcoded. Use environment variable.", "file": "src/auth/jwt.py", "line": 8, "review_round": 0})
-    add("review_finding", "review", {"repo": REPO, "severity": "minor", "category": "quality", "message": "Consider using bcrypt instead of SHA256 for password hashing.", "file": "src/auth/users.py", "line": 17, "review_round": 0})
+    # Review findings (structured with reviewer field)
+    add("review_finding", "review", {"repo": REPO, "severity": "major", "category": "security", "message": "SECRET_KEY is hardcoded. Use environment variable.", "file": "src/auth/jwt.py", "line": 8, "reviewer": "security_reviewer", "review_round": 0})
+    add("review_finding", "review", {"repo": REPO, "severity": "minor", "category": "quality", "message": "Consider using bcrypt instead of SHA256 for password hashing.", "file": "src/auth/users.py", "line": 17, "reviewer": "quality_reviewer", "review_round": 0})
     add("stage_completed", "review", {"all_passed": False})
 
     # --- Rework (review round 1) ---
@@ -489,7 +489,7 @@ def build_events() -> list[dict]:
     add("agent_output", "review:spec_compliance_reviewer", {"role": "spec_compliance_reviewer", "repo": REPO, "text": '```json\n{"findings": []}\n```'})
     add("agent_completed", "review:spec_compliance_reviewer", {"role": "spec_compliance_reviewer", "repo": REPO, "input_tokens": 6000, "output_tokens": 150, "cost_usd": 0.007, "loop_iteration": 1})
     add("cost_update", "review", {"total_cost_usd": 0.234, "delta_usd": 0.044})
-    add("review_finding", "review", {"repo": REPO, "severity": "info", "category": "quality", "message": "SHA256 hashing for passwords is acceptable for the demo scope.", "file": "src/auth/users.py", "line": 17, "review_round": 1})
+    add("review_finding", "review", {"repo": REPO, "severity": "info", "category": "quality", "message": "SHA256 hashing for passwords is acceptable for the demo scope.", "file": "src/auth/users.py", "line": 17, "reviewer": "quality_reviewer", "review_round": 1})
 
     add("stage_diff", "review", {
         "repo": REPO,
@@ -535,7 +535,9 @@ ALL_EVENTS = build_events()
 DUMMY_RUNS = [
     CR_RUN,
     {**CR_RUN, "cr_id": "CR-demo-002", "title": "Fix pagination bug in user list", "status": "running", "cost_usd": 0.12, "error": None, "created_at": "2026-03-18T10:00:00Z", "updated_at": "2026-03-18T10:05:00Z", "repos": []},
-    {**CR_RUN, "cr_id": "CR-demo-003", "title": "Add dark mode support", "status": "failed", "cost_usd": 0.08, "error": "Max cost exceeded", "created_at": "2026-03-16T14:00:00Z", "updated_at": "2026-03-16T14:10:00Z", "repos": []},
+    {**CR_RUN, "cr_id": "CR-demo-003", "title": "Add dark mode support", "status": "paused", "cost_usd": 10.12, "error": "Budget exceeded ($10.12 >= $10.00 max)", "created_at": "2026-03-16T14:00:00Z", "updated_at": "2026-03-16T14:10:00Z", "repos": [
+        {"repo_name": "acme-web", "repo_url": "https://github.com/acme/acme-web.git", "status": "paused", "branch_name": "hadron/CR-demo-003", "pr_url": None, "cost_usd": 10.12, "error": None},
+    ]},
     {**CR_RUN, "cr_id": "CR-demo-004", "title": "Refactor auth module", "status": "paused", "cost_usd": 0.25, "error": None, "created_at": "2026-03-19T08:00:00Z", "updated_at": "2026-03-19T08:03:00Z", "repos": []},
     {**CR_RUN, "cr_id": "CR-demo-005", "title": "Add rate limiting to API", "status": "pending", "cost_usd": 0.0, "error": None, "created_at": "2026-03-20T09:00:00Z", "updated_at": "2026-03-20T09:00:00Z", "repos": []},
 ]
@@ -580,6 +582,13 @@ async def intervene(cr_id: str):
 @app.post("/api/pipeline/{cr_id}/resume")
 async def resume(cr_id: str):
     return {"status": "resumed", "cr_id": cr_id, "overrides": {}}
+
+
+@app.post("/api/pipeline/{cr_id}/ci-result")
+async def ci_result(cr_id: str, request: Request):
+    body = await request.json()
+    passed = body.get("passed", True)
+    return {"status": "resumed" if passed else "resumed_for_fix", "cr_id": cr_id, "repo_name": body.get("repo_name", ""), "ci_passed": passed}
 
 
 @app.post("/api/pipeline/{cr_id}/nudge")
@@ -904,6 +913,7 @@ async def global_event_stream(request: Request):
         {"cr_id": "CR-demo-004", "event_type": "stage_entered", "stage": "review", "data": {}, "timestamp": time.time() + 2},
         {"cr_id": "CR-demo-004", "event_type": "agent_started", "stage": "review:security_reviewer", "data": {"role": "security_reviewer", "repo": "acme-api", "model": "claude-sonnet-4-6-20250514"}, "timestamp": time.time() + 3},
         {"cr_id": "CR-demo-002", "event_type": "agent_tool_call", "stage": "implementation", "data": {"role": "implementation", "tool": "write_file", "repo": "acme-api", "type": "call"}, "timestamp": time.time() + 5},
+        {"cr_id": "CR-demo-003", "event_type": "pipeline_paused", "stage": "implementation", "data": {"reason": "budget_exceeded", "error": "Budget exceeded ($10.12 >= $10.00 max)"}, "timestamp": time.time() + 6},
         {"cr_id": "CR-demo-004", "event_type": "agent_completed", "stage": "review:security_reviewer", "data": {"role": "security_reviewer", "repo": "acme-api", "input_tokens": 8000, "output_tokens": 400, "cost_usd": 0.032}, "timestamp": time.time() + 8},
         {"cr_id": "CR-demo-002", "event_type": "cost_update", "stage": "implementation", "data": {"total_cost_usd": 0.15, "delta_usd": 0.03}, "timestamp": time.time() + 10},
     ]

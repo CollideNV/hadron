@@ -523,3 +523,146 @@ class TestResumePipeline:
 
         assert resp.status_code == 409
         assert "running" in resp.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# POST /api/pipeline/{cr_id}/ci-result
+# ---------------------------------------------------------------------------
+
+
+class TestCIResult:
+    @pytest.mark.asyncio
+    async def test_ci_passed_resumes(self) -> None:
+        cr = _make_cr("cr-1", status="paused")
+        repo = _make_repo("cr-1", "backend", status="paused")
+
+        # 4 context managers: CR lookup, repo lookup, status updates, spawn
+        sessions = []
+
+        # Session 1: CR lookup
+        cr_result = MagicMock()
+        cr_result.scalar_one_or_none.return_value = cr
+        s1 = AsyncMock()
+        s1.execute = AsyncMock(return_value=cr_result)
+        sessions.append(s1)
+
+        # Session 2: Repo lookup
+        repo_result = MagicMock()
+        repo_result.scalar_one_or_none.return_value = repo
+        s2 = AsyncMock()
+        s2.execute = AsyncMock(return_value=repo_result)
+        sessions.append(s2)
+
+        # Session 3: Updates
+        s3 = AsyncMock()
+        s3.execute = AsyncMock(return_value=MagicMock())
+        s3.commit = AsyncMock()
+        sessions.append(s3)
+
+        call_idx = {"i": 0}
+
+        @asynccontextmanager
+        async def factory():
+            idx = call_idx["i"]
+            call_idx["i"] += 1
+            yield sessions[idx]
+
+        spawner = AsyncMock()
+        event_bus = AsyncMock()
+        redis = AsyncMock()
+
+        app = _make_app(
+            session_factory=factory, redis=redis,
+            job_spawner=spawner, event_bus=event_bus,
+        )
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/api/pipeline/cr-1/ci-result",
+                json={"repo_name": "backend", "passed": True, "build_url": "https://ci.example.com/123"},
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "resumed"
+        assert body["ci_passed"] is True
+        spawner.spawn.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_ci_failed_resumes_for_fix(self) -> None:
+        cr = _make_cr("cr-1", status="paused")
+        repo = _make_repo("cr-1", "backend", status="paused")
+
+        sessions = []
+
+        cr_result = MagicMock()
+        cr_result.scalar_one_or_none.return_value = cr
+        s1 = AsyncMock()
+        s1.execute = AsyncMock(return_value=cr_result)
+        sessions.append(s1)
+
+        repo_result = MagicMock()
+        repo_result.scalar_one_or_none.return_value = repo
+        s2 = AsyncMock()
+        s2.execute = AsyncMock(return_value=repo_result)
+        sessions.append(s2)
+
+        s3 = AsyncMock()
+        s3.execute = AsyncMock(return_value=MagicMock())
+        s3.commit = AsyncMock()
+        sessions.append(s3)
+
+        call_idx = {"i": 0}
+
+        @asynccontextmanager
+        async def factory():
+            idx = call_idx["i"]
+            call_idx["i"] += 1
+            yield sessions[idx]
+
+        spawner = AsyncMock()
+        event_bus = AsyncMock()
+        redis = AsyncMock()
+
+        app = _make_app(
+            session_factory=factory, redis=redis,
+            job_spawner=spawner, event_bus=event_bus,
+        )
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/api/pipeline/cr-1/ci-result",
+                json={"repo_name": "backend", "passed": False, "log_tail": "FAILED: 2 tests"},
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "resumed_for_fix"
+        assert body["ci_passed"] is False
+        # Verify overrides were stored in Redis
+        redis.set.assert_awaited_once()
+        call_args = redis.set.await_args
+        overrides = json.loads(call_args[0][1])
+        assert "ci_failure_log" in overrides
+
+    @pytest.mark.asyncio
+    async def test_ci_result_cr_not_found(self) -> None:
+        factory, _ = _build_factory_single_query(None)
+        app = _make_app(
+            session_factory=factory, redis=AsyncMock(),
+            job_spawner=AsyncMock(), event_bus=AsyncMock(),
+        )
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/api/pipeline/cr-missing/ci-result",
+                json={"repo_name": "backend", "passed": True},
+            )
+
+        assert resp.status_code == 404

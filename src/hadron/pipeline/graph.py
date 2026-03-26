@@ -6,6 +6,7 @@ from langgraph.types import RunnableConfig
 
 from langgraph.graph import END, StateGraph
 
+from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.edges import (
     after_implementation,
@@ -30,9 +31,52 @@ from hadron.pipeline.nodes.rework import rework_node
 from hadron.pipeline.nodes.worktree_setup import worktree_setup_node
 
 
-def _paused_node(state: PipelineState, config: RunnableConfig) -> dict:
-    """Terminal node for circuit breaker pauses."""
-    return {"status": "paused", "stage_history": [{"stage": "paused", "status": "paused"}]}
+def _infer_pause_reason(state: PipelineState) -> str:
+    """Infer why the pipeline was routed to the paused node."""
+    from hadron.pipeline.edges import _budget_exceeded
+
+    # Error already set by pipeline_node decorator
+    if state.get("error"):
+        return "error"
+
+    if _budget_exceeded(state):
+        return "budget_exceeded"
+
+    if state.get("rebase_clean") is False:
+        return "rebase_conflict"
+
+    # Circuit breaker — check if any loop counter hit its limit
+    cfg = state.get("config_snapshot", {}).get("pipeline", {})
+    if state.get("verification_loop_count", 0) >= cfg.get("max_verification_loops", 3):
+        return "circuit_breaker"
+    if state.get("review_loop_count", 0) >= cfg.get("max_review_dev_loops", 3):
+        return "circuit_breaker"
+
+    return "unknown"
+
+
+async def _paused_node(state: PipelineState, config: RunnableConfig) -> dict:
+    """Terminal node for circuit breaker pauses. Emits PIPELINE_PAUSED event with reason."""
+    reason = _infer_pause_reason(state)
+
+    # Emit pause event if we have access to the event bus
+    try:
+        from hadron.pipeline.nodes.context import NodeContext
+        ctx = NodeContext.from_config(config)
+        await ctx.event_bus.emit(PipelineEvent(
+            cr_id=state.get("cr_id", ""),
+            event_type=EventType.PIPELINE_PAUSED,
+            stage=state.get("current_stage", "paused"),
+            data={"reason": reason, "error": state.get("error")},
+        ))
+    except Exception:
+        pass  # Best effort — don't crash if event bus unavailable
+
+    return {
+        "status": "paused",
+        "pause_reason": reason,
+        "stage_history": [{"stage": "paused", "status": "paused", "pause_reason": reason}],
+    }
 
 
 def build_pipeline_graph() -> StateGraph:

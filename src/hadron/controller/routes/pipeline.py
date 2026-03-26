@@ -218,6 +218,102 @@ async def resume_pipeline(
     return {"status": "resumed", "cr_id": cr_id, "overrides": body.state_overrides}
 
 
+class CIResultRequest(BaseModel):
+    repo_name: str
+    passed: bool
+    build_url: str = ""
+    log_tail: str = ""  # last N chars of CI output
+
+
+@router.post("/pipeline/{cr_id}/ci-result")
+async def receive_ci_result(
+    cr_id: str,
+    body: CIResultRequest,
+    session_factory: Any = Depends(get_session_factory),
+    redis: Any = Depends(get_redis),
+    spawner: Any = Depends(get_job_spawner),
+    event_bus: EventBus = Depends(get_event_bus),
+) -> dict:
+    """Receive CI results for a repo in a push_and_wait pipeline.
+
+    When CI passes, the pipeline resumes to delivery. When CI fails,
+    the pipeline resumes to implementation with CI failure context so
+    the agent can fix the issues.
+    """
+    # Validate CR exists and the repo is waiting for CI
+    async with session_factory() as session:
+        result = await session.execute(select(CRRun).where(CRRun.cr_id == cr_id))
+        cr_run = result.scalar_one_or_none()
+        if not cr_run:
+            raise HTTPException(status_code=404, detail="CR not found")
+
+    async with session_factory() as session:
+        result = await session.execute(
+            select(RepoRun).where(
+                RepoRun.cr_id == cr_id,
+                RepoRun.repo_name == body.repo_name,
+            )
+        )
+        repo_run = result.scalar_one_or_none()
+        if not repo_run:
+            raise HTTPException(status_code=404, detail=f"Repo '{body.repo_name}' not found for CR")
+
+    # Emit CI result event
+    await event_bus.emit(PipelineEvent(
+        cr_id=cr_id,
+        event_type=EventType.STAGE_COMPLETED,
+        stage="ci",
+        data={
+            "repo": body.repo_name,
+            "passed": body.passed,
+            "build_url": body.build_url,
+        },
+    ))
+
+    if body.passed:
+        # CI passed — resume with clean state, will proceed through review → rebase → delivery
+        overrides: dict[str, object] = {}
+    else:
+        # CI failed — resume from implementation with CI failure context
+        overrides = {
+            "ci_failure_log": body.log_tail[-4000:] if body.log_tail else "",
+            "ci_build_url": body.build_url,
+        }
+
+    # Store overrides and respawn worker
+    override_key = f"hadron:cr:{cr_id}:resume_overrides"
+    await redis.set(override_key, json.dumps(overrides), ex=3600)
+
+    async with session_factory() as session:
+        await session.execute(
+            update(CRRun).where(CRRun.cr_id == cr_id).values(status="running", error=None)
+        )
+        await session.execute(
+            update(RepoRun)
+            .where(RepoRun.cr_id == cr_id, RepoRun.repo_name == body.repo_name)
+            .values(status="running", error=None)
+        )
+        await session.commit()
+
+    await spawner.spawn(
+        cr_id, repo_url=repo_run.repo_url, repo_name=repo_run.repo_name,
+    )
+
+    await event_bus.emit(PipelineEvent(
+        cr_id=cr_id,
+        event_type=EventType.PIPELINE_RESUMED,
+        stage="controller",
+        data={"trigger": "ci_result", "repo": body.repo_name, "ci_passed": body.passed},
+    ))
+
+    return {
+        "status": "resumed" if body.passed else "resumed_for_fix",
+        "cr_id": cr_id,
+        "repo_name": body.repo_name,
+        "ci_passed": body.passed,
+    }
+
+
 class NudgeRequest(BaseModel):
     role: str
     message: str

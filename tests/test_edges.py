@@ -12,6 +12,7 @@ from hadron.pipeline.edges import (
     after_rework,
     after_verification,
 )
+from hadron.pipeline.graph import _infer_pause_reason
 
 
 # ---------------------------------------------------------------------------
@@ -247,3 +248,38 @@ class TestBudgetEnforcementInEdges:
     def test_after_rework_pauses_on_budget(self) -> None:
         state = self._over_budget_state(repo={"e2e_test_commands": ["npx playwright"]})
         assert after_rework(state) == "paused"
+
+
+# ---------------------------------------------------------------------------
+# Pause reason inference
+# ---------------------------------------------------------------------------
+
+
+class TestInferPauseReason:
+    def test_error_reason(self) -> None:
+        state = {"error": "API failure"}
+        assert _infer_pause_reason(state) == "error"
+
+    def test_budget_exceeded_reason(self) -> None:
+        state = {"cost_usd": 15.0, "config_snapshot": {"pipeline": {"max_cost_usd": 10.0}}}
+        assert _infer_pause_reason(state) == "budget_exceeded"
+
+    def test_rebase_conflict_reason(self) -> None:
+        state = {"rebase_clean": False}
+        assert _infer_pause_reason(state) == "rebase_conflict"
+
+    def test_verification_circuit_breaker(self) -> None:
+        state = {"verification_loop_count": 3, "config_snapshot": {"pipeline": {"max_verification_loops": 3}}}
+        assert _infer_pause_reason(state) == "circuit_breaker"
+
+    def test_review_circuit_breaker(self) -> None:
+        state = {"review_loop_count": 3, "config_snapshot": {"pipeline": {"max_review_dev_loops": 3}}}
+        assert _infer_pause_reason(state) == "circuit_breaker"
+
+    def test_unknown_reason(self) -> None:
+        state = {}
+        assert _infer_pause_reason(state) == "unknown"
+
+    def test_error_takes_priority_over_budget(self) -> None:
+        state = {"error": "crash", "cost_usd": 15.0, "config_snapshot": {"pipeline": {"max_cost_usd": 10.0}}}
+        assert _infer_pause_reason(state) == "error"
