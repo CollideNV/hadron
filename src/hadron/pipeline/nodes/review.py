@@ -92,8 +92,9 @@ async def review_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
         )
     reviewer_results = await asyncio.gather(*reviewer_tasks)
 
-    # 5. Merge findings and costs
+    # 5. Merge findings, summaries, and costs
     all_findings: list[dict[str, Any]] = []
+    summaries: list[str] = []
     for role, r in zip(REVIEWER_REGISTRY, reviewer_results):
         await emit_cost_update(ctx.event_bus, cr_id, f"review:{role}", AgentResult(
             output="",
@@ -108,6 +109,9 @@ async def review_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
         costs.throttle_seconds += r.get("throttle_seconds", 0.0)
         costs.model_breakdown = merge_model_breakdowns(costs.model_breakdown, r.get("model_breakdown", {}))
         all_findings.extend(r["review"].get("findings", []))
+        summary = r["review"].get("summary", "")
+        if summary:
+            summaries.append(f"**{role}**: {summary}")
 
     # 6. Emit individual findings
     for finding in all_findings:
@@ -125,6 +129,7 @@ async def review_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
         "findings": all_findings,
         "review_passed": passed,
         "review_iteration": state.get("review_loop_count", 0) + 1,
+        "summary": "\n".join(summaries),
     }]
 
     await ctx.event_bus.emit(PipelineEvent(

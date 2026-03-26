@@ -57,7 +57,7 @@ async def run_single_reviewer(
         stage=sub_stage,
         repo_name=repo_name,
         working_directory=worktree_path,
-        allowed_tools=["read_file", "list_directory"],
+        allowed_tools=["read_file", "list_directory", "run_command"],
         model=model or DEFAULT_EXPLORE_MODEL,
         explore_model="",
         plan_model="",
@@ -73,9 +73,18 @@ async def run_single_reviewer(
         logger.warning("Could not parse %s output as JSON", role)
         review = {"review_passed": True, "findings": [{"severity": "minor", "reviewer": role, "message": "Could not parse reviewer output as JSON — infrastructure issue, not a code problem"}], "summary": result.output[:500]}
 
-    # Tag findings with reviewer name if not already present
+    # Normalize findings to ensure consistent structure
+    normalized: list[dict[str, Any]] = []
     for finding in review.get("findings", []):
-        finding.setdefault("reviewer", role)
+        normalized.append({
+            "severity": finding.get("severity", "info"),
+            "category": finding.get("category", role.replace("_reviewer", "")),
+            "file": finding.get("file", ""),
+            "line": finding.get("line", 0),
+            "message": finding.get("message", ""),
+            "reviewer": finding.get("reviewer", role),
+        })
+    review["findings"] = normalized
 
     await ctx.event_bus.emit(PipelineEvent(
         cr_id=cr_id, event_type=EventType.STAGE_COMPLETED, stage=sub_stage,

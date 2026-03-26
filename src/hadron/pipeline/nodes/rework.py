@@ -17,15 +17,33 @@ logger = logging.getLogger(__name__)
 
 
 def format_review_findings(state: dict[str, Any], repo_name: str) -> str:
-    """Format review findings into a concise markdown section."""
+    """Format review findings into structured markdown grouped by reviewer.
+
+    Only includes blocking findings (critical/major) that must be fixed,
+    plus the reviewer summary for context.
+    """
     lines = ["## Review Findings to Address\n"]
     for rr in state.get("review_results", []):
-        if rr.get("repo_name") == repo_name and rr.get("findings"):
-            for f in rr["findings"]:
-                lines.append(
-                    f"- [{f.get('severity', '')}] {f.get('message', '')} "
-                    f"({f.get('file', '')}:{f.get('line', 0)})"
-                )
+        if rr.get("repo_name") != repo_name:
+            continue
+        # Include summary for context
+        if rr.get("summary"):
+            lines.append(rr["summary"])
+            lines.append("")
+        # Group findings by reviewer
+        by_reviewer: dict[str, list[dict[str, Any]]] = {}
+        for f in rr.get("findings", []):
+            reviewer = f.get("reviewer", "unknown")
+            by_reviewer.setdefault(reviewer, []).append(f)
+        for reviewer, findings in by_reviewer.items():
+            blocking = [f for f in findings if f.get("severity") in ("critical", "major")]
+            if not blocking:
+                continue
+            lines.append(f"### {reviewer}")
+            for f in blocking:
+                loc = f"{f.get('file', '')}:{f.get('line', 0)}" if f.get("file") else ""
+                lines.append(f"- **[{f.get('severity', '')}]** {f.get('message', '')} {f'({loc})' if loc else ''}")
+            lines.append("")
     return "\n".join(lines)
 
 

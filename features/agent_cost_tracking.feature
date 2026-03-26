@@ -26,6 +26,26 @@ Feature: Agent Cost Tracking
     When the pipeline completes
     Then the total cost is persisted in the run record
 
+  # --- Budget enforcement ---
+
+  Scenario: Pipeline pauses when cost budget is exceeded
+    Given a max_cost_usd of 10.0 is configured
+    And the pipeline has accumulated $10.00 or more in cost
+    When any conditional edge evaluates after an agent call
+    Then the pipeline routes to the paused node
+    And this applies to verification, implementation, rework, and review edges
+
+  Scenario: Budget defaults to $10 when not configured
+    Given no max_cost_usd is set in the config snapshot
+    When the budget check runs
+    Then the default limit of $10.00 is used
+
+  Scenario: Under-budget pipeline continues normally
+    Given a max_cost_usd of 10.0 is configured
+    And the pipeline has accumulated $5.00 in cost
+    When a conditional edge evaluates
+    Then the pipeline routes based on normal logic (not paused)
+
   # --- Throttle tracking ---
 
   Scenario: Throttle time tracked across phases and stages

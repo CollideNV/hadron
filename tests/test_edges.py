@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from hadron.pipeline.edges import (
+    _budget_exceeded,
     after_implementation,
     after_rebase,
     after_review,
@@ -187,3 +188,62 @@ class TestAfterRebase:
         """rebase_clean defaults to True — a fresh state routes to delivery."""
         state = {}
         assert after_rebase(state) == "delivery"
+
+
+# ---------------------------------------------------------------------------
+# _budget_exceeded
+# ---------------------------------------------------------------------------
+
+
+class TestBudgetExceeded:
+    def test_under_budget(self) -> None:
+        state = {"cost_usd": 5.0, "config_snapshot": {"pipeline": {"max_cost_usd": 10.0}}}
+        assert _budget_exceeded(state) is False
+
+    def test_at_budget(self) -> None:
+        state = {"cost_usd": 10.0, "config_snapshot": {"pipeline": {"max_cost_usd": 10.0}}}
+        assert _budget_exceeded(state) is True
+
+    def test_over_budget(self) -> None:
+        state = {"cost_usd": 15.0, "config_snapshot": {"pipeline": {"max_cost_usd": 10.0}}}
+        assert _budget_exceeded(state) is True
+
+    def test_defaults_to_10_usd(self) -> None:
+        state = {"cost_usd": 10.0}
+        assert _budget_exceeded(state) is True
+
+    def test_zero_cost_not_exceeded(self) -> None:
+        state = {}
+        assert _budget_exceeded(state) is False
+
+
+# ---------------------------------------------------------------------------
+# Budget enforcement in edges
+# ---------------------------------------------------------------------------
+
+
+class TestBudgetEnforcementInEdges:
+    """Budget exceeded → paused, regardless of other state."""
+
+    def _over_budget_state(self, **extra: object) -> dict:
+        return {
+            "cost_usd": 20.0,
+            "config_snapshot": {"pipeline": {"max_cost_usd": 10.0}},
+            **extra,
+        }
+
+    def test_after_verification_pauses_on_budget(self) -> None:
+        state = self._over_budget_state(behaviour_verified=True)
+        assert after_verification(state) == "paused"
+
+    def test_after_review_pauses_on_budget(self) -> None:
+        state = self._over_budget_state(review_passed=True)
+        assert after_review(state) == "paused"
+
+    def test_after_implementation_pauses_on_budget(self) -> None:
+        state = self._over_budget_state(repo={"e2e_test_commands": ["npx playwright"]})
+        assert after_implementation(state) == "paused"
+
+    def test_after_rework_pauses_on_budget(self) -> None:
+        state = self._over_budget_state(repo={"e2e_test_commands": ["npx playwright"]})
+        assert after_rework(state) == "paused"

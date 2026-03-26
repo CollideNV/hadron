@@ -5,6 +5,16 @@ from __future__ import annotations
 from hadron.models.pipeline_state import PipelineState
 
 
+def _budget_exceeded(state: PipelineState) -> bool:
+    """Check whether the pipeline has exceeded its cost budget."""
+    max_cost = (
+        state.get("config_snapshot", {})
+        .get("pipeline", {})
+        .get("max_cost_usd", 10.0)
+    )
+    return state.get("cost_usd", 0.0) >= max_cost
+
+
 def after_verification(state: PipelineState) -> str:
     """Route after behaviour verification.
 
@@ -15,6 +25,9 @@ def after_verification(state: PipelineState) -> str:
     """
     # Stop immediately if the node errored (e.g. API failure)
     if state.get("status") == "paused":
+        return "paused"
+
+    if _budget_exceeded(state):
         return "paused"
 
     if state.get("behaviour_verified"):
@@ -43,6 +56,9 @@ def after_review(state: PipelineState) -> str:
     if state.get("status") == "paused":
         return "paused"
 
+    if _budget_exceeded(state):
+        return "paused"
+
     if state.get("review_passed"):
         return "rebase"
 
@@ -63,9 +79,11 @@ def _route_to_e2e_or_review(state: PipelineState) -> str:
     Returns:
         "e2e_testing" — repo has E2E tests configured
         "review" — no E2E tests, proceed to review
-        "paused" — node errored
+        "paused" — node errored or budget exceeded
     """
     if state.get("status") == "paused":
+        return "paused"
+    if _budget_exceeded(state):
         return "paused"
     if state.get("repo", {}).get("e2e_test_commands"):
         return "e2e_testing"

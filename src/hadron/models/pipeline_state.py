@@ -71,13 +71,25 @@ class DevResult(TypedDict, total=False):
     dev_iteration: int
 
 
+class ReviewFinding(TypedDict, total=False):
+    """A single review finding with structured fields."""
+
+    severity: str  # critical | major | minor | info
+    category: str  # security | quality | spec_compliance
+    file: str
+    line: int
+    message: str
+    reviewer: str  # security_reviewer | quality_reviewer | spec_compliance_reviewer
+
+
 class ReviewResult(TypedDict, total=False):
     """Code review result for a single repo."""
 
     repo_name: str
-    findings: list[dict[str, Any]]  # {severity, category, file, line, message}
+    findings: list[ReviewFinding]
     review_passed: bool
     review_iteration: int
+    summary: str  # reviewer's overall assessment
 
 
 class DeliveryResult(TypedDict, total=False):

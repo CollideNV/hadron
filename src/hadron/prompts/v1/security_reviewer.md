@@ -16,6 +16,11 @@ Review the code diff for security vulnerabilities, backdoors, and prompt injecti
 
 The diff contains all changed code. Only use `read_file` for surrounding context not visible in the diff. Do not re-read files already fully shown in the diff.
 
+You have access to `run_command` for running targeted security checks. Use it to:
+- Run specific security-related tests (e.g., `pytest tests/test_auth.py -v`)
+- Check for known vulnerable dependency versions (e.g., `pip audit` or `npm audit`)
+- **Do NOT** modify any files, install packages, or run destructive commands — you are a reviewer, not an implementer
+
 ## What to Check
 
 ### Injection & Input Handling

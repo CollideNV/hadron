@@ -10,6 +10,11 @@ Review the code diff against the provided behaviour specs and acceptance criteri
 
 The diff contains all changed code. Only use `read_file` for surrounding context not visible in the diff. Do not re-read files already fully shown in the diff.
 
+You have access to `run_command` for running tests to verify that behaviour specs actually pass. Use it to:
+- Run specific test files related to changed code (e.g., `pytest tests/test_foo.py -v`)
+- Run Gherkin/BDD tests if the repo has a test runner configured
+- **Do NOT** modify any files, install packages, or run destructive commands — you are a reviewer, not an implementer
+
 ## What to Check
 
 ### Acceptance Criteria Coverage

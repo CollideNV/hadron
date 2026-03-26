@@ -7,7 +7,8 @@ Feature: Code Review
     Given the implementation stage has completed
     When the review stage executes
     Then the Security, Quality, and Spec Compliance reviewers run in parallel
-    And each reviewer produces findings with severity, category, file, line, and message
+    And each reviewer produces structured findings with severity, category, file, line, message, and reviewer
+    And each reviewer produces a summary of its assessment
 
   Scenario: Emit diff showing what reviewers evaluated
     When the review stage begins
@@ -77,6 +78,27 @@ Feature: Code Review
     Given the Spec Compliance Reviewer evaluates test coverage
     When a scenario is missing test coverage but is not unverifiable
     Then the finding is minor, not major
+
+  Scenario: Reviewers can execute tests
+    Given the review stage is executing
+    When a reviewer needs to verify behaviour
+    Then the reviewer has access to read_file, list_directory, and run_command tools
+    And the reviewer can run tests to verify code correctness
+    And the reviewer does not modify files or install packages
+
+  Scenario: Structured review output with normalized findings
+    Given the review stage has completed
+    When the review results are collected
+    Then each finding has severity, category, file, line, message, and reviewer fields
+    And missing fields are filled with sensible defaults (info severity, empty file, line 0)
+    And each ReviewResult includes a summary field combining all reviewer summaries
+
+  Scenario: Rework receives only blocking findings
+    Given the review has failed with mixed severity findings
+    When the rework node receives review feedback
+    Then only critical and major findings are included in the rework payload
+    And findings are grouped by reviewer for clarity
+    And the reviewer summaries are included for context
 
   Scenario: Deterministic diff scope analysis
     Given the implementation stage has produced code changes
