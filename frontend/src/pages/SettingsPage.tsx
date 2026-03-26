@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { BackendTemplate, PipelineDefaults } from "../api/types";
 import { getDefaultTemplate, getPipelineDefaults, getTemplates, setDefaultTemplate, updatePipelineDefaults, updateTemplates } from "../api/client";
-import ApiKeyEditor from "../components/settings/ApiKeyEditor";
+import { keyForBackend, useApiKeys } from "../components/settings/ApiKeyEditor";
 import TemplateEditor from "../components/settings/TemplateEditor";
 import PipelineDefaultsEditor from "../components/settings/PipelineDefaultsEditor";
 
@@ -16,6 +16,13 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
+  const { keys: apiKeys, handleUpdated: onApiKeyUpdated } = useApiKeys();
+
+  // Find the key status for the currently-active template's backend.
+  // The TemplateEditor manages its own activeSlug internally, so we
+  // pass all keys and let it pick via keyForBackend in the render prop.
+  const [activeBackend, setActiveBackend] = useState("claude");
+
   useEffect(() => {
     Promise.all([getTemplates(), getDefaultTemplate(), getPipelineDefaults()])
       .then(([t, dt, d]) => {
@@ -26,6 +33,7 @@ export default function SettingsPage() {
         setDefaults(d);
         setSavedDefaults(d);
         setLoaded(true);
+        if (t.length > 0) setActiveBackend(t[0].backend);
       })
       .catch((e) => setError(e.message));
   }, []);
@@ -74,6 +82,8 @@ export default function SettingsPage() {
     );
   }
 
+  const activeKeyStatus = keyForBackend(apiKeys, activeBackend);
+
   return (
     <div className="p-8 max-w-6xl mx-auto">
       {error && (
@@ -105,18 +115,18 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Backend Templates */}
+      {/* Backend Templates (with API key inline per tab) */}
       <div className="mb-8">
         <TemplateEditor
           templates={templates}
           onChange={setTemplates}
           defaultSlug={defaultSlug}
           onDefaultChange={setDefaultSlug}
+          apiKeyStatus={activeKeyStatus}
+          onApiKeyUpdated={onApiKeyUpdated}
+          onActiveBackendChange={setActiveBackend}
         />
       </div>
-
-      {/* API Keys */}
-      <ApiKeyEditor />
 
       {/* Pipeline Defaults */}
       {defaults && (

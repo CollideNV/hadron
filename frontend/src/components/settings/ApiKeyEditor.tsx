@@ -2,11 +2,16 @@ import { useCallback, useEffect, useState } from "react";
 import type { ApiKeyStatus } from "../../api/types";
 import { clearApiKey, getApiKeys, setApiKey } from "../../api/client";
 
-const ROW =
-  "flex items-center justify-between px-4 py-3 border-b border-border-subtle last:border-b-0";
 const BADGE_BASE = "px-2 py-0.5 text-[10px] rounded font-medium";
 const INPUT =
   "bg-surface-raised border border-border-subtle rounded px-3 py-1.5 text-sm text-text w-64 font-mono";
+
+/** Map backend slug to the corresponding API key name. */
+const BACKEND_TO_KEY: Record<string, string> = {
+  claude: "anthropic_api_key",
+  openai: "openai_api_key",
+  gemini: "gemini_api_key",
+};
 
 function sourceBadge(source: ApiKeyStatus["source"]) {
   switch (source) {
@@ -24,7 +29,8 @@ interface KeyRowProps {
   onUpdated: (updated: ApiKeyStatus) => void;
 }
 
-function KeyRow({ status, onUpdated }: KeyRowProps) {
+/** A single API key row — shows masked value, source badge, set/clear buttons. */
+export function KeyRow({ status, onUpdated }: KeyRowProps) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
@@ -66,10 +72,10 @@ function KeyRow({ status, onUpdated }: KeyRowProps) {
   }, []);
 
   return (
-    <div>
-      <div className={ROW}>
+    <div className="p-3 rounded-lg bg-surface-raised border border-border-subtle">
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-3 min-w-0">
-          <span className="text-sm font-medium text-text w-24">{status.display_name}</span>
+          <span className="text-xs font-medium text-text-muted">API Key</span>
           {status.is_configured ? (
             <span className="text-sm font-mono text-text-muted" data-testid={`masked-${status.key_name}`}>
               {status.masked_value}
@@ -102,7 +108,7 @@ function KeyRow({ status, onUpdated }: KeyRowProps) {
         </div>
       </div>
       {editing && (
-        <div className="px-4 py-2 bg-bg-card/50 flex items-center gap-2">
+        <div className="mt-2 flex items-center gap-2">
           <input
             type="password"
             placeholder="Paste API key..."
@@ -133,21 +139,21 @@ function KeyRow({ status, onUpdated }: KeyRowProps) {
         </div>
       )}
       {error && (
-        <div className="px-4 py-1.5 text-xs text-status-failed">{error}</div>
+        <div className="mt-1.5 text-xs text-status-failed">{error}</div>
       )}
     </div>
   );
 }
 
-export default function ApiKeyEditor() {
+/** Hook that loads API key statuses and provides an updater. */
+export function useApiKeys() {
   const [keys, setKeys] = useState<ApiKeyStatus[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     getApiKeys()
       .then(setKeys)
-      .catch((e) => setError(e.message))
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
@@ -157,23 +163,11 @@ export default function ApiKeyEditor() {
     );
   }, []);
 
-  return (
-    <div className="mb-8">
-      <h2 className="text-sm font-medium text-text-muted mb-3">API Keys</h2>
-      {error && (
-        <div className="mb-2 px-4 py-2 bg-red-500/10 text-red-400 rounded-lg text-sm">{error}</div>
-      )}
-      <div className="bg-bg-surface rounded-xl border border-border-subtle overflow-hidden">
-        {loading ? (
-          <div className="px-4 py-6 text-center text-text-dim text-sm">Loading...</div>
-        ) : keys.length === 0 ? (
-          <div className="px-4 py-6 text-center text-text-dim text-sm">No API keys registered</div>
-        ) : (
-          keys.map((k) => (
-            <KeyRow key={k.key_name} status={k} onUpdated={handleUpdated} />
-          ))
-        )}
-      </div>
-    </div>
-  );
+  return { keys, loading, handleUpdated };
+}
+
+/** Find the ApiKeyStatus for a given backend slug. */
+export function keyForBackend(keys: ApiKeyStatus[], backend: string): ApiKeyStatus | undefined {
+  const keyName = BACKEND_TO_KEY[backend];
+  return keyName ? keys.find((k) => k.key_name === keyName) : undefined;
 }

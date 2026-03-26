@@ -6,21 +6,27 @@ Feature: API Key Management
   Background:
     Given HADRON_ENCRYPTION_KEY is set in the environment
 
+  Scenario: API key shown within backend template tab
+    When an operator navigates to the settings page
+    And selects a backend template tab (e.g. Anthropic)
+    Then the API key status for that backend is shown within the tab
+    And it displays the masked value, source badge, and set/clear controls
+
   Scenario: View API key status when no keys are configured
     Given no API keys are stored in the database
     And no API key environment variables are set
-    When an operator navigates to the settings page
-    Then each backend shows "Not configured" status with source "Not set"
+    When an operator views a backend template tab
+    Then the API key row shows "Not configured" with source "Not set"
 
   Scenario: View API key status with environment variable fallback
     Given no API keys are stored in the database
     And HADRON_ANTHROPIC_API_KEY is set in the environment
-    When the operator views the API keys section
-    Then the Anthropic key shows as configured with source "Environment"
+    When the operator views the Anthropic template tab
+    Then the API key row shows as configured with source "Environment"
     And the masked value shows the last 4 characters only
 
   Scenario: Set an API key via the dashboard
-    When the operator enters a new Anthropic API key and saves
+    When the operator enters a new Anthropic API key in the template tab and saves
     Then the key is encrypted with Fernet and stored in the database
     And the status updates to source "Database" with a masked value
     And an audit log entry "api_key_updated" is created with key_name only

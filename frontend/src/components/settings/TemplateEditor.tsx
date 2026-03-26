@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
-import type { BackendTemplate, PhaseModel, StageConfig } from "../../api/types";
+import type { ApiKeyStatus, BackendTemplate, PhaseModel, StageConfig } from "../../api/types";
+import { KeyRow } from "./ApiKeyEditor";
 
 const STAGE_PHASES: Record<string, { label: string; explore: boolean; plan: boolean }> = {
   intake:                          { label: "Intake",                  explore: false, plan: false },
@@ -27,6 +28,9 @@ interface Props {
   onChange: (templates: BackendTemplate[]) => void;
   defaultSlug: string;
   onDefaultChange: (slug: string) => void;
+  apiKeyStatus?: ApiKeyStatus;
+  onApiKeyUpdated?: (updated: ApiKeyStatus) => void;
+  onActiveBackendChange?: (backend: string) => void;
 }
 
 function ModelSelect({
@@ -143,9 +147,15 @@ function StageGrid({
   );
 }
 
-export default function TemplateEditor({ templates, onChange, defaultSlug, onDefaultChange }: Props) {
+export default function TemplateEditor({ templates, onChange, defaultSlug, onDefaultChange, apiKeyStatus, onApiKeyUpdated, onActiveBackendChange }: Props) {
   const [activeSlug, setActiveSlug] = useState<string>(templates[0]?.slug ?? "anthropic");
   const activeTemplate = templates.find((t) => t.slug === activeSlug);
+
+  const switchTab = useCallback((slug: string) => {
+    setActiveSlug(slug);
+    const t = templates.find((t) => t.slug === slug);
+    if (t && onActiveBackendChange) onActiveBackendChange(t.backend);
+  }, [templates, onActiveBackendChange]);
 
   const updateTemplate = useCallback(
     (slug: string, patch: Partial<BackendTemplate>) => {
@@ -158,10 +168,10 @@ export default function TemplateEditor({ templates, onChange, defaultSlug, onDef
     (slug: string) => {
       onChange(templates.filter((t) => t.slug !== slug));
       if (activeSlug === slug) {
-        setActiveSlug(templates[0]?.slug ?? "anthropic");
+        switchTab(templates[0]?.slug ?? "anthropic");
       }
     },
-    [templates, onChange, activeSlug],
+    [templates, onChange, activeSlug, switchTab],
   );
 
   const addOpenCodeTemplate = useCallback(() => {
@@ -185,7 +195,7 @@ export default function TemplateEditor({ templates, onChange, defaultSlug, onDef
       is_default: false,
     };
     onChange([...templates, newTemplate]);
-    setActiveSlug(newSlug);
+    switchTab(newSlug);
   }, [templates, onChange]);
 
   return (
@@ -196,7 +206,7 @@ export default function TemplateEditor({ templates, onChange, defaultSlug, onDef
           <button
             key={t.slug}
             data-testid={`template-tab-${t.slug}`}
-            onClick={() => setActiveSlug(t.slug)}
+            onClick={() => switchTab(t.slug)}
             className={`px-3 py-1.5 text-sm rounded-md border transition-colors cursor-pointer ${
               activeSlug === t.slug
                 ? "border-accent text-accent bg-accent/10"
@@ -250,6 +260,11 @@ export default function TemplateEditor({ templates, onChange, defaultSlug, onDef
               )}
             </div>
           </div>
+
+          {/* API Key for this backend */}
+          {apiKeyStatus && onApiKeyUpdated && (
+            <KeyRow status={apiKeyStatus} onUpdated={onApiKeyUpdated} />
+          )}
 
           {/* OpenCode-specific fields */}
           {!BUILTIN_SLUGS.has(activeTemplate.slug) && (
