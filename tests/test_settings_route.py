@@ -1,4 +1,4 @@
-"""Tests for model settings API routes."""
+"""Tests for backend template and pipeline settings API routes."""
 
 from __future__ import annotations
 
@@ -25,21 +25,55 @@ def _make_app(session_factory) -> FastAPI:
     return app
 
 
-def _make_setting(key: str, value_json: dict):
+def _make_setting(key: str, value_json):
     return SimpleNamespace(key=key, value_json=value_json)
 
 
-def _build_factory_returning(scalars_list):
-    """Build a session factory mock returning scalars_list for queries."""
-    mock_scalars = MagicMock()
-    mock_scalars.__iter__ = lambda self: iter(scalars_list)
+def _build_factory(scalar_one=None, scalars_list=None):
+    """Build a session factory where execute returns consistent mocks.
 
+    scalar_one: return value for scalar_one_or_none()
+    scalars_list: iterable for scalars().__iter__
+    """
     mock_result = MagicMock()
-    mock_result.scalars.return_value = mock_scalars
-    mock_result.scalar_one_or_none.return_value = scalars_list[0] if scalars_list else None
+    mock_result.scalar_one_or_none.return_value = scalar_one
+    if scalars_list is not None:
+        mock_scalars = MagicMock()
+        mock_scalars.__iter__ = lambda self: iter(scalars_list)
+        mock_result.scalars.return_value = mock_scalars
 
     mock_session = AsyncMock()
-    mock_session.execute.return_value = mock_result
+    mock_session.execute = AsyncMock(return_value=mock_result)
+    mock_session.add = MagicMock()
+
+    @asynccontextmanager
+    async def factory():
+        yield mock_session
+
+    return factory, mock_session
+
+
+def _multi_query_factory(responses):
+    """Build a factory that returns different results per execute() call.
+
+    responses: list of (scalar_one_or_none, scalars_list) tuples.
+    """
+    mock_session = AsyncMock()
+    call_idx = {"i": 0}
+
+    async def fake_execute(stmt):
+        idx = call_idx["i"]
+        call_idx["i"] += 1
+        scalar_one, scalars_list = responses[idx] if idx < len(responses) else (None, None)
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = scalar_one
+        if scalars_list is not None:
+            mock_scalars = MagicMock()
+            mock_scalars.__iter__ = lambda self: iter(scalars_list)
+            mock_result.scalars.return_value = mock_scalars
+        return mock_result
+
+    mock_session.execute = fake_execute
     mock_session.add = MagicMock()
 
     @asynccontextmanager
@@ -50,281 +84,254 @@ def _build_factory_returning(scalars_list):
 
 
 # ---------------------------------------------------------------------------
-# GET /api/settings/models
+# GET /api/settings/templates
 # ---------------------------------------------------------------------------
 
 
-class TestGetModelSettings:
+class TestGetTemplates:
     @pytest.mark.asyncio
-    async def test_returns_defaults_when_no_db_rows(self):
-        factory, _ = _build_factory_returning([])
+    async def test_returns_builtins_when_no_db(self):
+        """Built-in templates returned when DB has no overrides."""
+        # Query 1: backend_templates → None, Query 2: default_template → None
+        factory, _ = _multi_query_factory([(None, None), (None, None)])
         app = _make_app(factory)
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            resp = await client.get("/api/settings/models")
+            resp = await client.get("/api/settings/templates")
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["default_backend"] == "claude"
-        assert "implementation" in data["stages"]
-        assert data["stages"]["implementation"]["explore"] is not None
-        assert data["stages"]["implementation"]["plan"] is not None
-        assert data["stages"]["intake"]["explore"] is None
+        slugs = [t["slug"] for t in data]
+        assert "anthropic" in slugs
+        assert "openai" in slugs
+        assert "gemini" in slugs
+        assert len(data) == 3
+
+        # Anthropic is default when no DB override
+        anthropic = next(t for t in data if t["slug"] == "anthropic")
+        assert anthropic["is_default"] is True
+        assert anthropic["backend"] == "claude"
+        assert len(anthropic["available_models"]) > 0
+        assert any("claude-sonnet" in m for m in anthropic["available_models"])
+
+        # Check stages exist with expected structure
+        assert "implementation" in anthropic["stages"]
+        assert anthropic["stages"]["implementation"]["explore"] is not None
+        assert anthropic["stages"]["intake"]["explore"] is None
 
     @pytest.mark.asyncio
-    async def test_returns_db_values(self):
-        settings = [
-            _make_setting("default_backend", {"backend": "openai"}),
-            _make_setting("stage_models", {
-                "intake": {
-                    "act": {"backend": "openai", "model": "gpt-4o"},
-                    "explore": None,
-                    "plan": None,
+    async def test_db_overrides_builtin(self):
+        """DB templates override built-in defaults."""
+        db_templates = [
+            {
+                "slug": "anthropic",
+                "display_name": "Custom Anthropic",
+                "backend": "claude",
+                "stages": {
+                    "intake": {"act": {"backend": "claude", "model": "claude-opus-4-6"}, "explore": None, "plan": None},
                 },
-            }),
+            }
         ]
-        factory, _ = _build_factory_returning(settings)
-        app = _make_app(factory)
-
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            resp = await client.get("/api/settings/models")
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["default_backend"] == "openai"
-        assert data["stages"]["intake"]["act"]["backend"] == "openai"
-        assert data["stages"]["intake"]["act"]["model"] == "gpt-4o"
-
-
-# ---------------------------------------------------------------------------
-# PUT /api/settings/models
-# ---------------------------------------------------------------------------
-
-
-class TestUpdateModelSettings:
-    @pytest.mark.asyncio
-    async def test_update_creates_entries(self):
-        # First call returns no rows (for GET-like upsert), both scalar_one_or_none calls return None
-        mock_session = AsyncMock()
-        call_count = 0
-
-        async def fake_execute(stmt):
-            nonlocal call_count
-            call_count += 1
-            mock_result = MagicMock()
-            mock_result.scalar_one_or_none.return_value = None
-            return mock_result
-
-        mock_session.execute = fake_execute
-        mock_session.add = MagicMock()
-
-        @asynccontextmanager
-        async def factory():
-            yield mock_session
-
-        app = _make_app(factory)
-
-        payload = {
-            "default_backend": "gemini",
-            "stages": {
-                "intake": {
-                    "act": {"backend": "gemini", "model": "gemini-2.5-pro"},
-                    "explore": None,
-                    "plan": None,
-                },
-            },
-        }
-
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            resp = await client.put("/api/settings/models", json=payload)
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["default_backend"] == "gemini"
-        assert data["stages"]["intake"]["act"]["model"] == "gemini-2.5-pro"
-        # Should have added: default_backend setting + stage_models setting + audit log = 3 adds
-        assert mock_session.add.call_count == 3
-
-    @pytest.mark.asyncio
-    async def test_update_existing_entries(self):
-        existing_backend = _make_setting("default_backend", {"backend": "claude"})
-        existing_stages = _make_setting("stage_models", {})
-
-        mock_session = AsyncMock()
-        execute_calls = []
-
-        async def fake_execute(stmt):
-            execute_calls.append(stmt)
-            mock_result = MagicMock()
-            # First call: default_backend lookup, second: stage_models lookup
-            if len(execute_calls) == 1:
-                mock_result.scalar_one_or_none.return_value = existing_backend
-            elif len(execute_calls) == 2:
-                mock_result.scalar_one_or_none.return_value = existing_stages
-            else:
-                mock_result.scalar_one_or_none.return_value = None
-            return mock_result
-
-        mock_session.execute = fake_execute
-        mock_session.add = MagicMock()
-
-        @asynccontextmanager
-        async def factory():
-            yield mock_session
-
-        app = _make_app(factory)
-
-        payload = {
-            "default_backend": "openai",
-            "stages": {
-                "intake": {
-                    "act": {"backend": "openai", "model": "gpt-4o"},
-                    "explore": None,
-                    "plan": None,
-                },
-            },
-        }
-
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            resp = await client.put("/api/settings/models", json=payload)
-
-        assert resp.status_code == 200
-        # Existing rows should have been updated in-place
-        assert existing_backend.value_json == {"backend": "openai"}
-        assert "intake" in existing_stages.value_json
-
-
-# ---------------------------------------------------------------------------
-# GET /api/settings/backends
-# ---------------------------------------------------------------------------
-
-
-class TestGetAvailableBackends:
-    @pytest.mark.asyncio
-    async def test_returns_backends(self):
-        factory, _ = _build_factory_returning([])
-        app = _make_app(factory)
-
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            resp = await client.get("/api/settings/backends")
-
-        assert resp.status_code == 200
-        data = resp.json()
-        names = [b["name"] for b in data]
-        assert "claude" in names
-        assert "openai" in names
-        assert "gemini" in names
-        assert "opencode" in names
-
-        claude = next(b for b in data if b["name"] == "claude")
-        assert any("claude-sonnet" in m for m in claude["models"])
-        assert claude["display_name"] == "Anthropic"
-
-        opencode = next(b for b in data if b["name"] == "opencode")
-        assert opencode["models"] == []
-
-    @pytest.mark.asyncio
-    async def test_includes_named_opencode_endpoints(self):
-        endpoints = [
-            {"slug": "local-ollama", "display_name": "Local Ollama", "base_url": "http://localhost:11434/v1", "models": ["qwen3:7b"]},
-        ]
-        factory, _ = _build_factory_returning([
-            _make_setting("opencode_endpoints", endpoints),
+        factory, _ = _multi_query_factory([
+            (_make_setting("backend_templates", db_templates), None),
+            (None, None),  # default_template
         ])
         app = _make_app(factory)
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            resp = await client.get("/api/settings/backends")
+            resp = await client.get("/api/settings/templates")
 
-        assert resp.status_code == 200
         data = resp.json()
-        names = [b["name"] for b in data]
-        assert "opencode:local-ollama" in names
-        ep = next(b for b in data if b["name"] == "opencode:local-ollama")
-        assert ep["display_name"] == "Local Ollama"
-        assert ep["models"] == ["qwen3:7b"]
-
-
-# ---------------------------------------------------------------------------
-# GET /api/settings/opencode-endpoints
-# ---------------------------------------------------------------------------
-
-
-class TestOpenCodeEndpoints:
-    @pytest.mark.asyncio
-    async def test_get_empty(self):
-        factory, _ = _build_factory_returning([])
-        app = _make_app(factory)
-
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            resp = await client.get("/api/settings/opencode-endpoints")
-
-        assert resp.status_code == 200
-        assert resp.json() == []
+        anthropic = next(t for t in data if t["slug"] == "anthropic")
+        assert anthropic["display_name"] == "Custom Anthropic"
+        assert anthropic["stages"]["intake"]["act"]["model"] == "claude-opus-4-6"
 
     @pytest.mark.asyncio
-    async def test_get_existing(self):
-        endpoints = [
-            {"slug": "gpu-server", "display_name": "GPU Server", "base_url": "http://gpu.internal/v1", "models": ["llama-70b"]},
+    async def test_includes_opencode_templates_from_db(self):
+        """Custom OpenCode templates from DB are appended after builtins."""
+        db_templates = [
+            {
+                "slug": "opencode-ollama",
+                "display_name": "Local Ollama",
+                "backend": "opencode",
+                "stages": {},
+                "base_url": "http://localhost:11434/v1",
+                "available_models": ["qwen3:7b"],
+            },
         ]
-        factory, _ = _build_factory_returning([
-            _make_setting("opencode_endpoints", endpoints),
+        factory, _ = _multi_query_factory([
+            (_make_setting("backend_templates", db_templates), None),
+            (None, None),
         ])
         app = _make_app(factory)
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            resp = await client.get("/api/settings/opencode-endpoints")
+            resp = await client.get("/api/settings/templates")
 
-        assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 1
-        assert data[0]["slug"] == "gpu-server"
-        assert data[0]["models"] == ["llama-70b"]
+        assert len(data) == 4  # 3 builtins + 1 opencode
+        ollama = next(t for t in data if t["slug"] == "opencode-ollama")
+        assert ollama["display_name"] == "Local Ollama"
+        assert ollama["base_url"] == "http://localhost:11434/v1"
+        assert ollama["available_models"] == ["qwen3:7b"]
 
+
+# ---------------------------------------------------------------------------
+# PUT /api/settings/templates
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateTemplates:
     @pytest.mark.asyncio
-    async def test_put_creates_endpoints(self):
-        mock_session = AsyncMock()
-
-        async def fake_execute(stmt):
-            mock_result = MagicMock()
-            mock_result.scalar_one_or_none.return_value = None
-            return mock_result
-
-        mock_session.execute = fake_execute
-        mock_session.add = MagicMock()
-
-        @asynccontextmanager
-        async def factory():
-            yield mock_session
-
+    async def test_saves_templates(self):
+        factory, mock_session = _multi_query_factory([
+            (None, None),  # upsert backend_templates
+            (None, None),  # re-load (GET after PUT)
+            (None, None),  # default_template for re-load
+        ])
         app = _make_app(factory)
 
         payload = [
-            {"slug": "local-ollama", "display_name": "Local Ollama", "base_url": "http://localhost:11434/v1", "models": ["qwen3:7b"]},
-            {"slug": "gpu-server", "display_name": "GPU Server", "base_url": "http://gpu.internal/v1", "models": ["llama-70b"]},
+            {
+                "slug": "anthropic",
+                "display_name": "Anthropic",
+                "backend": "claude",
+                "stages": {"intake": {"act": {"backend": "claude", "model": "claude-sonnet-4-6"}, "explore": None, "plan": None}},
+                "is_default": False,
+            },
         ]
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            resp = await client.put("/api/settings/opencode-endpoints", json=payload)
+            resp = await client.put("/api/settings/templates", json=payload)
 
         assert resp.status_code == 200
-        data = resp.json()
-        assert len(data) == 2
-        assert data[0]["slug"] == "local-ollama"
-        # PipelineSetting + AuditLog = 2 adds
+        # Should have added PipelineSetting + AuditLog = 2
         assert mock_session.add.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_put_rejects_duplicate_slugs(self):
-        factory, _ = _build_factory_returning([])
+    async def test_rejects_duplicate_slugs(self):
+        factory, _ = _build_factory()
         app = _make_app(factory)
 
         payload = [
-            {"slug": "same", "display_name": "A", "base_url": "http://a", "models": []},
-            {"slug": "same", "display_name": "B", "base_url": "http://b", "models": []},
+            {"slug": "same", "display_name": "A", "backend": "claude", "stages": {}, "is_default": False},
+            {"slug": "same", "display_name": "B", "backend": "claude", "stages": {}, "is_default": False},
         ]
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            resp = await client.put("/api/settings/opencode-endpoints", json=payload)
+            resp = await client.put("/api/settings/templates", json=payload)
 
         assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# GET/PUT /api/settings/templates/default
+# ---------------------------------------------------------------------------
+
+
+class TestDefaultTemplate:
+    @pytest.mark.asyncio
+    async def test_get_default_falls_back_to_anthropic(self):
+        factory, _ = _build_factory(scalar_one=None)
+        app = _make_app(factory)
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/settings/templates/default")
+
+        assert resp.status_code == 200
+        assert resp.json()["slug"] == "anthropic"
+
+    @pytest.mark.asyncio
+    async def test_get_default_from_db(self):
+        factory, _ = _build_factory(scalar_one=_make_setting("default_template", {"slug": "openai"}))
+        app = _make_app(factory)
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/settings/templates/default")
+
+        assert resp.status_code == 200
+        assert resp.json()["slug"] == "openai"
+
+    @pytest.mark.asyncio
+    async def test_set_default_valid_slug(self):
+        """Setting default to a known slug succeeds."""
+        factory, mock_session = _multi_query_factory([
+            (None, None),  # _load_templates: backend_templates
+            (None, None),  # _load_default_slug inside set_default
+            (None, None),  # upsert default_template
+        ])
+        app = _make_app(factory)
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.put("/api/settings/templates/default", json={"slug": "openai"})
+
+        assert resp.status_code == 200
+        assert resp.json()["slug"] == "openai"
+        # PipelineSetting + AuditLog = 2
+        assert mock_session.add.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_set_default_unknown_slug_rejected(self):
+        """Setting default to an unknown slug returns 422."""
+        factory, _ = _multi_query_factory([
+            (None, None),  # _load_templates
+        ])
+        app = _make_app(factory)
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.put("/api/settings/templates/default", json={"slug": "nonexistent"})
+
+        assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# GET/PUT /api/settings/pipeline-defaults
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineDefaults:
+    @pytest.mark.asyncio
+    async def test_get_returns_hardcoded_defaults(self):
+        factory, _ = _build_factory(scalar_one=None)
+        app = _make_app(factory)
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/settings/pipeline-defaults")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["max_verification_loops"] == 3
+        assert data["max_cost_usd"] == 10.0
+        assert data["delivery_strategy"] == "self_contained"
+        assert data["default_template"] == "anthropic"
+        # Model fields should NOT be present
+        assert "default_model" not in data
+        assert "explore_model" not in data
+        assert "plan_model" not in data
+        assert "default_backend" not in data
+
+    @pytest.mark.asyncio
+    async def test_put_updates_defaults(self):
+        factory, mock_session = _multi_query_factory([(None, None)])
+        app = _make_app(factory)
+
+        payload = {
+            "max_verification_loops": 5,
+            "max_review_dev_loops": 4,
+            "max_cost_usd": 25.0,
+            "default_template": "openai",
+            "delivery_strategy": "push_and_wait",
+            "agent_timeout": 600,
+            "test_timeout": 240,
+        }
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.put("/api/settings/pipeline-defaults", json=payload)
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["max_verification_loops"] == 5
+        assert data["default_template"] == "openai"
+        assert data["delivery_strategy"] == "push_and_wait"
+        # PipelineSetting + AuditLog
+        assert mock_session.add.call_count == 2

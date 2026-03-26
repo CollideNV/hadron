@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import Modal from "../shared/Modal";
 import CRForm from "./CRForm";
-import { triggerPipeline } from "../../api/client";
-import type { RawChangeRequest } from "../../api/types";
+import { getTemplates, triggerPipeline } from "../../api/client";
+import type { BackendTemplate, RawChangeRequest } from "../../api/types";
 
 interface CRCreationDialogProps {
   open: boolean;
@@ -17,12 +17,14 @@ export default function CRCreationDialog({
 }: CRCreationDialogProps) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<BackendTemplate[]>([]);
 
-  // Reset state whenever the dialog opens
+  // Reset state and load templates whenever the dialog opens
   useEffect(() => {
     if (open) {
       setSubmitting(false);
       setError(null);
+      getTemplates().then(setTemplates).catch(() => {});
     }
   }, [open]);
 
@@ -60,6 +62,8 @@ export default function CRCreationDialog({
         onSubmit={handleSubmit}
         submitting={submitting}
         onCancel={submitting ? undefined : handleClose}
+        templates={templates}
+        defaultTemplateSlug={templates.find((t) => t.is_default)?.slug}
       />
     </Modal>
   );

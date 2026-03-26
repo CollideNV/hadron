@@ -53,44 +53,31 @@ Feature: Controller API
     Then the template is stored with an incremented version
     And an audit log entry is created
 
-  # --- Model settings ---
+  # --- Backend templates ---
 
-  Scenario: Get model settings with defaults
-    When a user requests model settings and none have been configured
-    Then hardcoded defaults are returned for all stages
+  Scenario: Get templates with built-in defaults
+    When a user requests backend templates and none have been configured
+    Then three built-in templates are returned: Anthropic, OpenAI, Gemini
+    And each includes available_models from the cost table
 
-  Scenario: Update model settings
-    When a user submits per-stage backend and model configuration
-    Then the settings are persisted
-    And an audit log entry is created
+  Scenario: Update backend templates
+    When a user submits updated backend templates
+    Then all templates are persisted
+    And an audit log entry with action "backend_templates_updated" is created
 
-  Scenario: List available backends
-    When a user requests the available backends list
-    Then Claude, OpenAI, Gemini, and OpenCode are returned
-    And each backend includes its known model list
+  Scenario: Reject duplicate template slugs
+    When a user submits templates with duplicate slugs
+    Then the request is rejected with a validation error
 
-  Scenario: Available backends include named OpenCode endpoints
-    Given named OpenCode endpoints have been configured
-    When a user requests the available backends list
-    Then each named endpoint appears as a separate backend entry
-    And its display name and model list are included
+  Scenario: Get default template slug
+    When a user requests the default template
+    Then the current default slug is returned (falls back to "anthropic")
 
-  # --- OpenCode endpoint management ---
+  Scenario: Set default template slug
+    When a user sets a new default template slug
+    Then the slug is persisted
+    And an audit log entry with action "default_template_updated" is created
 
-  Scenario: Get OpenCode endpoints when none exist
-    When a user requests the OpenCode endpoints list
-    Then an empty list is returned
-
-  Scenario: Create OpenCode endpoints
-    When a user submits a list of named OpenCode endpoints
-    Then all endpoints are persisted with slug, display name, base URL, and models
-    And an audit log entry is created
-
-  Scenario: Replace OpenCode endpoints
-    Given named OpenCode endpoints exist
-    When a user submits a new list of endpoints
-    Then the previous endpoints are fully replaced by the new list
-
-  Scenario: Reject duplicate endpoint slugs
-    When a user submits endpoints with duplicate slugs
+  Scenario: Reject unknown default template slug
+    When a user tries to set a default slug that doesn't match any template
     Then the request is rejected with a validation error

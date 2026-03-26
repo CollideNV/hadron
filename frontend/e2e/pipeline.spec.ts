@@ -306,11 +306,19 @@ test.describe("Cost Dashboard", () => {
 // ---------------------------------------------------------------------------
 
 test.describe("Settings Page", () => {
-  test("loads and displays model settings", async ({ page }) => {
+  test("loads and displays backend templates", async ({ page }) => {
     await page.goto("/settings");
-    await expect(page.getByText("Model Settings")).toBeVisible();
-    // Should show backend/model grid (dummy server returns settings data)
-    await expect(page.getByText("Default Backend")).toBeVisible();
+    await expect(page.getByText("Backend Templates")).toBeVisible();
+    // Should show template tabs
+    await expect(page.getByTestId("template-tab-anthropic")).toBeVisible();
+    await expect(page.getByTestId("template-tab-openai")).toBeVisible();
+    await expect(page.getByTestId("template-tab-gemini")).toBeVisible();
+  });
+
+  test("selecting a template shows its models in the grid", async ({ page }) => {
+    await page.goto("/settings");
+    await page.getByTestId("template-tab-openai").click();
+    await expect(page.getByTestId("template-stage-grid")).toBeVisible();
   });
 
   test("shows pipeline defaults section", async ({ page }) => {
@@ -335,6 +343,11 @@ test.describe("Settings Page", () => {
 
     // Discard should also appear
     await expect(page.getByRole("button", { name: "Discard" })).toBeVisible();
+  });
+
+  test("default template has badge", async ({ page }) => {
+    await page.goto("/settings");
+    await expect(page.getByTestId("default-badge")).toBeVisible();
   });
 });
 

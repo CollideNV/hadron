@@ -1,7 +1,7 @@
 Feature: Pipeline Defaults Configuration
   Operators can view and update global pipeline defaults through the
-  settings page. Defaults control circuit breakers, timeouts, delivery
-  strategy, and default models.
+  settings page. Defaults control circuit breakers, timeouts, and delivery
+  strategy. Model selections are managed via backend templates.
 
   Scenario: View defaults with hardcoded fallback
     When no pipeline defaults have been configured in the database
@@ -20,7 +20,7 @@ Feature: Pipeline Defaults Configuration
   Scenario: Pipeline defaults section on settings page
     When an operator navigates to the settings page
     Then a Pipeline Defaults section is displayed
-    And it shows fields for max loops, max cost, timeouts, delivery strategy, and models
+    And it shows fields for max loops, max cost, timeouts, and delivery strategy
 
   Scenario: Editing defaults marks the form dirty
     Given the settings page is loaded
@@ -29,9 +29,9 @@ Feature: Pipeline Defaults Configuration
     And the Discard button appears
 
   Scenario: Saving defaults persists all settings atomically
-    Given the operator has changed pipeline defaults and model settings
+    Given the operator has changed pipeline defaults and backend templates
     When the operator clicks Save
-    Then both pipeline defaults and model settings are saved together
+    Then both pipeline defaults and templates are saved together
 
   Scenario: Defaults are frozen into new CRs at intake
     Given pipeline defaults have been configured

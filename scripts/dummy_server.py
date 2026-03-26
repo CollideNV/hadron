@@ -610,14 +610,86 @@ async def get_prompt(role: str):
     return {"role": role, "description": f"{role} prompt", "version": 1, "updated_at": None, "content": f"You are the {role} agent."}
 
 
-@app.get("/api/settings/models")
-async def get_model_settings():
-    return {"default_backend": "anthropic", "stages": {}}
+DUMMY_TEMPLATES = [
+    {
+        "slug": "anthropic",
+        "display_name": "Anthropic",
+        "backend": "claude",
+        "stages": {
+            "intake": {"act": {"backend": "claude", "model": "claude-haiku-4-5-20251001"}, "explore": None, "plan": None},
+            "behaviour_translation": {"act": {"backend": "claude", "model": "claude-sonnet-4-6"}, "explore": None, "plan": None},
+            "behaviour_verification": {"act": {"backend": "claude", "model": "claude-haiku-4-5-20251001"}, "explore": None, "plan": None},
+            "implementation": {"act": {"backend": "claude", "model": "claude-sonnet-4-6"}, "explore": {"backend": "claude", "model": "claude-haiku-4-5-20251001"}, "plan": {"backend": "claude", "model": "claude-opus-4-6"}},
+            "review:security_reviewer": {"act": {"backend": "claude", "model": "claude-sonnet-4-6"}, "explore": None, "plan": None},
+            "review:quality_reviewer": {"act": {"backend": "claude", "model": "claude-haiku-4-5-20251001"}, "explore": None, "plan": None},
+            "review:spec_compliance_reviewer": {"act": {"backend": "claude", "model": "claude-haiku-4-5-20251001"}, "explore": None, "plan": None},
+            "rework": {"act": {"backend": "claude", "model": "claude-sonnet-4-6"}, "explore": None, "plan": None},
+            "rebase": {"act": {"backend": "claude", "model": "claude-sonnet-4-6"}, "explore": None, "plan": None},
+        },
+        "available_models": ["claude-haiku-4-5-20251001", "claude-opus-4-20250514", "claude-opus-4-6", "claude-sonnet-4-20250514", "claude-sonnet-4-6"],
+        "is_default": True,
+    },
+    {
+        "slug": "openai",
+        "display_name": "OpenAI",
+        "backend": "openai",
+        "stages": {
+            "intake": {"act": {"backend": "openai", "model": "gpt-4.1"}, "explore": None, "plan": None},
+            "behaviour_translation": {"act": {"backend": "openai", "model": "gpt-4.1"}, "explore": None, "plan": None},
+            "behaviour_verification": {"act": {"backend": "openai", "model": "gpt-4.1"}, "explore": None, "plan": None},
+            "implementation": {"act": {"backend": "openai", "model": "gpt-4.1"}, "explore": {"backend": "openai", "model": "gpt-4.1-mini"}, "plan": {"backend": "openai", "model": "o3"}},
+            "review:security_reviewer": {"act": {"backend": "openai", "model": "gpt-4.1"}, "explore": None, "plan": None},
+            "review:quality_reviewer": {"act": {"backend": "openai", "model": "gpt-4.1"}, "explore": None, "plan": None},
+            "review:spec_compliance_reviewer": {"act": {"backend": "openai", "model": "gpt-4.1"}, "explore": None, "plan": None},
+            "rework": {"act": {"backend": "openai", "model": "gpt-4.1"}, "explore": None, "plan": None},
+            "rebase": {"act": {"backend": "openai", "model": "gpt-4.1"}, "explore": None, "plan": None},
+        },
+        "available_models": ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o", "gpt-4o-mini", "o3", "o4-mini"],
+        "is_default": False,
+    },
+    {
+        "slug": "gemini",
+        "display_name": "Gemini",
+        "backend": "gemini",
+        "stages": {
+            "intake": {"act": {"backend": "gemini", "model": "gemini-2.5-pro"}, "explore": None, "plan": None},
+            "behaviour_translation": {"act": {"backend": "gemini", "model": "gemini-2.5-pro"}, "explore": None, "plan": None},
+            "behaviour_verification": {"act": {"backend": "gemini", "model": "gemini-2.5-pro"}, "explore": None, "plan": None},
+            "implementation": {"act": {"backend": "gemini", "model": "gemini-2.5-pro"}, "explore": {"backend": "gemini", "model": "gemini-2.5-flash"}, "plan": None},
+            "review:security_reviewer": {"act": {"backend": "gemini", "model": "gemini-2.5-pro"}, "explore": None, "plan": None},
+            "review:quality_reviewer": {"act": {"backend": "gemini", "model": "gemini-2.5-pro"}, "explore": None, "plan": None},
+            "review:spec_compliance_reviewer": {"act": {"backend": "gemini", "model": "gemini-2.5-pro"}, "explore": None, "plan": None},
+            "rework": {"act": {"backend": "gemini", "model": "gemini-2.5-pro"}, "explore": None, "plan": None},
+            "rebase": {"act": {"backend": "gemini", "model": "gemini-2.5-pro"}, "explore": None, "plan": None},
+        },
+        "available_models": ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"],
+        "is_default": False,
+    },
+]
+
+DUMMY_DEFAULT_TEMPLATE = {"slug": "anthropic"}
 
 
-@app.get("/api/settings/backends")
-async def get_backends():
-    return [{"name": "anthropic", "display_name": "Anthropic", "models": ["claude-sonnet-4-6-20250514", "claude-haiku-4-5-20251001"]}]
+@app.get("/api/settings/templates")
+async def get_templates():
+    return DUMMY_TEMPLATES
+
+
+@app.put("/api/settings/templates")
+async def update_templates(request: Request):
+    body = await request.json()
+    return body
+
+
+@app.get("/api/settings/templates/default")
+async def get_default_template():
+    return DUMMY_DEFAULT_TEMPLATE
+
+
+@app.put("/api/settings/templates/default")
+async def set_default_template(request: Request):
+    body = await request.json()
+    return body
 
 
 @app.get("/api/settings/pipeline-defaults")
@@ -626,10 +698,7 @@ async def get_pipeline_defaults():
         "max_verification_loops": 3,
         "max_review_dev_loops": 3,
         "max_cost_usd": 10.0,
-        "default_backend": "claude",
-        "default_model": "claude-sonnet-4-6",
-        "explore_model": "claude-haiku-4-5-20251001",
-        "plan_model": "claude-opus-4-6",
+        "default_template": "anthropic",
         "delivery_strategy": "self_contained",
         "agent_timeout": 300,
         "test_timeout": 120,
@@ -658,11 +727,6 @@ async def get_audit_log(page: int = 1, page_size: int = 50, action: str | None =
     start = (page - 1) * page_size
     items = fake_entries[start:start + page_size]
     return {"items": items, "total": total, "page": page, "page_size": page_size}
-
-
-@app.get("/api/settings/opencode-endpoints")
-async def get_opencode():
-    return []
 
 
 @app.get("/api/events/stream")

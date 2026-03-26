@@ -45,6 +45,7 @@ export interface AgentStartedData {
   plan_model?: string;
   models?: string[];
   allowed_tools?: string[];
+  loop_iteration?: number;
 }
 export interface AgentCompletedData {
   role: string;
@@ -57,6 +58,7 @@ export interface AgentCompletedData {
   tool_calls_count?: number;
   round_count?: number;
   conversation_key?: string;
+  loop_iteration?: number;
   throttle_count?: number;
   throttle_seconds?: number;
   model_breakdown?: Record<string, ModelBreakdownEntry>;
@@ -197,6 +199,7 @@ export interface RawChangeRequest {
   source?: string;
   repo_urls?: string[];
   repo_default_branch?: string;
+  template_slug?: string;
 }
 
 /* ── Model settings ── */
@@ -212,32 +215,21 @@ export interface StageConfig {
   plan: PhaseModel | null;
 }
 
-export interface ModelSettings {
-  default_backend: string;
-  stages: Record<string, StageConfig>;
-}
-
-export interface BackendModels {
-  name: string;
-  display_name: string;
-  models: string[];
-}
-
-export interface OpenCodeEndpoint {
+export interface BackendTemplate {
   slug: string;
   display_name: string;
-  base_url: string;
-  models: string[];
+  backend: string;
+  stages: Record<string, StageConfig>;
+  base_url?: string | null;
+  available_models?: string[] | null;
+  is_default: boolean;
 }
 
 export interface PipelineDefaults {
   max_verification_loops: number;
   max_review_dev_loops: number;
   max_cost_usd: number;
-  default_backend: string;
-  default_model: string;
-  explore_model: string;
-  plan_model: string;
+  default_template: string;
   delivery_strategy: string;
   agent_timeout: number;
   test_timeout: number;

@@ -100,38 +100,6 @@ export default function PipelineDefaultsEditor({ defaults, onChange }: PipelineD
             ))}
           </select>
         </div>
-
-        {/* Models */}
-        <div>
-          <label className={LABEL}>Default Model</label>
-          <input
-            type="text"
-            value={defaults.default_model}
-            onChange={(e) => set("default_model", e.target.value)}
-            className={INPUT}
-            data-testid="defaults-default-model"
-          />
-        </div>
-        <div>
-          <label className={LABEL}>Explore Model</label>
-          <input
-            type="text"
-            value={defaults.explore_model}
-            onChange={(e) => set("explore_model", e.target.value)}
-            className={INPUT}
-            data-testid="defaults-explore-model"
-          />
-        </div>
-        <div>
-          <label className={LABEL}>Plan Model</label>
-          <input
-            type="text"
-            value={defaults.plan_model}
-            onChange={(e) => set("plan_model", e.target.value)}
-            className={INPUT}
-            data-testid="defaults-plan-model"
-          />
-        </div>
       </div>
     </div>
   );

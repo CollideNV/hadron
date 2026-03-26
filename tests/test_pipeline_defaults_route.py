@@ -77,10 +77,7 @@ class TestGetPipelineDefaults:
             "max_verification_loops": 5,
             "max_review_dev_loops": 2,
             "max_cost_usd": 25.0,
-            "default_backend": "openai",
-            "default_model": "gpt-4o",
-            "explore_model": "gpt-4o-mini",
-            "plan_model": "gpt-4o",
+            "default_template": "openai",
             "delivery_strategy": "push_and_wait",
             "agent_timeout": 600,
             "test_timeout": 60,
@@ -95,7 +92,7 @@ class TestGetPipelineDefaults:
         data = resp.json()
         assert data["max_cost_usd"] == 25.0
         assert data["delivery_strategy"] == "push_and_wait"
-        assert data["default_model"] == "gpt-4o"
+        assert data["default_template"] == "openai"
 
 
 # ---------------------------------------------------------------------------
@@ -113,10 +110,7 @@ class TestUpdatePipelineDefaults:
             "max_verification_loops": 5,
             "max_review_dev_loops": 4,
             "max_cost_usd": 20.0,
-            "default_backend": "claude",
-            "default_model": "claude-sonnet-4-6",
-            "explore_model": "claude-haiku-4-5-20251001",
-            "plan_model": "claude-opus-4-6",
+            "default_template": "anthropic",
             "delivery_strategy": "push_and_wait",
             "agent_timeout": 600,
             "test_timeout": 60,

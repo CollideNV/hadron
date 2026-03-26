@@ -7,6 +7,7 @@ const mockTriggerPipeline = vi.fn();
 
 vi.mock("../../api/client", () => ({
   triggerPipeline: (...args: unknown[]) => mockTriggerPipeline(...args),
+  getTemplates: () => Promise.resolve([]),
 }));
 
 beforeEach(() => {
@@ -135,7 +136,6 @@ describe("CRCreationDialog", () => {
   // Scenario: Form validation errors are shown within the dialog
   it("keeps dialog open and shows validation errors when required fields missing", async () => {
     const onClose = vi.fn();
-    const user = userEvent.setup();
 
     render(
       <CRCreationDialog open={true} onClose={onClose} onCreated={vi.fn()} />,

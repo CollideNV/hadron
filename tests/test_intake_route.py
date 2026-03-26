@@ -235,3 +235,52 @@ class TestSpawnerArgs:
         assert resp.status_code == 200
         _, kwargs = spawner.spawn.call_args
         assert kwargs["repo_name"] == "my-service"
+
+
+class TestTemplateSlug:
+    """template_slug is frozen into config snapshot."""
+
+    async def test_template_slug_in_config_snapshot(self) -> None:
+        factory, session = _mock_session_factory()
+        spawner = AsyncMock()
+        app = _make_app(factory, spawner)
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            resp = await client.post(
+                "/api/pipeline/trigger",
+                json={**_BASE_CR, "template_slug": "openai"},
+            )
+
+        assert resp.status_code == 200
+        # Find the CRRun object that was added
+        from hadron.db.models import CRRun
+        cr_runs = [o for o in session.added if type(o).__name__ == "CRRun"]
+        assert len(cr_runs) == 1
+        snapshot = cr_runs[0].config_snapshot_json
+        assert snapshot["pipeline"]["template_slug"] == "openai"
+
+    async def test_null_template_uses_default(self) -> None:
+        """When no template_slug provided, falls back to system default."""
+        factory, session = _mock_session_factory()
+        spawner = AsyncMock()
+        app = _make_app(factory, spawner)
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            resp = await client.post(
+                "/api/pipeline/trigger",
+                json=_BASE_CR,
+            )
+
+        assert resp.status_code == 200
+        from hadron.db.models import CRRun
+        cr_runs = [o for o in session.added if type(o).__name__ == "CRRun"]
+        assert len(cr_runs) == 1
+        snapshot = cr_runs[0].config_snapshot_json
+        # Falls back to "anthropic" when no DB default
+        assert snapshot["pipeline"]["template_slug"] == "anthropic"

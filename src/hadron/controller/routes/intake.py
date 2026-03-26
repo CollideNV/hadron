@@ -40,26 +40,43 @@ async def trigger_pipeline(
     cr_id = f"CR-{uuid.uuid4().hex[:8]}"
     config_snapshot = get_config_snapshot()
 
-    # Freeze prompt templates and model settings into config snapshot
+    # Freeze prompt templates and backend template into config snapshot
     async with session_factory() as session:
         result = await session.execute(select(PromptTemplate))
         prompts = {row.role: row.content for row in result.scalars()}
         if prompts:
             config_snapshot["prompts"] = prompts
 
-        # Freeze model settings + opencode endpoints
-        result = await session.execute(
-            select(PipelineSetting).where(
-                PipelineSetting.key.in_(["default_backend", "stage_models", "opencode_endpoints"])
+        # Resolve template slug: request → DB default → "anthropic"
+        template_slug = cr.template_slug
+        if not template_slug:
+            result = await session.execute(
+                select(PipelineSetting).where(PipelineSetting.key == "default_template")
             )
+            row = result.scalar_one_or_none()
+            if row and isinstance(row.value_json, dict):
+                template_slug = row.value_json.get("slug", "anthropic")
+            elif row and isinstance(row.value_json, str):
+                template_slug = row.value_json
+            else:
+                template_slug = "anthropic"
+
+        # Load template data from DB (or use built-in defaults via settings helper)
+        result = await session.execute(
+            select(PipelineSetting).where(PipelineSetting.key == "backend_templates")
         )
-        for setting in result.scalars():
-            if setting.key == "default_backend":
-                config_snapshot["pipeline"]["default_backend"] = setting.value_json.get("backend", "claude")
-            elif setting.key == "stage_models":
-                config_snapshot["pipeline"]["stage_models"] = setting.value_json
-            elif setting.key == "opencode_endpoints":
-                config_snapshot["pipeline"]["opencode_endpoints"] = setting.value_json
+        row = result.scalar_one_or_none()
+        template_data: dict | None = None
+        if row and isinstance(row.value_json, list):
+            for t in row.value_json:
+                if t.get("slug") == template_slug:
+                    template_data = t
+                    break
+
+        # Freeze template into config snapshot
+        config_snapshot["pipeline"]["template_slug"] = template_slug
+        if template_data:
+            config_snapshot["pipeline"]["template"] = template_data
 
     default_branch = cr.repo_default_branch
 

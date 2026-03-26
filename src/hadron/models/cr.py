@@ -70,6 +70,10 @@ class RawChangeRequest(BaseModel):
         description="Target repository URLs. One worker is spawned per repo.",
     )
     repo_default_branch: str = Field(default="main")
+    template_slug: str | None = Field(
+        default=None,
+        description="Backend template to use. Falls back to system default.",
+    )
 
     @field_validator("repo_urls")
     @classmethod

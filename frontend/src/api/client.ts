@@ -1,4 +1,4 @@
-import type { AnalyticsCost, AnalyticsSummary, AuditLogPage, BackendModels, CRRun, CRRunDetail, ModelSettings, OpenCodeEndpoint, PipelineDefaults, PromptTemplate, PromptTemplateDetail, RawChangeRequest } from "./types";
+import type { AnalyticsCost, AnalyticsSummary, AuditLogPage, BackendTemplate, CRRun, CRRunDetail, PipelineDefaults, PromptTemplate, PromptTemplateDetail, RawChangeRequest } from "./types";
 
 const BASE = "/api";
 
@@ -98,29 +98,25 @@ export async function updatePrompt(
   });
 }
 
-export async function getModelSettings(): Promise<ModelSettings> {
-  return fetchJSON<ModelSettings>("/settings/models");
+export async function getTemplates(): Promise<BackendTemplate[]> {
+  return fetchJSON<BackendTemplate[]>("/settings/templates");
 }
 
-export async function updateModelSettings(settings: ModelSettings): Promise<ModelSettings> {
-  return fetchJSON<ModelSettings>("/settings/models", {
+export async function updateTemplates(templates: BackendTemplate[]): Promise<BackendTemplate[]> {
+  return fetchJSON<BackendTemplate[]>("/settings/templates", {
     method: "PUT",
-    body: JSON.stringify(settings),
+    body: JSON.stringify(templates),
   });
 }
 
-export async function getAvailableBackends(): Promise<BackendModels[]> {
-  return fetchJSON<BackendModels[]>("/settings/backends");
+export async function getDefaultTemplate(): Promise<{ slug: string }> {
+  return fetchJSON<{ slug: string }>("/settings/templates/default");
 }
 
-export async function getOpenCodeEndpoints(): Promise<OpenCodeEndpoint[]> {
-  return fetchJSON<OpenCodeEndpoint[]>("/settings/opencode-endpoints");
-}
-
-export async function updateOpenCodeEndpoints(endpoints: OpenCodeEndpoint[]): Promise<OpenCodeEndpoint[]> {
-  return fetchJSON<OpenCodeEndpoint[]>("/settings/opencode-endpoints", {
+export async function setDefaultTemplate(slug: string): Promise<{ slug: string }> {
+  return fetchJSON<{ slug: string }>("/settings/templates/default", {
     method: "PUT",
-    body: JSON.stringify(endpoints),
+    body: JSON.stringify({ slug }),
   });
 }
 

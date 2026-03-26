@@ -1,72 +1,67 @@
 import { useCallback, useEffect, useState } from "react";
-import type { BackendModels, ModelSettings, OpenCodeEndpoint, PipelineDefaults } from "../api/types";
-import { getAvailableBackends, getModelSettings, getOpenCodeEndpoints, getPipelineDefaults, updateModelSettings, updateOpenCodeEndpoints, updatePipelineDefaults } from "../api/client";
-import ModelGrid from "../components/settings/ModelGrid";
-import OpenCodeEndpointEditor from "../components/settings/OpenCodeEndpointEditor";
+import type { BackendTemplate, PipelineDefaults } from "../api/types";
+import { getDefaultTemplate, getPipelineDefaults, getTemplates, setDefaultTemplate, updatePipelineDefaults, updateTemplates } from "../api/client";
+import TemplateEditor from "../components/settings/TemplateEditor";
 import PipelineDefaultsEditor from "../components/settings/PipelineDefaultsEditor";
 
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<ModelSettings | null>(null);
-  const [savedSettings, setSavedSettings] = useState<ModelSettings | null>(null);
-  const [backends, setBackends] = useState<BackendModels[]>([]);
-  const [endpoints, setEndpoints] = useState<OpenCodeEndpoint[]>([]);
-  const [savedEndpoints, setSavedEndpoints] = useState<OpenCodeEndpoint[]>([]);
+  const [templates, setTemplates] = useState<BackendTemplate[]>([]);
+  const [savedTemplates, setSavedTemplates] = useState<BackendTemplate[]>([]);
+  const [defaultSlug, setDefaultSlug] = useState("anthropic");
+  const [savedDefaultSlug, setSavedDefaultSlug] = useState("anthropic");
   const [defaults, setDefaults] = useState<PipelineDefaults | null>(null);
   const [savedDefaults, setSavedDefaults] = useState<PipelineDefaults | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    Promise.all([getModelSettings(), getAvailableBackends(), getOpenCodeEndpoints(), getPipelineDefaults()])
-      .then(([s, b, ep, d]) => {
-        setSettings(s);
-        setSavedSettings(s);
-        setBackends(b);
-        setEndpoints(ep);
-        setSavedEndpoints(ep);
+    Promise.all([getTemplates(), getDefaultTemplate(), getPipelineDefaults()])
+      .then(([t, dt, d]) => {
+        setTemplates(t);
+        setSavedTemplates(t);
+        setDefaultSlug(dt.slug);
+        setSavedDefaultSlug(dt.slug);
         setDefaults(d);
         setSavedDefaults(d);
+        setLoaded(true);
       })
       .catch((e) => setError(e.message));
   }, []);
 
   const handleSave = useCallback(async () => {
-    if (!settings) return;
     setSaving(true);
     setError(null);
     try {
-      const saves: Promise<unknown>[] = [
-        updateModelSettings(settings),
-        updateOpenCodeEndpoints(endpoints),
-      ];
+      const saves: Promise<unknown>[] = [updateTemplates(templates)];
+      if (defaultSlug !== savedDefaultSlug) {
+        saves.push(setDefaultTemplate(defaultSlug));
+      }
       if (defaults) saves.push(updatePipelineDefaults(defaults));
-      const [updated] = await Promise.all(saves) as [ModelSettings, ...unknown[]];
-      setSettings(updated);
-      setSavedSettings(updated);
-      setSavedEndpoints(endpoints);
+      const [updatedTemplates] = await Promise.all(saves) as [BackendTemplate[], ...unknown[]];
+      setTemplates(updatedTemplates);
+      setSavedTemplates(updatedTemplates);
+      setSavedDefaultSlug(defaultSlug);
       if (defaults) setSavedDefaults(defaults);
-      // Re-fetch backends so new endpoints appear in dropdowns
-      const b = await getAvailableBackends();
-      setBackends(b);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
-  }, [settings, endpoints, defaults]);
+  }, [templates, defaultSlug, savedDefaultSlug, defaults]);
 
   const handleDiscard = useCallback(() => {
-    if (savedSettings) setSettings(savedSettings);
-    setEndpoints(savedEndpoints);
+    setTemplates(savedTemplates);
+    setDefaultSlug(savedDefaultSlug);
     if (savedDefaults) setDefaults(savedDefaults);
-  }, [savedSettings, savedEndpoints, savedDefaults]);
+  }, [savedTemplates, savedDefaultSlug, savedDefaults]);
 
   const dirty =
-    (settings !== null && savedSettings !== null && JSON.stringify(settings) !== JSON.stringify(savedSettings)) ||
-    JSON.stringify(endpoints) !== JSON.stringify(savedEndpoints) ||
+    JSON.stringify(templates) !== JSON.stringify(savedTemplates) ||
+    defaultSlug !== savedDefaultSlug ||
     (defaults !== null && savedDefaults !== null && JSON.stringify(defaults) !== JSON.stringify(savedDefaults));
 
-  if (!settings) {
+  if (!loaded) {
     return (
       <div className="p-8">
         {error ? (
@@ -85,7 +80,7 @@ export default function SettingsPage() {
       )}
 
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-lg font-semibold text-text">Model Settings</h1>
+        <h1 className="text-lg font-semibold text-text">Backend Templates</h1>
         <div className="flex items-center gap-3">
           {dirty && (
             <button
@@ -109,33 +104,20 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Default backend */}
+      {/* Backend Templates */}
       <div className="mb-8">
-        <label className="block text-sm font-medium text-text-muted mb-2">Default Backend</label>
-        <select
-          value={settings.default_backend}
-          onChange={(e) => setSettings({ ...settings, default_backend: e.target.value })}
-          className="bg-surface-raised border border-border-subtle rounded px-3 py-1.5 text-sm text-text"
-        >
-          {backends.map((b) => (
-            <option key={b.name} value={b.name}>{b.display_name}</option>
-          ))}
-        </select>
+        <TemplateEditor
+          templates={templates}
+          onChange={setTemplates}
+          defaultSlug={defaultSlug}
+          onDefaultChange={setDefaultSlug}
+        />
       </div>
 
       {/* Pipeline Defaults */}
       {defaults && (
         <PipelineDefaultsEditor defaults={defaults} onChange={setDefaults} />
       )}
-
-      {/* OpenCode Endpoints */}
-      <OpenCodeEndpointEditor endpoints={endpoints} onChange={setEndpoints} />
-
-      {/* Stage × Phase grid */}
-      <div>
-        <h2 className="text-sm font-medium text-text-muted mb-3">Per-Stage Configuration</h2>
-        <ModelGrid settings={settings} backends={backends} onChange={setSettings} />
-      </div>
     </div>
   );
 }

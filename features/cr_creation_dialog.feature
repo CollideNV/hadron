@@ -41,3 +41,9 @@ Feature: CR Creation Dialog
   Scenario: Dialog styling is consistent with the application design system
     Given the CR creation dialog is open
     Then the dialog appearance matches the application design system
+
+  Scenario: Template selector visible with default pre-selected
+    Given backend templates are configured with a system default
+    When the CR creation dialog opens
+    Then a backend template dropdown is visible
+    And the system default template is pre-selected in the dropdown

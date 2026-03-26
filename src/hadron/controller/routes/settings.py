@@ -1,8 +1,10 @@
-"""Model and pipeline settings management routes."""
+"""Backend template and pipeline settings management routes."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+import copy
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -31,35 +33,52 @@ class StageConfig(BaseModel):
     plan: PhaseModel | None = None
 
 
-class ModelSettingsResponse(BaseModel):
-    default_backend: str
-    stages: dict[str, StageConfig]
-
-
-class ModelSettingsUpdate(BaseModel):
-    default_backend: str
-    stages: dict[str, StageConfig]
-
-
-class BackendModels(BaseModel):
-    name: str
-    display_name: str
-    models: list[str]
-
-
-class OpenCodeEndpoint(BaseModel):
+class BackendTemplate(BaseModel):
     slug: str
     display_name: str
-    base_url: str
-    models: list[str]
+    backend: str
+    stages: dict[str, StageConfig]
+    base_url: str | None = None
+    available_models: list[str] | None = None
+    is_default: bool = False
+
+
+class DefaultTemplateResponse(BaseModel):
+    slug: str
+
+
+class DefaultTemplateUpdate(BaseModel):
+    slug: str
 
 
 # ---------------------------------------------------------------------------
-# Defaults (fallback when no DB rows exist)
+# Built-in templates (fallback when no DB rows exist)
 # ---------------------------------------------------------------------------
 
-_DEFAULT_BACKEND = "claude"
-_DEFAULT_STAGES: dict[str, dict] = {
+
+def _make_stages(backend: str, act_model: str, explore_model: str | None, plan_model: str | None) -> dict[str, dict]:
+    """Build stage configs where all stages use the same backend."""
+    def _phase(model: str) -> dict:
+        return {"backend": backend, "model": model}
+
+    impl_explore = {"backend": backend, "model": explore_model} if explore_model else None
+    impl_plan = {"backend": backend, "model": plan_model} if plan_model else None
+
+    return {
+        "intake": {"act": _phase(act_model), "explore": None, "plan": None},
+        "behaviour_translation": {"act": _phase(act_model), "explore": None, "plan": None},
+        "behaviour_verification": {"act": _phase(act_model), "explore": None, "plan": None},
+        "implementation": {"act": _phase(act_model), "explore": impl_explore, "plan": impl_plan},
+        "review:security_reviewer": {"act": _phase(act_model), "explore": None, "plan": None},
+        "review:quality_reviewer": {"act": _phase(act_model), "explore": None, "plan": None},
+        "review:spec_compliance_reviewer": {"act": _phase(act_model), "explore": None, "plan": None},
+        "rework": {"act": _phase(act_model), "explore": None, "plan": None},
+        "rebase": {"act": _phase(act_model), "explore": None, "plan": None},
+    }
+
+
+# Anthropic template uses differentiated models per stage (the original _DEFAULT_STAGES)
+_ANTHROPIC_STAGES: dict[str, dict] = {
     "intake": {"act": {"backend": "claude", "model": "claude-haiku-4-5-20251001"}, "explore": None, "plan": None},
     "behaviour_translation": {"act": {"backend": "claude", "model": "claude-sonnet-4-6"}, "explore": None, "plan": None},
     "behaviour_verification": {"act": {"backend": "claude", "model": "claude-haiku-4-5-20251001"}, "explore": None, "plan": None},
@@ -71,55 +90,50 @@ _DEFAULT_STAGES: dict[str, dict] = {
     "rebase": {"act": {"backend": "claude", "model": "claude-sonnet-4-6"}, "explore": None, "plan": None},
 }
 
+_BUILTIN_TEMPLATES: list[dict] = [
+    {
+        "slug": "anthropic",
+        "display_name": "Anthropic",
+        "backend": "claude",
+        "stages": _ANTHROPIC_STAGES,
+    },
+    {
+        "slug": "openai",
+        "display_name": "OpenAI",
+        "backend": "openai",
+        "stages": _make_stages("openai", "gpt-4.1", "gpt-4.1-mini", "o3"),
+    },
+    {
+        "slug": "gemini",
+        "display_name": "Gemini",
+        "backend": "gemini",
+        "stages": _make_stages("gemini", "gemini-2.5-pro", "gemini-2.5-flash", None),
+    },
+]
+
+_BUILTIN_SLUGS = {t["slug"] for t in _BUILTIN_TEMPLATES}
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-async def _build_backends_list(
-    session_factory: async_sessionmaker[AsyncSession],
-) -> list[BackendModels]:
-    """Derive available backends and their models from the cost table + DB endpoints."""
-    groups: dict[str, list[str]] = {
-        "claude": [],
-        "openai": [],
-        "gemini": [],
+def _models_for_backend(backend: str) -> list[str]:
+    """Return known model names for a built-in backend from the cost table."""
+    prefix_map = {
+        "claude": ("claude-",),
+        "openai": ("gpt-", "o3", "o4-"),
+        "gemini": ("gemini-",),
     }
-    for model_name in sorted(_MODEL_COSTS):
-        if model_name.startswith("claude-"):
-            groups["claude"].append(model_name)
-        elif model_name.startswith(("gpt-", "o3", "o4-")):
-            groups["openai"].append(model_name)
-        elif model_name.startswith("gemini-"):
-            groups["gemini"].append(model_name)
-
-    backends = [
-        BackendModels(name="claude", display_name="Anthropic", models=groups["claude"]),
-        BackendModels(name="openai", display_name="OpenAI", models=groups["openai"]),
-        BackendModels(name="gemini", display_name="Gemini", models=groups["gemini"]),
-        BackendModels(name="opencode", display_name="OpenCode", models=[]),
-    ]
-
-    # Append named OpenCode endpoints from DB
-    async with session_factory() as session:
-        result = await session.execute(
-            select(PipelineSetting).where(PipelineSetting.key == "opencode_endpoints")
-        )
-        row = result.scalar_one_or_none()
-        if row and isinstance(row.value_json, list):
-            for ep in row.value_json:
-                backends.append(BackendModels(
-                    name=f"opencode:{ep['slug']}",
-                    display_name=ep["display_name"],
-                    models=ep.get("models", []),
-                ))
-
-    return backends
+    prefixes = prefix_map.get(backend)
+    if not prefixes:
+        return []
+    return sorted(m for m in _MODEL_COSTS if m.startswith(prefixes))
 
 
 def _parse_stages(raw: dict | str) -> dict[str, StageConfig]:
-    """Parse raw JSON stage_models into StageConfig dict."""
+    """Parse raw JSON stage data into StageConfig dict."""
     import json
     if isinstance(raw, str):
         raw = json.loads(raw)
@@ -135,154 +149,161 @@ def _parse_stages(raw: dict | str) -> dict[str, StageConfig]:
     return result
 
 
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
-
-
-@router.get("/settings/models")
-async def get_model_settings(
-    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
-) -> ModelSettingsResponse:
-    """Return current model settings (falls back to hardcoded defaults)."""
-    default_backend = _DEFAULT_BACKEND
-    stages_raw = _DEFAULT_STAGES
-
+async def _load_templates(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> list[BackendTemplate]:
+    """Load templates: built-in defaults merged with DB overrides + OpenCode templates."""
+    db_templates: dict[str, dict] = {}
     async with session_factory() as session:
         result = await session.execute(
-            select(PipelineSetting).where(
-                PipelineSetting.key.in_(["default_backend", "stage_models"])
-            )
-        )
-        for setting in result.scalars():
-            if setting.key == "default_backend":
-                val = setting.value_json
-                if isinstance(val, dict):
-                    default_backend = val.get("backend", _DEFAULT_BACKEND)
-                elif isinstance(val, str):
-                    default_backend = val
-            elif setting.key == "stage_models":
-                stages_raw = setting.value_json
-
-    return ModelSettingsResponse(
-        default_backend=default_backend,
-        stages=_parse_stages(stages_raw),
-    )
-
-
-@router.put("/settings/models")
-async def update_model_settings(
-    body: ModelSettingsUpdate,
-    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
-) -> ModelSettingsResponse:
-    """Update model settings. Writes AuditLog entry."""
-    stages_json = {
-        stage: cfg.model_dump() for stage, cfg in body.stages.items()
-    }
-
-    async with session_factory() as session:
-        # Upsert default_backend
-        result = await session.execute(
-            select(PipelineSetting).where(PipelineSetting.key == "default_backend")
-        )
-        row = result.scalar_one_or_none()
-        if row:
-            row.value_json = {"backend": body.default_backend}
-        else:
-            session.add(PipelineSetting(
-                key="default_backend",
-                value_json={"backend": body.default_backend},
-            ))
-
-        # Upsert stage_models
-        result = await session.execute(
-            select(PipelineSetting).where(PipelineSetting.key == "stage_models")
-        )
-        row = result.scalar_one_or_none()
-        if row:
-            row.value_json = stages_json
-        else:
-            session.add(PipelineSetting(
-                key="stage_models",
-                value_json=stages_json,
-            ))
-
-        session.add(AuditLog(
-            action="model_settings_updated",
-            details={"default_backend": body.default_backend, "stages": list(stages_json.keys())},
-        ))
-
-        await session.commit()
-
-    return ModelSettingsResponse(
-        default_backend=body.default_backend,
-        stages=_parse_stages(stages_json),
-    )
-
-
-@router.get("/settings/backends")
-async def get_available_backends(
-    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
-) -> list[BackendModels]:
-    """Return available backends with their model lists."""
-    return await _build_backends_list(session_factory)
-
-
-# ---------------------------------------------------------------------------
-# OpenCode Endpoints
-# ---------------------------------------------------------------------------
-
-
-@router.get("/settings/opencode-endpoints")
-async def get_opencode_endpoints(
-    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
-) -> list[OpenCodeEndpoint]:
-    """Return named OpenCode endpoints."""
-    async with session_factory() as session:
-        result = await session.execute(
-            select(PipelineSetting).where(PipelineSetting.key == "opencode_endpoints")
+            select(PipelineSetting).where(PipelineSetting.key == "backend_templates")
         )
         row = result.scalar_one_or_none()
         if row and isinstance(row.value_json, list):
-            return [OpenCodeEndpoint(**ep) for ep in row.value_json]
-    return []
+            for t in row.value_json:
+                db_templates[t["slug"]] = t
+
+    templates: list[BackendTemplate] = []
+    for builtin in _BUILTIN_TEMPLATES:
+        data = db_templates.pop(builtin["slug"], None) or copy.deepcopy(builtin)
+        templates.append(BackendTemplate(
+            slug=data["slug"],
+            display_name=data.get("display_name", builtin["display_name"]),
+            backend=data.get("backend", builtin["backend"]),
+            stages=_parse_stages(data.get("stages", builtin["stages"])),
+            available_models=_models_for_backend(builtin["backend"]),
+            is_default=False,  # set below
+        ))
+
+    # Append any remaining DB templates (OpenCode custom ones)
+    for slug, data in db_templates.items():
+        templates.append(BackendTemplate(
+            slug=data["slug"],
+            display_name=data["display_name"],
+            backend=data.get("backend", "opencode"),
+            stages=_parse_stages(data.get("stages", {})),
+            base_url=data.get("base_url"),
+            available_models=data.get("available_models", []),
+            is_default=False,
+        ))
+
+    return templates
 
 
-@router.put("/settings/opencode-endpoints")
-async def update_opencode_endpoints(
-    body: list[OpenCodeEndpoint],
+async def _load_default_slug(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> str:
+    """Load the default template slug from DB, falling back to 'anthropic'."""
+    async with session_factory() as session:
+        result = await session.execute(
+            select(PipelineSetting).where(PipelineSetting.key == "default_template")
+        )
+        row = result.scalar_one_or_none()
+        if row and isinstance(row.value_json, dict):
+            return row.value_json.get("slug", "anthropic")
+        if row and isinstance(row.value_json, str):
+            return row.value_json
+    return "anthropic"
+
+
+# ---------------------------------------------------------------------------
+# Template Routes
+# ---------------------------------------------------------------------------
+
+
+@router.get("/settings/templates")
+async def get_templates(
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
-) -> list[OpenCodeEndpoint]:
-    """Replace all named OpenCode endpoints. Validates unique slugs."""
-    # Validate unique slugs
-    slugs = [ep.slug for ep in body]
-    if len(slugs) != len(set(slugs)):
-        from fastapi import HTTPException
-        raise HTTPException(status_code=422, detail="Duplicate endpoint slugs")
+) -> list[BackendTemplate]:
+    """Return all backend templates (built-in + custom)."""
+    templates = await _load_templates(session_factory)
+    default_slug = await _load_default_slug(session_factory)
+    for t in templates:
+        t.is_default = t.slug == default_slug
+    return templates
 
-    endpoints_json = [ep.model_dump() for ep in body]
+
+@router.put("/settings/templates")
+async def update_templates(
+    body: list[BackendTemplate],
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> list[BackendTemplate]:
+    """Save all templates. Validates unique slugs."""
+    slugs = [t.slug for t in body]
+    if len(slugs) != len(set(slugs)):
+        raise HTTPException(status_code=422, detail="Duplicate template slugs")
+
+    templates_json = []
+    for t in body:
+        data = t.model_dump()
+        # Convert StageConfig objects to plain dicts for JSON storage
+        data["stages"] = {
+            stage: cfg.model_dump() if hasattr(cfg, "model_dump") else cfg
+            for stage, cfg in data["stages"].items()
+        }
+        # Don't persist computed fields
+        data.pop("available_models", None)
+        data.pop("is_default", None)
+        templates_json.append(data)
 
     async with session_factory() as session:
         result = await session.execute(
-            select(PipelineSetting).where(PipelineSetting.key == "opencode_endpoints")
+            select(PipelineSetting).where(PipelineSetting.key == "backend_templates")
         )
         row = result.scalar_one_or_none()
         if row:
-            row.value_json = endpoints_json
+            row.value_json = templates_json
         else:
-            session.add(PipelineSetting(
-                key="opencode_endpoints",
-                value_json=endpoints_json,
-            ))
+            session.add(PipelineSetting(key="backend_templates", value_json=templates_json))
 
         session.add(AuditLog(
-            action="opencode_endpoints_updated",
+            action="backend_templates_updated",
             details={"slugs": slugs},
         ))
-
         await session.commit()
 
-    return body
+    # Re-load to get computed fields (available_models, is_default)
+    return await get_templates(session_factory)
+
+
+@router.get("/settings/templates/default")
+async def get_default_template(
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> DefaultTemplateResponse:
+    """Return the default template slug."""
+    slug = await _load_default_slug(session_factory)
+    return DefaultTemplateResponse(slug=slug)
+
+
+@router.put("/settings/templates/default")
+async def set_default_template(
+    body: DefaultTemplateUpdate,
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> DefaultTemplateResponse:
+    """Set the default template slug. Validates slug exists."""
+    # Verify slug exists in current templates
+    templates = await _load_templates(session_factory)
+    known_slugs = {t.slug for t in templates}
+    if body.slug not in known_slugs:
+        raise HTTPException(status_code=422, detail=f"Unknown template slug: {body.slug}")
+
+    async with session_factory() as session:
+        result = await session.execute(
+            select(PipelineSetting).where(PipelineSetting.key == "default_template")
+        )
+        row = result.scalar_one_or_none()
+        if row:
+            row.value_json = {"slug": body.slug}
+        else:
+            session.add(PipelineSetting(key="default_template", value_json={"slug": body.slug}))
+
+        session.add(AuditLog(
+            action="default_template_updated",
+            details={"slug": body.slug},
+        ))
+        await session.commit()
+
+    return DefaultTemplateResponse(slug=body.slug)
 
 
 # ---------------------------------------------------------------------------
@@ -294,10 +315,7 @@ class PipelineDefaultsResponse(BaseModel):
     max_verification_loops: int
     max_review_dev_loops: int
     max_cost_usd: float
-    default_backend: str
-    default_model: str
-    explore_model: str
-    plan_model: str
+    default_template: str
     delivery_strategy: str
     agent_timeout: int
     test_timeout: int
@@ -307,10 +325,7 @@ class PipelineDefaultsUpdate(BaseModel):
     max_verification_loops: int
     max_review_dev_loops: int
     max_cost_usd: float
-    default_backend: str
-    default_model: str
-    explore_model: str
-    plan_model: str
+    default_template: str
     delivery_strategy: str
     agent_timeout: int
     test_timeout: int

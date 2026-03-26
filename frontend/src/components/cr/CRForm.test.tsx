@@ -2,6 +2,13 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import CRForm from "./CRForm";
+import type { BackendTemplate } from "../../api/types";
+
+const fakeTemplates: BackendTemplate[] = [
+  { slug: "anthropic", display_name: "Anthropic", backend: "claude", stages: {}, available_models: [], is_default: true },
+  { slug: "openai", display_name: "OpenAI", backend: "openai", stages: {}, available_models: [], is_default: false },
+  { slug: "gemini", display_name: "Gemini", backend: "gemini", stages: {}, available_models: [], is_default: false },
+];
 
 describe("CRForm", () => {
   it("renders all form fields", () => {
@@ -41,12 +48,14 @@ describe("CRForm", () => {
 
     await user.click(screen.getByRole("button", { name: /trigger pipeline/i }));
 
-    expect(onSubmit).toHaveBeenCalledWith({
-      title: "My CR",
-      description: "Details",
-      repo_urls: ["https://github.com/org/repo"],
-      repo_default_branch: "main",
-    });
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "My CR",
+        description: "Details",
+        repo_urls: ["https://github.com/org/repo"],
+        repo_default_branch: "main",
+      }),
+    );
   });
 
   it("submits without repo_urls when repo field empty", async () => {
@@ -155,5 +164,46 @@ describe("CRForm", () => {
 
     await user.click(screen.getByRole("button", { name: /cancel/i }));
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  // Template selector tests
+  it("renders template dropdown when templates provided", () => {
+    render(
+      <CRForm onSubmit={vi.fn()} submitting={false} templates={fakeTemplates} defaultTemplateSlug="anthropic" />,
+    );
+    expect(screen.getByTestId("cr-template-select")).toBeInTheDocument();
+    expect(screen.getByLabelText("Backend Template")).toBeInTheDocument();
+  });
+
+  it("does not render template dropdown when no templates", () => {
+    render(<CRForm onSubmit={vi.fn()} submitting={false} />);
+    expect(screen.queryByTestId("cr-template-select")).not.toBeInTheDocument();
+  });
+
+  it("pre-selects the default template", () => {
+    render(
+      <CRForm onSubmit={vi.fn()} submitting={false} templates={fakeTemplates} defaultTemplateSlug="anthropic" />,
+    );
+    const select = screen.getByTestId("cr-template-select") as HTMLSelectElement;
+    expect(select.value).toBe("anthropic");
+  });
+
+  it("includes template_slug in submit payload", async () => {
+    const onSubmit = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <CRForm onSubmit={onSubmit} submitting={false} templates={fakeTemplates} defaultTemplateSlug="anthropic" />,
+    );
+
+    await user.type(screen.getByPlaceholderText(/health check/i), "My CR");
+    await user.type(screen.getByPlaceholderText(/describe the change/i), "Details");
+
+    // Change template to openai
+    await user.selectOptions(screen.getByTestId("cr-template-select"), "openai");
+    await user.click(screen.getByRole("button", { name: /trigger pipeline/i }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ template_slug: "openai" }),
+    );
   });
 });

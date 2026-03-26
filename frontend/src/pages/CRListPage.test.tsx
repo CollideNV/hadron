@@ -11,6 +11,7 @@ const mockTriggerPipeline = vi.fn();
 vi.mock("../api/client", () => ({
   listPipelines: (...args: unknown[]) => mockListPipelines(...args),
   triggerPipeline: (...args: unknown[]) => mockTriggerPipeline(...args),
+  getTemplates: () => Promise.resolve([]),
 }));
 
 beforeEach(() => {
