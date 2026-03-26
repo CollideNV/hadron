@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { BackendTemplate, PipelineDefaults } from "../api/types";
 import { getDefaultTemplate, getPipelineDefaults, getTemplates, setDefaultTemplate, updatePipelineDefaults, updateTemplates } from "../api/client";
+import ApiKeyEditor from "../components/settings/ApiKeyEditor";
 import TemplateEditor from "../components/settings/TemplateEditor";
 import PipelineDefaultsEditor from "../components/settings/PipelineDefaultsEditor";
 
@@ -113,6 +114,9 @@ export default function SettingsPage() {
           onDefaultChange={setDefaultSlug}
         />
       </div>
+
+      {/* API Keys */}
+      <ApiKeyEditor />
 
       {/* Pipeline Defaults */}
       {defaults && (

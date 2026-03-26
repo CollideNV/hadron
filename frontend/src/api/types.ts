@@ -235,6 +235,16 @@ export interface PipelineDefaults {
   test_timeout: number;
 }
 
+/* ── API Keys ── */
+
+export interface ApiKeyStatus {
+  key_name: string;
+  display_name: string;
+  is_configured: boolean;
+  masked_value: string;
+  source: "database" | "environment" | "none";
+}
+
 export interface AuditLogEntry {
   id: number;
   cr_id: string | null;

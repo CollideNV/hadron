@@ -16,7 +16,10 @@ logger = logging.getLogger(__name__)
 class JobSpawner(Protocol):
     """Protocol for job spawner implementations."""
 
-    async def spawn(self, cr_id: str, repo_url: str, repo_name: str = "", default_branch: str = "main") -> None: ...
+    async def spawn(
+        self, cr_id: str, repo_url: str, repo_name: str = "",
+        default_branch: str = "main", extra_env: dict[str, str] | None = None,
+    ) -> None: ...
 
 
 class SubprocessJobSpawner:
@@ -26,19 +29,25 @@ class SubprocessJobSpawner:
         self._processes: dict[str, asyncio.subprocess.Process] = {}
         self._redis = redis
 
-    async def spawn(self, cr_id: str, repo_url: str, repo_name: str = "", default_branch: str = "main") -> None:
+    async def spawn(
+        self, cr_id: str, repo_url: str, repo_name: str = "",
+        default_branch: str = "main", extra_env: dict[str, str] | None = None,
+    ) -> None:
         """Spawn a worker subprocess for a single repo within a CR."""
         if not repo_name:
             repo_name = extract_repo_name(repo_url)
         worker_key = f"{cr_id}:{repo_name}"
         logger.info("Spawning subprocess worker for CR %s, repo %s", cr_id, repo_name)
+        env = dict(os.environ)
+        if extra_env:
+            env.update(extra_env)
         proc = await asyncio.create_subprocess_exec(
             sys.executable, "-m", "hadron.worker.main",
             f"--cr-id={cr_id}",
             f"--repo-url={repo_url}",
             f"--repo-name={repo_name}",
             f"--default-branch={default_branch}",
-            env=dict(os.environ),
+            env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
@@ -89,7 +98,10 @@ class K8sJobSpawner:
         self._namespace = namespace
         self._worker_image = worker_image
 
-    async def spawn(self, cr_id: str, repo_url: str, repo_name: str = "", default_branch: str = "main") -> None:
+    async def spawn(
+        self, cr_id: str, repo_url: str, repo_name: str = "",
+        default_branch: str = "main", extra_env: dict[str, str] | None = None,
+    ) -> None:
         """Create a K8s Job for a single repo within a CR."""
         from kubernetes import client, config as k8s_config
 
@@ -161,6 +173,10 @@ class K8sJobSpawner:
                                             )
                                         ),
                                     ),
+                                ] + [
+                                    # DB-stored keys override K8s secrets when set
+                                    client.V1EnvVar(name=k, value=v)
+                                    for k, v in (extra_env or {}).items()
                                 ],
                                 resources=client.V1ResourceRequirements(
                                     requests={"memory": "512Mi", "cpu": "500m"},

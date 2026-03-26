@@ -12,7 +12,8 @@ Feature: Audit Log Viewer
     When the operator selects an action type filter
     Then only entries matching that action type are displayed
 
-  # Backend audit actions: backend_templates_updated, default_template_updated,
+  # Backend audit actions: api_key_cleared, api_key_updated,
+  # backend_templates_updated, default_template_updated,
   # pipeline_defaults_updated, prompt_template_updated.
 
   Scenario: Clear action filter

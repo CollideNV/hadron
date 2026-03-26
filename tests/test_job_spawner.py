@@ -47,6 +47,26 @@ class TestSubprocessJobSpawner:
             assert any("--repo-url=https://github.com/org/repo" in str(a) for a in args[0])
 
     @pytest.mark.asyncio
+    async def test_spawn_passes_extra_env(self) -> None:
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"", None))
+        mock_proc.returncode = 0
+
+        with patch(
+            "hadron.controller.job_spawner.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=mock_proc,
+        ) as mock_exec:
+            spawner = SubprocessJobSpawner()
+            await spawner.spawn(
+                "cr-1", "https://github.com/org/repo", "repo",
+                extra_env={"HADRON_ANTHROPIC_API_KEY": "sk-test-key"},
+            )
+
+            env = mock_exec.call_args[1]["env"]
+            assert env["HADRON_ANTHROPIC_API_KEY"] == "sk-test-key"
+
+    @pytest.mark.asyncio
     async def test_spawn_extracts_repo_name(self) -> None:
         mock_proc = AsyncMock()
         mock_proc.communicate = AsyncMock(return_value=(b"", None))

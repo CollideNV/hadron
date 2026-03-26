@@ -2,6 +2,8 @@ import { Link } from "react-router-dom";
 import { useAuditLog } from "../hooks/useAuditLog";
 
 const ACTION_TYPES = [
+  "api_key_cleared",
+  "api_key_updated",
   "backend_templates_updated",
   "default_template_updated",
   "pipeline_defaults_updated",

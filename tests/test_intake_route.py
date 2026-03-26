@@ -237,6 +237,53 @@ class TestSpawnerArgs:
         assert kwargs["repo_name"] == "my-service"
 
 
+class TestConfigSnapshotExcludesApiKeys:
+    """Config snapshot must never contain API keys."""
+
+    async def test_snapshot_has_no_api_keys(self) -> None:
+        factory, session = _mock_session_factory()
+        spawner = AsyncMock()
+        app = _make_app(factory, spawner)
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            resp = await client.post(
+                "/api/pipeline/trigger",
+                json={**_BASE_CR, "repo_urls": ["https://github.com/org/repo"]},
+            )
+
+        assert resp.status_code == 200
+        cr_runs = [o for o in session.added if type(o).__name__ == "CRRun"]
+        assert len(cr_runs) == 1
+        snapshot = cr_runs[0].config_snapshot_json
+        snapshot_str = str(snapshot)
+        for key_field in ("anthropic_api_key", "openai_api_key", "gemini_api_key", "api_keys"):
+            assert key_field not in snapshot_str
+
+    async def test_spawner_receives_extra_env(self) -> None:
+        """Spawner is called with extra_env containing resolved keys."""
+        factory, _ = _mock_session_factory()
+        spawner = AsyncMock()
+        app = _make_app(factory, spawner)
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            resp = await client.post(
+                "/api/pipeline/trigger",
+                json={**_BASE_CR, "repo_urls": ["https://github.com/org/repo"]},
+            )
+
+        assert resp.status_code == 200
+        spawner.spawn.assert_awaited_once()
+        call_kwargs = spawner.spawn.call_args.kwargs
+        # extra_env should be present (may be empty if no keys set)
+        assert "extra_env" in call_kwargs
+
+
 class TestTemplateSlug:
     """template_slug is frozen into config snapshot."""
 

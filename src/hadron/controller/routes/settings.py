@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import copy
+import logging
+import os
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -10,9 +12,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from hadron.agent.cost import _MODEL_COSTS
+from hadron.config.api_keys import API_KEY_REGISTRY, DB_SETTING_KEY, _load_encrypted_keys
 from hadron.config.defaults import PIPELINE_DEFAULTS
 from hadron.controller.dependencies import get_session_factory
 from hadron.db.models import AuditLog, PipelineSetting
+from hadron.security.crypto import decrypt_value, encrypt_value, mask_key
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["settings"])
 
@@ -375,3 +381,153 @@ async def update_pipeline_defaults(
         await session.commit()
 
     return PipelineDefaultsResponse(**values)
+
+
+# ---------------------------------------------------------------------------
+# API Keys
+# ---------------------------------------------------------------------------
+
+
+class ApiKeyStatus(BaseModel):
+    key_name: str
+    display_name: str
+    is_configured: bool
+    masked_value: str
+    source: str  # "database" | "environment" | "none"
+
+
+class ApiKeyUpdate(BaseModel):
+    key_name: str
+    value: str
+
+
+def _key_status(key_name: str, info: dict[str, str], encrypted: dict[str, str]) -> ApiKeyStatus:
+    """Build an ApiKeyStatus for a single key."""
+    display_name = info["display_name"]
+
+    # Check DB first
+    ciphertext = encrypted.get(key_name)
+    if ciphertext:
+        try:
+            plaintext = decrypt_value(ciphertext)
+            return ApiKeyStatus(
+                key_name=key_name,
+                display_name=display_name,
+                is_configured=True,
+                masked_value=mask_key(plaintext),
+                source="database",
+            )
+        except Exception:
+            return ApiKeyStatus(
+                key_name=key_name,
+                display_name=display_name,
+                is_configured=True,
+                masked_value="(encrypted, cannot decrypt)",
+                source="database",
+            )
+
+    # Env var fallback
+    env_val = os.environ.get(info["env_var"]) or os.environ.get(info["env_fallback"], "")
+    if env_val:
+        return ApiKeyStatus(
+            key_name=key_name,
+            display_name=display_name,
+            is_configured=True,
+            masked_value=mask_key(env_val),
+            source="environment",
+        )
+
+    return ApiKeyStatus(
+        key_name=key_name,
+        display_name=display_name,
+        is_configured=False,
+        masked_value="",
+        source="none",
+    )
+
+
+@router.get("/settings/api-keys")
+async def get_api_keys(
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> list[ApiKeyStatus]:
+    """Return status of all known API keys (masked, never plaintext)."""
+    encrypted = await _load_encrypted_keys(session_factory)
+    return [
+        _key_status(key_name, info, encrypted)
+        for key_name, info in API_KEY_REGISTRY.items()
+    ]
+
+
+@router.put("/settings/api-keys")
+async def set_api_key(
+    body: ApiKeyUpdate,
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> ApiKeyStatus:
+    """Encrypt and store a single API key."""
+    if body.key_name not in API_KEY_REGISTRY:
+        raise HTTPException(status_code=422, detail=f"Unknown key name: {body.key_name}")
+    if not body.value.strip():
+        raise HTTPException(status_code=422, detail="API key value must not be empty")
+
+    try:
+        ciphertext = encrypt_value(body.value)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    async with session_factory() as session:
+        result = await session.execute(
+            select(PipelineSetting).where(PipelineSetting.key == DB_SETTING_KEY)
+        )
+        row = result.scalar_one_or_none()
+        keys_dict: dict = row.value_json if row and isinstance(row.value_json, dict) else {}
+        keys_dict[body.key_name] = ciphertext
+
+        if row:
+            row.value_json = keys_dict
+        else:
+            session.add(PipelineSetting(key=DB_SETTING_KEY, value_json=keys_dict))
+
+        session.add(AuditLog(
+            action="api_key_updated",
+            details={"key_name": body.key_name},
+        ))
+        await session.commit()
+
+    info = API_KEY_REGISTRY[body.key_name]
+    return ApiKeyStatus(
+        key_name=body.key_name,
+        display_name=info["display_name"],
+        is_configured=True,
+        masked_value=mask_key(body.value),
+        source="database",
+    )
+
+
+@router.delete("/settings/api-keys/{key_name}")
+async def clear_api_key(
+    key_name: str,
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> ApiKeyStatus:
+    """Remove a DB-stored API key, falling back to env var."""
+    if key_name not in API_KEY_REGISTRY:
+        raise HTTPException(status_code=422, detail=f"Unknown key name: {key_name}")
+
+    async with session_factory() as session:
+        result = await session.execute(
+            select(PipelineSetting).where(PipelineSetting.key == DB_SETTING_KEY)
+        )
+        row = result.scalar_one_or_none()
+        if row and isinstance(row.value_json, dict):
+            keys_dict = dict(row.value_json)
+            keys_dict.pop(key_name, None)
+            row.value_json = keys_dict
+
+        session.add(AuditLog(
+            action="api_key_cleared",
+            details={"key_name": key_name},
+        ))
+        await session.commit()
+
+    # Return current status (will reflect env var fallback if any)
+    info = API_KEY_REGISTRY[key_name]
+    return _key_status(key_name, info, {})

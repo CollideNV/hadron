@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from hadron.config.api_keys import resolve_api_keys, resolved_keys_as_env
 from hadron.config.defaults import BRANCH_PREFIX, get_config_snapshot
 from hadron.controller.dependencies import get_job_spawner, get_session_factory
 from hadron.controller.job_spawner import JobSpawner
@@ -115,11 +116,18 @@ async def trigger_pipeline(
             session.add(rr)
         await session.commit()
 
+    # Resolve API keys (DB first, env var fallback) for worker injection
+    resolved = await resolve_api_keys(session_factory)
+    extra_env = resolved_keys_as_env(resolved)
+
     # Spawn one worker per repo URL
     workers_spawned: list[dict] = []
     for url in cr.repo_urls:
         repo_name = extract_repo_name(url)
-        await spawner.spawn(cr_id, repo_url=url, repo_name=repo_name, default_branch=default_branch)
+        await spawner.spawn(
+            cr_id, repo_url=url, repo_name=repo_name,
+            default_branch=default_branch, extra_env=extra_env,
+        )
         workers_spawned.append({"repo_url": url, "repo_name": repo_name})
 
     return {"cr_id": cr_id, "status": "pending", "workers": workers_spawned}

@@ -1,4 +1,4 @@
-import type { AnalyticsCost, AnalyticsSummary, AuditLogPage, BackendTemplate, CRRun, CRRunDetail, PipelineDefaults, PromptTemplate, PromptTemplateDetail, RawChangeRequest } from "./types";
+import type { AnalyticsCost, AnalyticsSummary, ApiKeyStatus, AuditLogPage, BackendTemplate, CRRun, CRRunDetail, PipelineDefaults, PromptTemplate, PromptTemplateDetail, RawChangeRequest } from "./types";
 
 const BASE = "/api";
 
@@ -147,6 +147,23 @@ export async function getWorkerLogs(crId: string): Promise<string> {
     throw new Error(`${res.status}: ${text}`);
   }
   return res.text();
+}
+
+export async function getApiKeys(): Promise<ApiKeyStatus[]> {
+  return fetchJSON<ApiKeyStatus[]>("/settings/api-keys");
+}
+
+export async function setApiKey(keyName: string, value: string): Promise<ApiKeyStatus> {
+  return fetchJSON<ApiKeyStatus>("/settings/api-keys", {
+    method: "PUT",
+    body: JSON.stringify({ key_name: keyName, value }),
+  });
+}
+
+export async function clearApiKey(keyName: string): Promise<ApiKeyStatus> {
+  return fetchJSON<ApiKeyStatus>(`/settings/api-keys/${encodeURIComponent(keyName)}`, {
+    method: "DELETE",
+  });
 }
 
 export async function getAnalyticsSummary(days = 30): Promise<AnalyticsSummary> {

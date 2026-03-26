@@ -19,7 +19,7 @@ from hadron.utils.text import truncate
 logger = logging.getLogger(__name__)
 
 # Env var prefixes / keys stripped from agent subprocess environments.
-_SCRUB_PREFIXES = ("HADRON_", "ANTHROPIC_", "OPENAI_", "GITHUB_", "AZURE_", "AWS_")
+_SCRUB_PREFIXES = ("HADRON_", "ANTHROPIC_", "OPENAI_", "GEMINI_", "GITHUB_", "AZURE_", "AWS_")
 _SCRUB_KEYS = frozenset({
     "DATABASE_URL", "REDIS_URL", "SECRET_KEY", "API_KEY",
     "GH_TOKEN", "GITLAB_TOKEN", "BITBUCKET_TOKEN",

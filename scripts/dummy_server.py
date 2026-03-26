@@ -711,15 +711,52 @@ async def update_pipeline_defaults(request: Request):
     return body
 
 
+_DUMMY_API_KEYS = [
+    {"key_name": "anthropic_api_key", "display_name": "Anthropic", "is_configured": False, "masked_value": "", "source": "none"},
+    {"key_name": "openai_api_key", "display_name": "OpenAI", "is_configured": False, "masked_value": "", "source": "none"},
+    {"key_name": "gemini_api_key", "display_name": "Gemini", "is_configured": False, "masked_value": "", "source": "none"},
+]
+
+
+@app.get("/api/settings/api-keys")
+async def get_api_keys():
+    return _DUMMY_API_KEYS
+
+
+@app.put("/api/settings/api-keys")
+async def set_api_key(request: Request):
+    body = await request.json()
+    key_name = body["key_name"]
+    value = body["value"]
+    for k in _DUMMY_API_KEYS:
+        if k["key_name"] == key_name:
+            k["is_configured"] = True
+            k["masked_value"] = "••••" + value[-4:] if len(value) > 4 else "••••"
+            k["source"] = "database"
+            return k
+    return {"detail": "Unknown key"}, 422
+
+
+@app.delete("/api/settings/api-keys/{key_name}")
+async def clear_api_key(key_name: str):
+    for k in _DUMMY_API_KEYS:
+        if k["key_name"] == key_name:
+            k["is_configured"] = False
+            k["masked_value"] = ""
+            k["source"] = "none"
+            return k
+    return {"detail": "Unknown key"}, 422
+
+
 @app.get("/api/audit-log")
 async def get_audit_log(page: int = 1, page_size: int = 50, action: str | None = None):
     fake_entries = [
-        {"id": 1, "cr_id": "CR-demo-001", "action": "pipeline_triggered", "details": {"source": "api"}, "timestamp": "2026-03-17T09:00:00Z"},
-        {"id": 2, "cr_id": None, "action": "model_settings_updated", "details": {"stages": ["implementation", "review:security_reviewer"]}, "timestamp": "2026-03-17T08:30:00Z"},
+        {"id": 1, "cr_id": None, "action": "backend_templates_updated", "details": {"slugs": ["anthropic", "openai", "gemini"]}, "timestamp": "2026-03-17T09:00:00Z"},
+        {"id": 2, "cr_id": None, "action": "default_template_updated", "details": {"slug": "anthropic"}, "timestamp": "2026-03-17T08:30:00Z"},
         {"id": 3, "cr_id": None, "action": "pipeline_defaults_updated", "details": {"max_cost_usd": 15.0}, "timestamp": "2026-03-17T08:00:00Z"},
-        {"id": 4, "cr_id": None, "action": "prompt_updated", "details": {"role": "spec_writer"}, "timestamp": "2026-03-16T14:00:00Z"},
-        {"id": 5, "cr_id": "CR-demo-002", "action": "pipeline_triggered", "details": {"source": "api"}, "timestamp": "2026-03-18T10:00:00Z"},
-        {"id": 6, "cr_id": None, "action": "opencode_endpoints_updated", "details": {"slugs": ["local-ollama"]}, "timestamp": "2026-03-15T11:00:00Z"},
+        {"id": 4, "cr_id": None, "action": "prompt_template_updated", "details": {"role": "spec_writer", "version": 2}, "timestamp": "2026-03-16T14:00:00Z"},
+        {"id": 5, "cr_id": None, "action": "api_key_updated", "details": {"key_name": "anthropic_api_key"}, "timestamp": "2026-03-18T10:00:00Z"},
+        {"id": 6, "cr_id": None, "action": "api_key_cleared", "details": {"key_name": "openai_api_key"}, "timestamp": "2026-03-15T11:00:00Z"},
     ]
     if action:
         fake_entries = [e for e in fake_entries if e["action"] == action]
