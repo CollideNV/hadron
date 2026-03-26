@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Hadron is an AI-powered SDLC pipeline by Collide. It transforms change requests from external sources (Jira, GitHub Issues, Azure DevOps, Slack, direct API) into production-ready, reviewed code through a sequence of AI agent teams, with real-time observability and human intervention at any point.
 
-**Status:** Pre-implementation. The canonical architecture document is `adr/architecture.md` (v5.0, Feb 2026). All design decisions, stage details, and implementation roadmap live there.
+See `adr/architecture.md` for architectural decisions and technical design.
 
 ## Project Map
 
@@ -14,7 +14,7 @@ Hadron is an AI-powered SDLC pipeline by Collide. It transforms change requests 
 hadron/
 ├── src/hadron/              Python backend (pip-installable, src-layout)
 │   ├── agent/               Agent backend, tool execution, prompt composition
-│   ├── config/              Bootstrap config, defaults, limits
+│   ├── config/              Bootstrap config, defaults, limits, API key resolution
 │   ├── controller/          FastAPI app, REST routes, job spawning
 │   ├── db/                  SQLAlchemy models, Alembic migrations
 │   ├── events/              Redis event bus, intervention manager
@@ -22,7 +22,7 @@ hadron/
 │   ├── models/              PipelineState, CR models, events
 │   ├── pipeline/            LangGraph graph, stage nodes, edges
 │   ├── prompts/v1/          Markdown prompt templates per agent role
-│   ├── security/            Command validators, diff scope analysis
+│   ├── security/            Command validators, diff scope analysis, encryption
 │   ├── utils/               Shared utilities (text truncation)
 │   └── worker/              CLI entry point for pipeline execution
 │
@@ -30,30 +30,31 @@ hadron/
 │   ├── src/api/             API client, SSE stream, TypeScript types
 │   ├── src/components/      UI components (pipeline, agents, events, diff, etc.)
 │   ├── src/hooks/           Custom React hooks
-│   └── src/pages/           Route pages (CR list, new CR, CR detail)
+│   └── src/pages/           Route pages (CR list, new CR, CR detail, analytics, settings)
 │
-├── tests/                   Backend pytest suite
-├── adr/                     Architecture Decision Records
+├── tests/                   Backend pytest suite (703 tests)
+├── features/                Gherkin BDD specs (32 files)
+├── adr/                     Architecture Decision Record
 ├── k8s/                     Kubernetes manifests (base + local overlay)
-├── scripts/                 Dev scripts (build, deploy, test setup)
+├── scripts/                 Dev scripts (build, deploy, test setup, dummy server)
 └── test-repo/               Minimal FastAPI app for E2E testing
 ```
 
 ## Architecture (High Level)
 
-**Pluggable Head → Fixed Core → Pluggable Tail**
+**Pluggable Head -> Fixed Core -> Pluggable Tail**
 
 - **Head:** CR source connectors (Jira, GitHub Issues, ADO, Slack, API)
-- **Core:** LangGraph-based orchestration with ~12 stages, persistent PostgreSQL checkpointing, feedback loops
+- **Core:** LangGraph-based orchestration with feedback loops, persistent PostgreSQL checkpointing
 - **Tail:** Delivery strategies (`self_contained`, `push_and_wait`, `push_and_forget`)
 
-### Pipeline Stages
+### Pipeline Flow
 
-**Per-worker (one repo):** Intake → Worktree Setup (+ auto-detect) → Behaviour Translation (Gherkin) → Behaviour Verification → Implementation (single agent: tests + code + verify) → Code Review (security + quality + spec compliance) → Rebase & Conflict Resolution → Delivery (push PR) → Retrospective
+```
+Intake -> Worktree Setup -> Translation <-> Verification -> Implementation -> [E2E Testing] -> Review <-> Rework -> Rebase -> Delivery -> Release
+```
 
-**Controller-level:** Repo Identification (spawn workers) → Track worker completion → Release Gate (human approval, all repos) → Merge all PRs
-
-Key feedback loops: Verification↔Translation, Review↔Implementation, CI↔Implementation.
+Key feedback loops: Verification<->Translation, Review<->Rework (with strategic pivot to fresh implementation if stalled), CI<->Implementation.
 
 ### Three Process Types
 
@@ -63,79 +64,54 @@ Key feedback loops: Verification↔Translation, Review↔Implementation, CI↔Im
 | **Worker** | Ephemeral K8s Job (one per repo per CR) | LangGraph executor, agent backends, worktree management |
 | **Scanner** | CronJob (nightly + incremental) | Landscape knowledge building via LLM analysis |
 
-### Infrastructure
-
-- **PostgreSQL:** LangGraph state checkpoints, Knowledge Store (pgvector), runtime config, audit trail
-- **Redis:** Event streams (Redis Streams), pub/sub, interventions, CI results
-- **Keycloak:** OIDC identity provider (any OIDC provider supported)
-- **Kubernetes:** Worker isolation, ephemeral pods, stage-aware network policies
-
-### Agent Architecture
-
-- **Backends:** Claude Agent SDK (primary), OpenCode SDK, OpenAI Codex SDK — configurable per stage, per repo, with ordered provider chains for failover
-- **Prompt composition (4 layers):** Role system prompt → Repo context (AGENTS.md, tech stack, learnings) → Task payload (CR, specs, code) → Loop feedback
-- **Static context capped at ~12k tokens;** agents use tools to discover full context dynamically
-- **Trust models vary by role:** Spec Writer trusts CR; Security Reviewer treats CR as hostile
-
 ### Key Patterns
 
 - **Checkpoint-and-terminate:** Workers checkpoint to PostgreSQL and terminate during CI waits, freeing compute. New pod resumes from checkpoint.
-- **One worker per repo:** Multi-repo CRs spawn independent worker pods (one per repo). Each runs the full pipeline and pushes a PR. Controller coordinates the release gate.
+- **One worker per repo:** Multi-repo CRs spawn independent worker pods. Controller coordinates the release gate.
 - **Config snapshots:** Running CRs use config frozen at intake. Runtime config changes only affect new CRs.
-- **Six-layer prompt injection defense:** Input screening → spec firewall → adversarial security review → deterministic diff scope analysis → runtime containment (egress lock) → optional human review.
-
-### Multi-Tenancy
-
-Single installation serves multiple tenants on shared infrastructure. OIDC handles authentication; pipeline's own database manages per-tenant roles (Viewer, Operator, Approver, Admin). Tenant ID scopes all data.
-
-## Implementation Roadmap
-
-The roadmap in `adr/roadmap.md` §22 defines 8 phases:
-
-1. **Foundation (Wk 1-2):** Project skeleton (LangGraph + FastAPI), runtime config, PipelineState, WorktreeManager, agent backend interface, event bus, intervention manager, prompt templates
-2. **Core Stages (Wk 3-5):** All agent prompts, intake, multi-repo worker spawning, Behaviour Translation/Verification, Implementation, Code Review, feedback loops
-3. **Delivery + CI (Wk 6-7):** Delivery strategies, checkpoint-and-terminate, CI webhooks, release gate, retrospective agent
-4. **Control Room (Wk 8-9):** SSE events, dashboard, interventions, circuit breakers, settings UI
-5. **Auth & Multi-Tenancy (Wk 10-11):** OIDC, internal authorization, tenant management, audit trail, notifications
-6. **K8s Deployment (Wk 11-12):** Manifests, NetworkPolicy, dynamic sizing, agent command boundaries, Helm/Kustomize, local dev (kind)
-7. **Production (Wk 13):** Observability, retention, load testing, prompt A/B testing
-8. **Landscape Intelligence (Wk 14-17):** Scanner, Knowledge Store with pgvector, LLM-assisted repo identification
+- **Six-layer prompt injection defense:** Input screening -> spec firewall -> adversarial security review -> deterministic diff scope analysis -> runtime containment -> optional human review.
+- **Context management:** Compaction at 80k tokens, full context reset with structured handoff at 150k tokens.
+- **Budget enforcement:** Every conditional edge checks cost against configurable limit (default $10). Pause reasons inferred from state.
 
 ## Testing
 
-- **Backend:** `pytest` — tests in `tests/`, async auto-detected, all infra mocked (no DB/Redis needed). Run: `pytest`
-- **Frontend:** `vitest` — tests co-located as `*.test.ts(x)` next to source. Run: `cd frontend && npm test`
-- **BDD specs:** `features/*.feature` — Gherkin files describing pipeline behaviour
-- **Dummy server:** `scripts/dummy_server.py` — standalone FastAPI server serving 114 fake events across all stages. No LLM, no Postgres, no Redis. Use for frontend development and E2E testing.
+- **Backend:** `pytest` -- 703 tests in `tests/`, async auto-detected, all infra mocked (no DB/Redis needed). Run: `pytest`
+- **Frontend:** `vitest` -- 496 tests co-located as `*.test.ts(x)` next to source. Run: `cd frontend && npm test`
+- **BDD specs:** `features/*.feature` -- 32 Gherkin files describing pipeline behaviour
+- **Dummy server:** `scripts/dummy_server.py` -- standalone FastAPI server with deterministic fake events. No LLM, no Postgres, no Redis.
 - **See `AGENTS.md`** for detailed test patterns, mocking conventions, and example code.
 
-## How to Run the Dummy Server (Frontend Development)
+## How to Run
 
-No Docker, no Postgres, no Redis, no LLM keys needed:
+### Frontend development (no infra needed)
 
 ```bash
 # Terminal 1: start dummy backend (port 8000)
 source .venv/bin/activate
 python scripts/dummy_server.py
 
-# Terminal 2: start frontend (port 5173, proxies /api → :8000)
+# Terminal 2: start frontend (port 5173, proxies /api -> :8000)
 cd frontend && npm run dev
 ```
 
-Open http://localhost:5173/ — `CR-demo-001` streams 114 events across all stages (intake through delivery), including review feedback loops and rework cycles. Useful for:
-- Developing/testing frontend components visually
-- Running E2E tests (Playwright/Cypress) against a deterministic backend
+Open http://localhost:5173/ -- streams deterministic events across all stages including review feedback loops, rework cycles, and budget exceeded scenarios.
+
+### Full stack (requires Docker for Postgres + Redis)
+
+```bash
+docker compose up -d                                      # Start Postgres + Redis
+source .venv/bin/activate
+alembic upgrade head                                      # Run migrations
+uvicorn hadron.controller.app:create_app --factory        # Start controller on :8000
+cd frontend && npm run dev                                # Start frontend on :5173
+```
 
 ## Key Design Decisions
 
-- **LangGraph + PostgreSQL checkpointing** — durable state survives pod failures; any worker can resume any repo's pipeline
-- **One pod per repo, not per CR** — true parallelism, simple workers, Controller coordinates release gate
-- **Auto-detect languages and test tooling** — workers detect from repo files (pyproject.toml, package.json, etc.); AGENTS.md overrides take precedence
-- **SSE over WebSocket** — event stream is unidirectional; interventions use REST; no sticky sessions needed
-- **OIDC for auth, pipeline DB for authorization** — no dependency on IdP admin for day-to-day role management
-- **Database-driven runtime config** — all settings editable via dashboard/API without redeployment
-- **AGENTS.md convention** — repos include an `AGENTS.md` (or `CLAUDE.md`) with instructions for AI agents; this is the primary lever for controlling agent behaviour
-- **Behaviour specs as firewall** — code agents work from Gherkin specs, not raw CR text
-- **Graduated test scope in implementation** — narrow tests for fast iteration, full suite before review gate
-- **Pipeline never auto-deletes artifacts** — human always decides cleanup via guided wizard
-- **Pipeline never silently fails** — always pauses with a decision screen for the human
+- **LangGraph + PostgreSQL checkpointing** -- durable state survives pod failures; any worker can resume
+- **One pod per repo, not per CR** -- true parallelism, simple workers, Controller coordinates release gate
+- **Auto-detect languages and test tooling** -- from repo files; AGENTS.md overrides take precedence
+- **SSE over WebSocket** -- event stream is unidirectional; interventions use REST; no sticky sessions
+- **Database-driven runtime config** -- all settings editable via dashboard/API without redeployment
+- **Behaviour specs as firewall** -- code agents work from Gherkin specs, not raw CR text
+- **Pipeline never silently fails** -- always pauses with a decision screen for the human

@@ -1,6 +1,6 @@
 """Code Review node — 3 parallel reviewers + deterministic diff scope pre-pass.
 
-Architecture: adr/stages.md §8.7, adr/security.md §12.5, §12.6.
+Architecture: adr/architecture.md §3 (review stage), §5 (security model).
 
 Flow:
   1. Get diff from worktree

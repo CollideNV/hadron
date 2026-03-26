@@ -68,7 +68,7 @@ def build_security_payload(
     behaviour_specs: list[dict[str, Any]],
     repo_name: str,
 ) -> str:
-    """Build the task payload for the Security Reviewer (adr/security.md §12.5)."""
+    """Build the task payload for the Security Reviewer (adr/architecture.md §5)."""
     # Security reviewer gets a stronger preamble for scope flags
     sec_scope = scope_section.replace(
         "The following sensitive files were modified in this diff:",

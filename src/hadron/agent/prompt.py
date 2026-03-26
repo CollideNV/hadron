@@ -24,7 +24,7 @@ def _load_template_from_disk(role: str) -> str:
 
 
 class PromptComposer:
-    """Assembles 4-layer prompts per adr/agents.md §11.
+    """Assembles 4-layer prompts per adr/architecture.md §4.
 
     Layer 1: Role system prompt (from templates)
     Layer 2: Repo context (AGENTS.md + directory tree)

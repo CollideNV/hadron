@@ -1,176 +1,290 @@
-# Hadron — Architecture Document
+# Hadron — Architecture Decision Record
 
-**Hadron: AI-Powered SDLC Pipeline by Collide**
+**Version:** 1.0 — March 2026
 
-**Version 5.0 — February 2026**
-
----
-
-## 1. Executive Summary
-
-This document describes the architecture for a fully AI-driven Software Development Lifecycle (SDLC) pipeline. Change requests — from Jira, GitHub Issues, Azure DevOps, Slack, or a direct API — are transformed into production-ready, reviewed code through a sequence of AI agent teams, with real-time observability and human intervention at any point.
-
-**CR Intake (pluggable head):** Connectors poll or receive webhooks from external issue trackers, normalise the CR, and trigger the pipeline. Configurable per deployment.
-
-**Orchestration:** LangGraph (directed graph with persistent state, human-in-the-loop, subgraph composition). State checkpointed in PostgreSQL.
-
-**Agent Backends (pluggable):** Claude Agent SDK, OpenCode SDK, or OpenAI Codex SDK — configurable per stage, per repo. Each agent role has an ordered provider chain for automatic failover, with retry policies, rate limit coordination, and proactive degradation routing.
-
-**Repo Management:** Git worktrees — one branch per repo per change request. Each repo runs in its own worker pod. Language and test tooling auto-detected from repo files (pyproject.toml, package.json, Cargo.toml, etc.).
-
-**Execution Sandboxing:** Kubernetes pods. Each repo in a change request runs in its own ephemeral worker pod with process isolation, resource limits, and stage-aware network policies. AI-generated code runs egress-locked during Implementation (LLM APIs and git only); full egress unlocked after Security Review passes. Test infrastructure (databases, caches) runs as ephemeral sidecars — no shared staging environments.
-
-**Prompt Injection Defense:** Six-layer defense model. Input risk screening at intake catches low-effort attacks. Behaviour specs act as a sanitised firewall between untrusted CR text and code-writing agents. Security Reviewer operates in adversarial mode — treats the CR as hostile, flags code that doesn't match specs regardless of stated justification. Deterministic diff scope analysis catches out-of-scope changes. Runtime containment (egress lock, command boundaries) limits blast radius. Optional human PR review as final layer.
-
-**Prompt Engineering:** Agent prompts are the product's core IP. Four-layer composition (role system prompt → repo context → task payload → loop feedback), version-controlled templates, A/B testing, and metrics-driven iteration.
-
-**Landscape Intelligence:** A background Scanner continuously builds knowledge of the application ecosystem — what each service does, what it owns, how services connect. The pipeline queries this knowledge at intake time to determine affected repos.
-
-**Delivery (pluggable tail):** Pluggable delivery strategies — the pipeline always produces code on a branch; what happens next (self-verify, push-and-wait-for-CI, push-and-forget) is configuration. PRs include a structured summary (specs, tests, review findings, cost). Optional human code review: teams can require PR approval before the release gate, with review comments feeding back into the Implementation loop.
-
-**Control Room:** Real-time event stream via Redis Streams and Server-Sent Events (SSE), with three levels of observability (pipeline → subgraph → agent tool calls). Pause, redirect, skip, take over, or abort at any moment (via REST API). Pluggable notifications (Slack, Teams, email, GitHub, custom webhooks) ensure humans stay informed.
-
-**Multi-Repo Coordination:** When a CR affects multiple repos, the Controller spawns one worker pod per repo. Each worker runs independently through the full pipeline (translate → implement → review → push PR → terminate). The Controller tracks all workers for a CR and coordinates the release gate — once all repos have pushed reviewed PRs, a human can approve and merge them all.
-
-**Cost Tracking:** Token costs accumulated per agent call in real-time. Dashboard shows running cost per CR. Circuit breakers auto-pause when thresholds are exceeded.
-
-**Authentication:** OIDC-based, with Keycloak as the default identity provider. Role-based access controls who can view, intervene, approve releases, and administer the system. Multi-tenant: a single installation supports multiple teams with full logical isolation of repos, CRs, costs, and configuration.
-
-**Deployment:** Kubernetes-native. Three process types — a lightweight always-on **Controller** (intake, dashboard, webhooks, release coordination), ephemeral **Worker** pods (one per repo per CR, LangGraph executor + agents), and a **Landscape Scanner** (background knowledge-building). Runs on any cloud (EKS, GKE, AKS), on-prem, or local (k3s, kind).
+This document captures the key architectural decisions, their rationale, and the resulting technical design of Hadron. It replaces the earlier multi-file ideation documents that were used during the initial design phase.
 
 ---
 
-## 2. Pipeline Overview
+## 1. System Overview
 
-### 2.1 Pluggable Head → Fixed Core → Pluggable Tail
+Hadron is an AI-powered SDLC pipeline that transforms change requests into production-ready, reviewed code. It follows a **Pluggable Head → Fixed Core → Pluggable Tail** architecture:
+
+- **Head:** CR source connectors (Jira, GitHub Issues, Azure DevOps, Slack, direct API)
+- **Core:** LangGraph-based orchestration with feedback loops, persistent checkpointing, and human intervention
+- **Tail:** Delivery strategies (`self_contained`, `push_and_wait`, `push_and_forget`)
+
+### Three Process Types
+
+| Process | Lifecycle | Role |
+|---------|-----------|------|
+| **Controller** | Always-on (2+ replicas) | FastAPI REST API, dashboard serving, SSE events, worker spawning, release coordination |
+| **Worker** | Ephemeral K8s Job (one per repo per CR) | LangGraph pipeline executor, agent backends, worktree management |
+| **Scanner** | CronJob (nightly + incremental) | Landscape knowledge building via LLM analysis |
+
+### Infrastructure
+
+| Component | Purpose |
+|-----------|---------|
+| **PostgreSQL** | LangGraph state checkpoints, Knowledge Store (pgvector), runtime config, audit trail |
+| **Redis** | Event streams (Redis Streams), pub/sub, interventions, CI results, conversation storage |
+| **Kubernetes** | Worker isolation, ephemeral pods, stage-aware network policies |
+| **Keycloak** | OIDC identity provider (any OIDC provider supported) |
+
+---
+
+## 2. Key Architectural Decisions
+
+### AD-1: LangGraph + PostgreSQL Checkpointing
+
+**Decision:** Use LangGraph as the orchestration engine with PostgreSQL-backed checkpointing.
+
+**Rationale:** Durable state survives pod failures. Any worker can resume any repo's pipeline from the last checkpoint. Conditional edges support feedback loops natively. Human-in-the-loop interrupts are first-class.
+
+**Consequence:** PipelineState is a TypedDict with `Annotated[..., operator.add]` reducers for cost accumulation across parallel nodes.
+
+### AD-2: One Worker Pod Per Repo
+
+**Decision:** A multi-repo CR spawns one independent worker per repo, not one worker for the entire CR.
+
+**Rationale:** True parallelism — repos are processed concurrently. Simple workers — each handles exactly one repo end-to-end. The Controller coordinates the release gate (waits for all repos to push PRs, then human approves and merges all).
+
+**Consequence:** Worker CLI takes `--cr-id`, `--repo-url`, `--repo-name`, `--default-branch`. Thread ID is `{cr_id}:{repo_name}` for per-repo checkpointing. RepoRun table tracks per-repo worker status.
+
+### AD-3: Pod IS the Sandbox
+
+**Decision:** Use Kubernetes pods for execution sandboxing instead of Docker-in-Docker.
+
+**Rationale:** Native K8s isolation provides process boundaries, resource limits, and network policies without the complexity and security concerns of nested containerization.
+
+**Consequence:** Stage-aware network policies: egress-locked during implementation (LLM APIs and git only), full egress after security review passes.
+
+### AD-4: Checkpoint-and-Terminate for CI Waits
+
+**Decision:** Workers checkpoint to PostgreSQL and terminate during CI waits, freeing compute. A webhook triggers a new worker to resume.
+
+**Rationale:** CI runs can take 10-60 minutes. Keeping a pod idle burns resources. Checkpoint-and-resume is already built into the LangGraph model.
+
+**Consequence:** `POST /pipeline/{cr_id}/ci-result` endpoint accepts pass/fail from external CI. On failure, the CI log is passed as a state override to the implementation agent.
+
+### AD-5: Config Snapshots Per CR
+
+**Decision:** Running CRs use config frozen at intake time. Runtime config changes only affect new CRs.
+
+**Rationale:** A config change mid-pipeline (e.g., switching agent model) could cause inconsistent behaviour. Snapshots provide deterministic execution.
+
+**Consequence:** `config_snapshot` field in PipelineState stores the full config at CR creation. Runtime config is database-backed and editable via dashboard/API.
+
+### AD-6: SSE Over WebSocket
+
+**Decision:** Use Server-Sent Events for the real-time event stream, with REST for interventions.
+
+**Rationale:** Event stream is unidirectional (server → client). SSE requires no sticky sessions, supports auto-reconnect natively, and works behind any reverse proxy. Interventions are infrequent and suit REST semantics.
+
+**Consequence:** `sse-starlette` on the backend, `EventSource` on the frontend with last-event-ID replay.
+
+### AD-7: Behaviour Specs as Firewall
+
+**Decision:** Code agents work from Gherkin specs, not raw CR text.
+
+**Rationale:** The behaviour translation stage sanitises the CR into structured specs. This is the primary firewall against prompt injection — the implementation agent never sees the raw CR description.
+
+**Consequence:** Six-layer prompt injection defense: input screening → spec firewall → adversarial security review → deterministic diff scope analysis → runtime containment → optional human review.
+
+### AD-8: Three-Phase Agent Execution
+
+**Decision:** Agent execution uses an Explore → Plan → Act pipeline with independent conversations per phase.
+
+**Rationale:** Each phase has a different purpose and optimal model choice. Explore is read-only (cheaper model), Plan is a single call, Act executes the plan. Phase boundaries act as natural context resets.
+
+**Consequence:** Rework skips explore/plan phases for faster, cheaper fixes. Context is managed via compaction (80k tokens) and full context reset (150k tokens) with structured handoffs.
+
+### AD-9: Strategic Pivot on Rework Stall
+
+**Decision:** When rework isn't reducing review findings, pivot to a fresh implementation instead of continuing incremental patches.
+
+**Rationale:** Inspired by Anthropic's harness design research. Incremental fixes can get stuck in local minima. A fresh approach may find a fundamentally better solution.
+
+**Consequence:** `review_finding_counts` tracks blocking findings per iteration. `after_review` routes to `implementation` (not `rework`) when findings aren't decreasing after 2+ iterations.
+
+### AD-10: Database-Driven Runtime Config
+
+**Decision:** All pipeline settings editable via dashboard/API without redeployment.
+
+**Rationale:** Operators need to adjust models, loop limits, and budgets without SSH access. Only bootstrap config (DB URL, Redis URL, encryption key) stays in env vars.
+
+**Consequence:** PipelineSetting table with JSON values. Backend template system for per-model configuration. API keys encrypted with Fernet at rest.
+
+---
+
+## 3. Pipeline Architecture
+
+### Pipeline Graph
 
 ```
-┌─ PLUGGABLE HEAD ─────────┐    ┌─ FIXED CORE ─────────────────────────────────────────────────┐    ┌─ PLUGGABLE TAIL ──────┐
-│                           │    │                                                               │    │                       │
-│  Jira                     │    │  Intake → Repo ID → Worktrees → Behaviour → Verify →         │    │  self_contained       │
-│  GitHub Issues            │───▶│                                  Translation                  │───▶│  push_and_wait        │
-│  Azure DevOps             │    │                     Implementation → Review → Delivery → Release│    │  push_and_forget      │
-│  Manual / API             │    │                                                               │    │                       │
-│  Slack                    │    │  (with feedback loops: verify↔translate, review↔dev, CI↔dev)  │    │                       │
-└───────────────────────────┘    └───────────────────────────────────────────────────────────────┘    └───────────────────────┘
-                                                          ▲
-                                                          │
-                                                ┌─────────┴─────────┐
-                                                │   CONTROL ROOM    │
-                                                │  Real-time events │
-                                                │  Pause / Redirect │
-                                                │  Skip / Takeover  │
-                                                └───────────────────┘
+Intake → Worktree Setup → Translation ⇄ Verification → Implementation → [E2E Testing] → Review ⇄ Rework → Rebase → Delivery → Release
 ```
 
-### 2.2 Stage Summary
+### Stage Details
 
-| # | Stage | Input | Output | Agents | Feedback Loop |
-|---|-------|-------|--------|--------|---------------|
-| 0 | CR Source Connector | External event (Jira, GH, etc.) | Raw CR text + metadata | None (connector) | — |
-| 1 | Change Request Intake | Raw CR text | Structured CR object + risk flags | LLM parse + Input Screener (§12.3) | ← auto-pause on high-risk injection patterns |
-| 1b | Repo Identification | Structured CR + landscape knowledge | Confirmed list of affected repos | Phase 1: none. Phase 2+: LLM | ← human correction |
-| 2 | Behaviour Translation | Structured CR + repo context | Gherkin specs per repo | Analyst → Mapper → Writer | ← from Verification |
-| 3 | Behaviour Verification | Behaviour specs | Verified / rejected + feedback | Completeness + Consistency + Regression | → to Translation |
-| 4 | Implementation | Verified specs (+ review/CI feedback) | Passing code + tests on branch | Implementation agent writes tests and code | ← from Review or CI |
-| 5 | Code Review | Code + tests + specs + risk flags | Review verdict + scope warnings | Diff Scope Analyser + Security (adversarial) + Quality + Spec Compliance | → to Development |
-| 5b | Rebase & Conflict Resolution | Reviewed code on branch | Clean branch on latest main | Merge Conflict Agent (if needed) | ← human take-over if unresolvable |
-| 6 | Delivery | Rebased code on branch | Verification result | Depends on strategy | ← optional CI loop |
-| 7 | Release Gate | Verification passed | Human approval | — (interrupt) | — |
-| 7b | Atomic Merge Check | Approval granted | Fresh-or-stale verdict | None (git check) | ← auto-loop to Rebase if stale |
-| 8 | Release | Approved + fresh code | Merged PR / deployed artefact | Scripted (not AI) | — |
-| 8b | Retrospective | Completed or failed CR | Learnings per repo → Knowledge Store | Retrospective Agent | — (non-blocking) |
+| Stage | What It Does | Agent(s) | Key Decision |
+|-------|-------------|----------|-------------|
+| **Intake** | Parse raw CR into structured format, screen for injection | LLM parser + input screener | Auto-pause on high-risk injection patterns |
+| **Worktree Setup** | Clone repo, create feature branch, auto-detect languages/test commands | None (git ops) | AGENTS.md overrides auto-detection |
+| **Behaviour Translation** | Convert CR into Gherkin specs | Spec Writer agent | Specs act as injection firewall |
+| **Behaviour Verification** | Verify specs match CR intent | Spec Verifier agent | Feedback loop to translation (max 3 iterations) |
+| **Implementation** | Write tests + code from specs | Implementation agent (explore → plan → act) | Single agent writes both tests and code |
+| **E2E Testing** | Run end-to-end tests if configured | E2E Testing agent | Skipped if repo has no e2e_test_commands |
+| **Code Review** | 3 parallel reviewers + diff scope pre-pass | Security, Quality, Spec Compliance | Security reviewer treats CR as hostile |
+| **Rework** | Targeted fixes from review findings | Rework agent (act only, no explore/plan) | Strategic pivot to fresh implementation if stalled |
+| **Rebase** | Rebase onto latest main, resolve conflicts | Conflict Resolver agent (if needed) | Pauses on unresolvable conflicts |
+| **Delivery** | Push branch, create PR | None (git ops) | Three strategies: self_contained, push_and_wait, push_and_forget |
+| **Release** | Controller-level: wait for all repos, human approves | None (human gate) | Atomic merge check, auto-loop to rebase if stale |
 
----
+### Feedback Loops
 
-## Document Index
+| Loop | Trigger | Max Iterations | On Exhaust |
+|------|---------|----------------|------------|
+| Verification ⇄ Translation | Specs rejected | 3 (configurable) | Pause (circuit breaker) |
+| Review ⇄ Rework | Blocking findings | 3 (configurable) | Pause (circuit breaker) |
+| Review → Implementation | Rework stalled (findings not decreasing) | — | Fresh implementation pivot |
+| CI → Implementation | CI failure (push_and_wait strategy) | — | Failure context passed to agent |
 
-| Topic | File | Sections |
-|-------|------|----------|
-| Authentication & Authorization | [auth.md](auth.md) | §3 |
-| CR Intake & Repo Management | [intake.md](intake.md) | §4, §6 |
-| Orchestration (LangGraph) | [orchestration.md](orchestration.md) | §5 |
-| Execution Sandboxing (K8s Pods) | [sandboxing.md](sandboxing.md) | §7 |
-| Detailed Stage Design | [stages.md](stages.md) | §8 |
-| Pluggable Agent Backends & Prompt Engineering | [agents.md](agents.md) | §9, §11 |
-| Landscape Intelligence | [landscape.md](landscape.md) | §10 |
-| Prompt Injection Defense | [security.md](security.md) | §12 |
-| Delivery Strategy & CR Lifecycle | [delivery.md](delivery.md) | §13, §15 |
-| Control Room, Cost, Notifications & Observability | [control-room.md](control-room.md) | §14, §16, §17, §18 |
-| System Architecture & Scaling | [infrastructure.md](infrastructure.md) | §19, §20 |
-| Configuration | [configuration.md](configuration.md) | §21 |
-| Implementation Roadmap & Risks | [roadmap.md](roadmap.md) | §22, §24 |
+### Budget Enforcement
+
+Every conditional edge checks `cost_usd >= max_cost_usd` (default $10). If exceeded, the pipeline routes to paused with `pause_reason: "budget_exceeded"`. The paused node infers the reason from state and emits a `pipeline_paused` event.
 
 ---
 
-## 23. Key Design Decisions
+## 4. Agent Architecture
 
-| Decision | Rationale |
-|----------|-----------|
-| Pluggable CR sources | Pipeline doesn't own issue tracking — integrates with whatever exists |
-| LangGraph + PostgreSQL checkpointing | Durable state survives pod failures; any worker can resume any CR |
-| Redis for events + interventions | Decouples workers from controller; real-time pub/sub + persistent streams |
-| Ephemeral K8s worker pods | One pod per repo per CR — perfect isolation, auto-cleanup, cloud-agnostic, true parallelism across repos |
-| Pod IS the sandbox | No Docker-in-Docker; K8s provides all isolation natively |
-| emptyDir workspace | Pod-local fast SSD; no shared filesystem complexity |
-| Push to remote after every stage | All work survives pod failure; human take-over via git clone |
-| Controller / Worker / Scanner split | Controller lightweight HA, workers heavy ephemeral, scanner independent background |
-| Same manifests everywhere | kind → staging → production: only resource limits change |
-| Database-backed runtime config | All pipeline settings editable via dashboard/API without redeployment. Only infrastructure bootstrap in files |
-| Config snapshot per CR | Running CRs use the config they started with. Changes only affect new CRs. Same principle as CR description snapshots |
-| Config versioned with audit trail | Every change tracked (who, what, when, before/after). Revert is just a new change restoring old values |
-| SSE instead of WebSocket | Event stream is one-directional; interventions use REST. SSE is plain HTTP — auto-reconnects, no sticky sessions, no connection upgrade. Rolling updates become trivial |
-| Controller rolling updates | SSE drops on pod drain; client auto-reconnects to new pod, replays from Redis Stream. Workers are ephemeral (new image on next spawn). Scanner is a CronJob (picks up new image on next run). Zero-downtime deploys with no special machinery |
-| OIDC for authentication, pipeline DB for authorization | IdP tells us who you are. Our database decides what you can do and where. No dependency on IdP admin for day-to-day user/role management |
-| Multi-tenant on shared infrastructure | Single Controller, single DB, tenant ID on every row. No per-tenant deployment overhead. Scales from 1 team to N teams without architectural change |
-| One pod per repo, not one pod per CR | True parallelism — each repo gets its own pod and runs the full pipeline independently. Workers push PRs and terminate. Controller coordinates the release gate across all repos in a CR. Simpler worker code (no fan-out/fan-in loops), better resource utilisation, natural horizontal scaling |
-| Per-tenant roles in pipeline DB | A user can be Admin in one tenant and Viewer in another. Managed via dashboard, not the IdP |
-| Tenant switcher in dashboard | User selects active tenant. All views, actions, and events scope to it. `X-Tenant-ID` header on every API call |
-| Role-based access with Approver gate | Release approval is the critical safety checkpoint — only authorised humans |
-| Infrastructure-as-a-Sidecar | Test databases and caches are ephemeral pod sidecars. No shared staging. All state wiped when the pod dies |
-| Stage-aware network policy (egress locking) | AI-generated code runs network-locked during Implementation. Full egress unlocked only after Security Review passes |
-| Dynamic worker sizing | Pod resources scale with repo characteristics (test suite weight, compilation heaviness). Each repo has its own pod — no multi-repo resource contention |
-| Atomic Merge Check (stale approval protection) | After approval, verify main hasn't moved. If it has, auto-rebase and re-test before merging — no human re-approval needed unless tests fail |
-| Agent Retrospective (post-CR knowledge distillation) | Lightweight LLM call after every CR extracts repo-specific learnings. Future CRs benefit from past mistakes |
-| Resume-with-Validation (Sync Node) | After human take-over, pipeline diffs, updates specs, and re-runs tests before the AI continues. Never operates on stale assumptions |
-| PR body as first-class output | Human reviewers outside the pipeline see a structured summary: CR, specs, test results, review findings, cost. Not an afterthought |
-| Optional human PR review in delivery loop | Teams that don't trust AI-only review can require PR approval before release gate. Human review comments loop back to Implementation like any other feedback |
-| Git auth via short-lived tokens (GitHub App preferred) | Per-tenant, auto-rotated, scoped to repos. Workers never see raw credentials. SSH keys as fallback |
-| Agent command boundaries (defense in depth) | Non-root user + seccomp + filesystem permissions + egress lock + SDK allowlists. Agents can run tests and builds but not inspect the pod or exfiltrate data |
-| Configurable data retention with cleanup CronJob | Event streams 90 days, audit 2 years, cost detail 6 months, stale branches 90 days. All configurable per tenant. Compliance mode disables cleanup |
-| Six-layer prompt injection defense | No single layer stops injection. Input screening + spec firewall + adversarial review + diff scope analysis + runtime containment + optional human review. Each catches what the others miss |
-| Behaviour specs as sanitised intermediary | Code agents work from specs, not raw CR text. Malicious instructions must survive spec generation AND verification to affect code — two independent checkpoints |
-| Adversarial Security Reviewer | Security Reviewer has a fundamentally different trust model than code-writing agents. CR description marked as untrusted. "The CR asked for it" is not a valid justification for suspicious code |
-| Diff scope analysis is deterministic, not LLM | Can't be prompt-injected. Flags files/endpoints/dependencies outside expected scope. Structural check, not semantic |
-| Four-layer prompt composition | Each layer changes at different rate — enables independent evolution |
-| Auto-detect languages and test tooling | Workers detect languages and test commands from repo marker files (pyproject.toml, package.json, Cargo.toml, etc.). AGENTS.md overrides take precedence. No manual configuration needed per CR |
-| AGENTS.md convention | Teams control agent behaviour in their codebase — primary customisation lever |
-| Versioned prompts with A/B testing | Prompts evolve based on metrics, not intuition |
-| Scanner as separate process | Knowledge-building never blocks pipeline; improves continuously |
-| Repo identification: manual → LLM → auto | Progressive trust: start safe, earn confidence, automate when proven |
-| Feedback loop on repo identification | System gets smarter with every human correction |
-| Independent worker per repo | Multi-repo CRs spawn N workers that run fully independently. No coordination needed until the release gate |
-| Release coordination in Controller | Workers push PRs and terminate. Controller tracks all repos for a CR and presents a unified release gate when all PRs are ready |
-| Checkpoint-and-terminate during waits | Worker pods release compute during CI and approval waits; new pod resumes from checkpoint |
-| Duplicate CR detection on external ID | Prevents double-processing from webhook retries or multi-source triggers |
-| Pluggable secret providers | Vault, AWS SM, Azure KV, GCP SM, or K8s Secrets — whatever the deployment needs |
-| Pluggable notification channels | Slack, Teams, email, GitHub, custom webhooks — all hookable, user-subscribable |
-| Token cost tracking per agent call | Accumulated in real-time, visible in dashboard, drives circuit breakers |
-| Monorepo as directory-scoped applications | Same model — one worktree, agents scoped to application directories |
-| Graduated test scope during Implementation | Narrow tests for fast iteration loops, full suite before review gate. Agent widens scope based on codebase understanding. Pre-existing failures excluded by diffing against main |
-| Rebase before delivery, not at merge time | Catches conflicts while the pipeline still has full context (CR intent, specs, code). Agent or human can resolve immediately rather than discovering conflicts after PR is opened |
-| Merge Conflict Agent with human fallback | Automated resolution for common cases; pause + notify for complex conflicts. Human always has the option to take over the branch |
-| Provider chain per agent role | Ordered failover list, not single provider. Each role can have different chains — spec writing may demand Claude, quality review can use anything |
-| Failover at agent-call granularity | Individual calls fail over independently. One degraded CR doesn't drag others to the fallback. Mid-conversation tool-use loops stay on one provider |
-| Rate limit coordination across CRs | Shared token bucket per API key prevents 429 storms. Throttles proactively rather than hitting limits |
-| Proactive failover on provider degradation | Don't wait for every call to fail and retry — route new calls to fallback when error rate exceeds threshold |
-| Pipeline never auto-deletes artifacts | Branches, PRs, and commits always survive cancel/abort. Human decides cleanup via guided wizard |
-| Source changes notify, don't control | Jira issue closed mid-run → notification, not cancellation. Human always makes the call |
-| Substantive source changes auto-pause | Description/criteria edits pause the pipeline immediately — continuing against stale requirements is wasteful. Human decides: re-trigger, redirect, or continue |
-| Pipeline never transitions directly to failed | Always pauses first. Human sees failure context and decides: retry, redirect, take over, or give up |
-| Re-run from scratch or checkpoint | Operator chooses: full restart, resume from checkpoint, or resume from specific stage. Previous attempt artifacts preserved |
-| Partial success is failure | Multi-repo CRs are atomic at the release gate — all repos must have reviewed PRs before the human can approve. You can't ship half a feature |
+### Backends
+
+Configurable per stage, per repo, with ordered provider chains for failover:
+- **Claude Agent SDK** (primary) — via `anthropic` Python SDK
+- **OpenAI Codex SDK** — via `openai` Python SDK
+- **Google Gemini** — via `google-genai` Python SDK
+
+### Prompt Composition (4 layers)
+
+1. **Role system prompt** — version-controlled Markdown templates in `src/hadron/prompts/v1/`
+2. **Repo context** — AGENTS.md contents, tech stack, directory tree
+3. **Task payload** — CR details, specs, diffs, review findings
+4. **Loop feedback** — previous iteration results, CI logs, human overrides
+
+Static context capped at ~12k tokens. Agents use tools to discover full context dynamically.
+
+### Tool-Use Loop
+
+Agents execute via a manual tool-use loop (not a higher-level framework):
+1. Send messages to Claude API with available tools
+2. Parse response for text and tool_use blocks
+3. Execute tools (read_file, write_file, run_command, etc.) confined to worktree
+4. Feed results back, repeat until model stops or max rounds reached
+
+### Context Management
+
+| Threshold | Strategy | Effect |
+|-----------|----------|--------|
+| 80k input tokens | **Compaction** | Summarize middle messages in-place via Haiku call |
+| 150k input tokens | **Context reset** | Generate structured handoff, start fresh conversation |
+
+Context reset eliminates "context anxiety" where models rush to finish as the window fills. Falls back to compaction if handoff generation fails.
+
+### Reviewer Calibration
+
+All three reviewers include few-shot calibration examples showing expected severity for common findings at each level (critical, major, minor, info). This reduces false positives and ensures consistent severity assignment across reviews.
 
 ---
 
-*Version 5.0 — February 2026*
+## 5. Security Model
+
+### Six-Layer Prompt Injection Defense
+
+1. **Input screening** — LLM-based risk analysis at intake; high-risk auto-pauses
+2. **Spec firewall** — Code agents work from Gherkin specs, never raw CR text
+3. **Adversarial security review** — Security Reviewer treats CR as hostile, flags code that doesn't match specs
+4. **Deterministic diff scope analysis** — Catches config/dependency/infra changes without LLM (no injection vector)
+5. **Runtime containment** — Egress-locked during implementation, command boundaries
+6. **Human review** — Optional PR approval before release gate
+
+### Trust Models by Role
+
+| Agent | CR Text | Specs | Code |
+|-------|---------|-------|------|
+| Spec Writer | Trusted (input) | Output | — |
+| Implementation | Never sees | Trusted (input) | Output |
+| Security Reviewer | **Untrusted** (adversarial) | Semi-trusted | Subject of review |
+| Quality Reviewer | Context only | Context | Subject of review |
+
+### API Key Security
+
+- Encrypted at rest with Fernet (`HADRON_ENCRYPTION_KEY`)
+- DB keys override env vars
+- Never shown in full via API (masked: `sk-••••abcd`)
+- Never included in config snapshots or audit logs
+- Passed to workers as env vars at spawn time
+
+---
+
+## 6. Observability and Control
+
+### Event System
+
+Redis Streams + SSE provide three levels of observability:
+- **Pipeline level** — stage started/completed, pause/resume
+- **Stage level** — diffs, review findings, test results
+- **Agent level** — tool calls, outputs, compaction events
+
+### Interventions
+
+REST-based interventions allow operators to:
+- **Pause** — stop pipeline at next stage boundary
+- **Resume** — continue with optional state overrides
+- **Skip** — skip a stage and proceed
+- **Abort** — cancel the pipeline
+- **Take over** — human completes remaining work
+
+### Pause Reasons
+
+The paused node infers the reason from pipeline state:
+- `budget_exceeded` — cost >= max_cost_usd
+- `circuit_breaker` — feedback loop exhausted max iterations
+- `rebase_conflict` — unresolvable merge conflicts
+- `error` — unhandled exception in a stage
+
+---
+
+## 7. Multi-Tenancy
+
+Single installation serves multiple tenants on shared infrastructure:
+- OIDC handles authentication (any provider)
+- Pipeline DB manages per-tenant roles: Viewer, Operator, Approver, Admin
+- Tenant ID scopes all data (CRs, repos, config, audit)
+- `X-Tenant-ID` header on all API calls
+- Users can hold different roles across tenants
+
+---
+
+## 8. Deployment
+
+### Kubernetes-Native
+
+- **Controller:** Deployment (2+ replicas), lightweight, always-on
+- **Worker:** Job (one per repo per CR), ephemeral, auto-cleanup
+- **Scanner:** CronJob (nightly + incremental)
+
+### Local Development
+
+No Docker, Postgres, or Redis needed for frontend work:
+```bash
+python scripts/dummy_server.py   # Deterministic backend on :8000
+cd frontend && npm run dev       # Dashboard on :5173
+```
+
+Full stack requires Docker Compose for Postgres + Redis:
+```bash
+docker compose up -d
+alembic upgrade head
+uvicorn hadron.controller.app:create_app --factory
+```
