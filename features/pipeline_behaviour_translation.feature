@@ -19,7 +19,7 @@ Feature: Behaviour Translation
   Scenario: Emit diff of generated feature files
     When the behaviour translation stage completes
     Then a stage diff event is emitted containing the new feature files
-    And the feature file contents are structured with path and content
+    And the diff is emitted as a unified diff string
 
   Scenario: Spec Writer operates within repo worktree
     When the Spec Writer agent executes

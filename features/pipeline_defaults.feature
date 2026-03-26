@@ -34,7 +34,7 @@ Feature: Pipeline Defaults Configuration
     Then both pipeline defaults and templates are saved together
 
   Scenario: Defaults are frozen into new CRs at intake
-    Given pipeline defaults have been configured
     When a new CR is triggered
-    Then the CR's config snapshot includes the current pipeline defaults
+    Then the CR's config snapshot includes the hardcoded defaults from defaults.py
+    And DB-stored pipeline default overrides are overlaid onto the hardcoded defaults
     And subsequent changes to defaults do not affect the running CR

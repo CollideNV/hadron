@@ -6,7 +6,7 @@ Feature: Agent Prompt Composition
   Scenario: Compose agent prompts in four layers
     When an agent prompt is composed
     Then Layer 1 is the role system prompt from the template
-    And Layer 2 is the repo context including agent instructions, language, and directory tree
+    And Layer 2 is the repo context including agent instructions, languages, and directory tree
     And Layer 3 is the task payload with CR details, specs, and code
     And Layer 4 is loop feedback from previous stages
 
@@ -16,7 +16,8 @@ Feature: Agent Prompt Composition
     Then the custom template is used instead of the default
     And templates are frozen into the config snapshot at intake
 
-  Scenario: System prompt truncated to context limit
+  Scenario: Repo context truncated to context limit
     Given a repo has a very large AGENTS.md file
     When the system prompt is composed
-    Then it is truncated to the maximum context size
+    Then the repo context portion is truncated to the maximum static context size
+    And the role template itself is not truncated

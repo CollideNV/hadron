@@ -8,7 +8,7 @@ Feature: Agent Cost Tracking
   Scenario: Track cost per agent invocation
     When an agent completes execution
     Then input tokens, output tokens, and cost are recorded
-    And the model used is recorded
+    And the models used are recorded in a per-model breakdown
 
   Scenario: Accumulate cost across stages
     Given multiple agents execute across different pipeline stages
@@ -19,7 +19,7 @@ Feature: Agent Cost Tracking
   Scenario: Per-model cost breakdown
     Given an agent uses different models across phases
     When the agent completes
-    Then a per-model breakdown is produced with tokens, cost, and throttle time
+    Then a per-model breakdown is produced with tokens, cost, throttle time, cache creation tokens, cache read tokens, and API call count
     And the breakdown is accumulated across stages in the pipeline state
 
   Scenario: Store final cost in database
@@ -38,4 +38,4 @@ Feature: Agent Cost Tracking
 
   Scenario: Store and retrieve agent conversation
     When an agent completes execution
-    Then the full conversation is persisted and retrievable via the API
+    Then the full conversation is stored in Redis with a 7-day TTL and retrievable via the API

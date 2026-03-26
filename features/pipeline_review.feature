@@ -23,6 +23,8 @@ Feature: Code Review
   Scenario: Quality Reviewer evaluates code quality
     When the Quality Reviewer executes
     Then it receives the CR title, acceptance criteria, and diff
+    And it receives diff scope flags from the deterministic pre-pass
+    And it receives the behaviour specs for context
     And it evaluates architecture, performance, and code quality
 
   Scenario: Spec Compliance Reviewer checks against specs

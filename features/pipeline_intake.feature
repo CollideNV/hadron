@@ -49,6 +49,6 @@ Feature: Pipeline Intake
   Scenario: Freeze configuration at intake
     When a CR is triggered
     Then the current configuration is snapshotted into the run record
-    And the snapshot includes prompt templates, model settings, and OpenCode endpoints
+    And the snapshot includes prompt templates and the backend template (which includes model settings and endpoint configuration)
     And all subsequent stages use the frozen config snapshot
     And runtime config changes after intake do not affect the running CR

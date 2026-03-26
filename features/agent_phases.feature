@@ -22,8 +22,9 @@ Feature: Agent Phases
     When the agent executes
     Then that phase is skipped entirely
 
-  Scenario: Phase events are emitted
-    Given an agent with multiple phases configured
+  Scenario: Phase events are emitted for multiphase agents
+    Given an agent with multiple phases configured (explore or plan model set)
     When the agent executes
     Then a phase started event is emitted before each phase
     And a phase completed event is emitted after each phase
+    But single-phase agents (no explore or plan model) emit no phase events

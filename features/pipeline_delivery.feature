@@ -17,6 +17,7 @@ Feature: Delivery
     And tests fail
     Then the delivery result is marked as not delivered
     And the test failure output is recorded
+    And the pipeline still proceeds unconditionally to the release stage
 
   Scenario: PR description generated in release stage
     When the release stage executes after a successful delivery

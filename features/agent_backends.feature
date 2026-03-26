@@ -1,11 +1,13 @@
 Feature: Agent Backends
-  Multiple AI backends are supported and can be configured per stage
-  and phase. Backends are cached and reused across stages.
+  Multiple AI backends are supported and can be configured per stage.
+  Models can vary per phase within a stage. Backends are cached and
+  reused across stages.
 
-  Scenario: Select agent backend per stage and phase
+  Scenario: Select agent backend per stage and model per phase
     Given stage model settings assign different backends to different stages
     When a stage executes its agent
-    Then the agent uses the backend and model configured for that stage and phase
+    Then the agent uses the backend configured for that stage
+    And the model can vary per phase (explore, plan, act) within the stage
     And if no per-stage override exists it falls back to the default backend
 
   Scenario: Backend pool caches and reuses backends
@@ -14,10 +16,9 @@ Feature: Agent Backends
     Then the same backend instance is returned without re-creation
 
   Scenario: Named OpenCode endpoint as backend
-    Given an OpenCode endpoint "local-ollama" is configured with a base URL and models
+    Given an OpenCode endpoint "local-ollama" is configured with a slug and base URL
     When a stage is configured to use backend "opencode:local-ollama"
     Then the agent connects to that endpoint's base URL
-    And the endpoint's model list is available for selection
 
   Scenario: Plain OpenCode backend with free-text model
     Given no named OpenCode endpoints are configured

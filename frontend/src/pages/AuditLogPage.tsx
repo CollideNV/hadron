@@ -2,11 +2,10 @@ import { Link } from "react-router-dom";
 import { useAuditLog } from "../hooks/useAuditLog";
 
 const ACTION_TYPES = [
-  "pipeline_triggered",
-  "model_settings_updated",
+  "backend_templates_updated",
+  "default_template_updated",
   "pipeline_defaults_updated",
-  "prompt_updated",
-  "opencode_endpoints_updated",
+  "prompt_template_updated",
 ];
 
 const CHIP_BASE = "px-2.5 py-1 text-[11px] rounded-md cursor-pointer border transition-colors";

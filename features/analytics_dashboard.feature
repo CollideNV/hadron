@@ -19,34 +19,37 @@ Feature: Analytics Dashboard
     Then a donut chart shows the status distribution
     And a legend lists each status with its count
 
-  Scenario: Daily run trend chart
-    Given pipeline runs have occurred over the last 14 days
-    When the analytics page is loaded
-    Then an area chart shows daily completed and failed counts
-    And the X axis shows dates
+  Scenario: Daily run trend chart (pending — backend stub)
+    # The /analytics/summary endpoint returns daily_stats as an empty list.
+    # The frontend shows an empty area chart until this is implemented.
+    Given the analytics page is loaded
+    Then the daily trend area chart is visible
+    And it displays an empty state when no daily stats are available
 
-  Scenario: Average stage duration chart
-    Given pipeline runs have completed through multiple stages
-    When the analytics page is loaded
-    Then a horizontal bar chart shows average and p95 durations per stage
-    And stages are labelled with human-readable names
+  Scenario: Average stage duration chart (pending — backend stub)
+    # The /analytics/summary endpoint returns stage_durations as an empty list.
+    # The frontend shows an empty bar chart until this is implemented.
+    Given the analytics page is loaded
+    Then the stage duration bar chart is visible
+    And it displays an empty state when no stage duration data is available
 
-  Scenario: Cost breakdown by stage
-    Given agents have accumulated costs across stages
-    When the analytics page is loaded
+  Scenario: Cost breakdown by stage (pending — backend stub)
+    # The /analytics/cost?group_by=stage endpoint returns an empty groups list.
+    Given the analytics page is loaded
     And the "Stage" cost tab is selected
-    Then a bar chart shows cost per stage
+    Then the cost chart is visible with no data
 
-  Scenario: Cost breakdown by model
-    Given agents have used different models
+  Scenario: Cost breakdown by model (pending — backend stub)
+    # The /analytics/cost?group_by=model endpoint returns an empty groups list.
     When the user selects the "Model" cost tab
-    Then the bar chart updates to show cost per model
+    Then the cost chart is visible with no data
 
   Scenario: Cost breakdown by repo
     Given CRs have run against multiple repositories
     When the user selects the "Repo" cost tab
     Then the bar chart updates to show cost per repo
 
-  Scenario: Cost breakdown over time
+  Scenario: Cost breakdown over time (pending — backend stub)
+    # The /analytics/cost?group_by=day endpoint returns an empty groups list.
     When the user selects the "Daily" cost tab
-    Then the bar chart updates to show daily cost totals
+    Then the cost chart is visible with no data

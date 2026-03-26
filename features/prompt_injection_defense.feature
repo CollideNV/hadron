@@ -26,8 +26,8 @@ Feature: Prompt Injection Defense
 
   Scenario: Layer 5 - Runtime containment
     When an agent executes
-    Then it is confined to its worktree directory
-    And it cannot access files outside the designated workspace
+    Then file tools (read, write, delete, list) are path-confined to the worktree directory
+    And shell commands are restricted by a command allowlist but not by path confinement
 
   Scenario: Layer 6 - Human review option
     When the pipeline pauses at any stage

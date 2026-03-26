@@ -25,7 +25,7 @@ Feature: Checkpoint and Resume
     Given multiple state overrides are present
     When the worker determines the resume point
     Then it selects the stage that is latest in pipeline order among recognised overrides
-    And unrecognised override keys are ignored
+    And if no override keys match a recognised stage the worker resumes from the paused node
 
   Scenario: Fresh run with overrides
     Given no checkpoint exists for a CR

@@ -9,7 +9,7 @@ Feature: Event Streaming
     Then all existing events are replayed first
     And new events are streamed in real-time as they occur
     And there is no gap between replayed and live events
-    And the connection closes on terminal events
+    And the connection closes on pipeline_completed or pipeline_failed events
 
   Scenario: No events lost during reconnection
     Given events have been emitted for a CR
@@ -37,7 +37,7 @@ Feature: Event Streaming
 
   Scenario: Cost tracking events
     When an agent completes execution
-    Then a cost update event is emitted with token counts, incremental cost, and cumulative total cost
+    Then a cost update event is emitted with incremental cost delta and cumulative total cost
 
   Scenario: Stage diff events
     When a stage produces code or spec changes

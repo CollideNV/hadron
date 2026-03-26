@@ -10,7 +10,9 @@ Feature: Repo Identification
     Then one worker is spawned per repo URL
     And each worker receives its repo_url and default_branch
 
-  Scenario: Reject CR with no repos specified
+  Scenario: Accept CR with no repos specified
     Given a CR has been triggered with no repo URLs
     When the Controller processes the CR
-    Then the CR is rejected with an error indicating no repos were specified
+    Then the CR is accepted and a run record is created
+    And no repo workers are spawned
+    And no pipeline execution occurs

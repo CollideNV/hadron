@@ -14,7 +14,7 @@ Feature: Agent Execution
 
   Scenario: Available agent tools
     Given an agent is executing in a repo worktree
-    Then it can read files, write files, and list directories
+    Then it can read files, write files, delete files, and list directories
     And it can execute shell commands within the worktree
 
   Scenario: File tools are confined to the working directory
@@ -33,8 +33,8 @@ Feature: Agent Execution
 
   # --- Rate limiting ---
 
-  Scenario: Rate limit retry with server-guided backoff
-    Given the AI provider returns a rate limit error
+  Scenario: Transient error retry with server-guided backoff
+    Given the AI provider returns a transient error (rate limit, 500, 503, or 529)
     When the response includes a retry-after hint
     Then the agent waits for the server-specified duration
     When no retry-after hint is provided

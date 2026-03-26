@@ -28,10 +28,10 @@ Feature: CR Creation Dialog
     And the dialog closes
     And the user is returned to the CR list page
 
-  Scenario: Form validation errors are shown within the dialog
+  Scenario: Submit button is disabled when required fields are empty
     Given the CR creation dialog is open
-    When the user submits the form with missing required fields
-    Then validation errors are displayed inside the dialog
+    When the title or description field is empty
+    Then the submit button is disabled
     And the dialog remains open
 
   Scenario: /new route is removed

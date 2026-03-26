@@ -73,6 +73,14 @@ async def trigger_pipeline(
                     template_data = t
                     break
 
+        # Overlay DB-stored pipeline defaults onto hardcoded defaults
+        result = await session.execute(
+            select(PipelineSetting).where(PipelineSetting.key == "pipeline_defaults")
+        )
+        row = result.scalar_one_or_none()
+        if row and isinstance(row.value_json, dict):
+            config_snapshot["pipeline"].update(row.value_json)
+
         # Freeze template into config snapshot
         config_snapshot["pipeline"]["template_slug"] = template_slug
         if template_data:
