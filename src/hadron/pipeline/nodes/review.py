@@ -141,6 +141,7 @@ async def review_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> dic
         "review_results": review_results,
         "review_passed": passed,
         "review_loop_count": state.get("review_loop_count", 0) + 1,
+        "review_finding_counts": [len(blocking_findings)],
         "current_stage": "review",
         **costs.to_state_dict(),
         "stage_history": [{"stage": "review", "status": "completed"}],

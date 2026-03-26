@@ -136,11 +136,11 @@ def build_pipeline_graph() -> StateGraph:
     # E2E testing always flows into review
     graph.add_edge("e2e_testing", "review")
 
-    # Conditional: review → rework (retry) | rebase (proceed) | paused (circuit breaker)
+    # Conditional: review → rework (retry) | implementation (pivot) | rebase (proceed) | paused (circuit breaker)
     graph.add_conditional_edges(
         "review",
         after_review,
-        {"rework": "rework", "rebase": "rebase", "paused": "paused"},
+        {"rework": "rework", "implementation": "implementation", "rebase": "rebase", "paused": "paused"},
     )
 
     # Conditional: rework → e2e_testing (if configured) | review (no E2E) | paused

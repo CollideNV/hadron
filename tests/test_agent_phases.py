@@ -712,3 +712,134 @@ class TestConversationCompaction:
 
         compaction_events = [e for e in events if e[0] == "compaction"]
         assert len(compaction_events) > 0, "Expected compaction event to be emitted"
+
+
+# ---------------------------------------------------------------------------
+# Context reset
+# ---------------------------------------------------------------------------
+
+
+class TestContextReset:
+    @pytest.mark.asyncio
+    async def test_context_reset_produces_fresh_conversation(self, tmp_workdir):
+        """Context reset creates a new conversation with handoff document."""
+        backend = ClaudeAgentBackend(api_key="test-key")
+
+        handoff_response = _make_api_response(
+            "## Progress\nRead files.\n## Remaining Work\nWrite tests."
+        )
+
+        messages = [
+            {"role": "user", "content": "Implement feature X"},
+            {"role": "assistant", "content": [{"type": "text", "text": "Reading files..."}]},
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "file contents"}]},
+            {"role": "assistant", "content": [{"type": "text", "text": "Writing code..."}]},
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t2", "content": "write ok"}]},
+        ]
+
+        with patch.object(
+            backend._client.messages, "create",
+            new_callable=AsyncMock,
+            return_value=handoff_response,
+        ):
+            from hadron.agent.compaction import context_reset
+            result = await context_reset(
+                backend._client, messages,
+                original_task="Implement feature X",
+                phase="test",
+            )
+
+        # Should be a single user message with original task + handoff
+        assert len(result) == 1
+        assert result[0]["role"] == "user"
+        assert "Implement feature X" in result[0]["content"]
+        assert "Handoff from Previous Session" in result[0]["content"]
+        assert "## Progress" in result[0]["content"]
+
+    @pytest.mark.asyncio
+    async def test_context_reset_falls_back_to_compaction(self, tmp_workdir):
+        """If handoff generation fails, falls back to compaction."""
+        backend = ClaudeAgentBackend(api_key="test-key")
+
+        # First call (handoff) fails, second call (compaction) succeeds
+        compaction_response = _make_api_response("Summary of work so far.")
+
+        messages = [
+            {"role": "user", "content": "Implement feature X"},
+            {"role": "assistant", "content": [{"type": "text", "text": "Exploring..."}]},
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "result"}]},
+            {"role": "assistant", "content": [{"type": "text", "text": "Writing..."}]},
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t2", "content": "ok"}]},
+        ]
+
+        with patch.object(
+            backend._client.messages, "create",
+            new_callable=AsyncMock,
+            side_effect=[Exception("API down"), compaction_response],
+        ):
+            from hadron.agent.compaction import context_reset
+            result = await context_reset(
+                backend._client, messages,
+                original_task="Implement feature X",
+                phase="test",
+            )
+
+        # Should fall back to compaction (keeps original user + summary + continue + tail)
+        assert any("[Conversation compacted" in str(m.get("content", "")) for m in result)
+
+    @pytest.mark.asyncio
+    async def test_context_reset_skips_short_conversations(self, tmp_workdir):
+        """Very short conversations are returned unchanged."""
+        backend = ClaudeAgentBackend(api_key="test-key")
+
+        messages = [
+            {"role": "user", "content": "Do something"},
+            {"role": "assistant", "content": "Done."},
+        ]
+
+        from hadron.agent.compaction import context_reset
+        result = await context_reset(
+            backend._client, messages,
+            original_task="Do something",
+            phase="test",
+        )
+        assert result is messages
+
+    @pytest.mark.asyncio
+    async def test_context_reset_triggered_by_very_high_input_tokens(self, tmp_workdir):
+        """Tool loop triggers context reset at 150k tokens (not just compaction)."""
+        # Build up enough rounds so we have >= 3 messages
+        tool_r1 = _make_tool_response("read_file", {"path": "a.py"}, tool_id="t1")
+        tool_r2 = _make_tool_response("read_file", {"path": "b.py"}, tool_id="t2")
+        # Round 3: very high token count → triggers context reset
+        tool_r3 = _make_tool_response("read_file", {"path": "c.py"}, tool_id="t3")
+        tool_r3.usage.input_tokens = 160_000  # Over reset threshold
+        # Handoff generation call
+        handoff_response = _make_api_response("## Progress\nDid stuff.\n## Remaining Work\nFinish.")
+        # Final response after reset
+        end_response = _make_api_response("Done.", input_tokens=5000, output_tokens=200)
+
+        backend = ClaudeAgentBackend(api_key="test-key")
+
+        with patch.object(
+            backend._client.messages, "create",
+            new_callable=AsyncMock,
+            side_effect=[tool_r1, tool_r2, tool_r3, handoff_response, end_response],
+        ), patch("hadron.agent.tool_loop.execute_tool", new_callable=AsyncMock, return_value="file contents"):
+            events: list[tuple[str, dict]] = []
+
+            async def capture_event(event_type: str, data: dict) -> None:
+                events.append((event_type, data))
+
+            task = AgentTask(
+                role="code_writer",
+                system_prompt="System.",
+                user_prompt="Task.",
+                working_directory=str(tmp_workdir),
+                phases=PhaseConfig(explore_model="", plan_model=""),
+                callbacks=AgentCallbacks(on_event=capture_event),
+            )
+            await backend.execute(task)
+
+        reset_events = [e for e in events if e[0] == "context_reset"]
+        assert len(reset_events) > 0, "Expected context_reset event to be emitted"

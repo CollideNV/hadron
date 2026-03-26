@@ -37,3 +37,8 @@ E2E_TEST_TIMEOUT_SECONDS = 300
 # --- Conversation compaction ---
 # Compact conversation when a single round's input tokens exceed this threshold.
 COMPACT_INPUT_TOKEN_THRESHOLD = 80_000
+# Full context reset when input tokens exceed this higher threshold.
+# Unlike compaction (which summarizes in-place), a reset starts a fresh
+# conversation with a structured handoff — eliminating "context anxiety"
+# where models rush to finish as the window fills up.
+CONTEXT_RESET_TOKEN_THRESHOLD = 150_000

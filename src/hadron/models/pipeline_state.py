@@ -145,6 +145,7 @@ class PipelineState(TypedDict, total=False):
     review_results: list[ReviewResult]
     review_passed: bool
     review_loop_count: int
+    review_finding_counts: Annotated[list[int], operator.add]  # blocking finding count per iteration
 
     # --- Rebase ---
     rebase_clean: bool

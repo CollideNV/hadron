@@ -31,6 +31,27 @@ Feature: Agent Execution
     When the command exceeds the timeout
     Then the process is killed and the tool returns a timeout error
 
+  # --- Context management ---
+
+  Scenario: Compact conversation when context grows large
+    Given an agent's tool-use loop has been running for many rounds
+    When the input token count exceeds the compaction threshold (80k tokens)
+    Then the conversation is compacted by summarizing middle messages
+    And the original task and most recent exchange are preserved
+    And the agent continues from where it left off
+
+  Scenario: Full context reset when context grows very large
+    Given an agent's tool-use loop has been running for an extended session
+    When the input token count exceeds the reset threshold (150k tokens)
+    Then a structured handoff document is generated from the full conversation
+    And a fresh conversation is started with the original task plus handoff
+    And this eliminates "context anxiety" where models rush as the window fills
+
+  Scenario: Context reset falls back to compaction on failure
+    Given the context reset threshold has been exceeded
+    When the handoff generation fails
+    Then the system falls back to in-place compaction instead
+
   # --- Rate limiting ---
 
   Scenario: Transient error retry with server-guided backoff

@@ -6,6 +6,7 @@ import pytest
 
 from hadron.pipeline.edges import (
     _budget_exceeded,
+    _rework_is_stalled,
     after_implementation,
     after_rebase,
     after_review,
@@ -283,3 +284,72 @@ class TestInferPauseReason:
     def test_error_takes_priority_over_budget(self) -> None:
         state = {"error": "crash", "cost_usd": 15.0, "config_snapshot": {"pipeline": {"max_cost_usd": 10.0}}}
         assert _infer_pause_reason(state) == "error"
+
+
+# ---------------------------------------------------------------------------
+# Rework stall detection
+# ---------------------------------------------------------------------------
+
+
+class TestReworkIsStalled:
+    def test_not_stalled_on_first_review(self) -> None:
+        state = {"review_loop_count": 1, "review_finding_counts": [5]}
+        assert _rework_is_stalled(state) is False
+
+    def test_not_stalled_when_findings_decrease(self) -> None:
+        state = {"review_loop_count": 2, "review_finding_counts": [5, 3]}
+        assert _rework_is_stalled(state) is False
+
+    def test_stalled_when_findings_same(self) -> None:
+        state = {"review_loop_count": 2, "review_finding_counts": [5, 5]}
+        assert _rework_is_stalled(state) is True
+
+    def test_stalled_when_findings_increase(self) -> None:
+        state = {"review_loop_count": 2, "review_finding_counts": [3, 5]}
+        assert _rework_is_stalled(state) is True
+
+    def test_not_stalled_without_history(self) -> None:
+        state = {"review_loop_count": 2, "review_finding_counts": []}
+        assert _rework_is_stalled(state) is False
+
+    def test_not_stalled_without_field(self) -> None:
+        state = {"review_loop_count": 2}
+        assert _rework_is_stalled(state) is False
+
+
+class TestAfterReviewStrategicPivot:
+    """Review routes to implementation (not rework) when rework is stalled."""
+
+    def test_stalled_rework_pivots_to_implementation(self) -> None:
+        state = {
+            "review_passed": False,
+            "review_loop_count": 2,
+            "review_finding_counts": [5, 5],
+        }
+        assert after_review(state) == "implementation"
+
+    def test_improving_rework_continues_to_rework(self) -> None:
+        state = {
+            "review_passed": False,
+            "review_loop_count": 2,
+            "review_finding_counts": [5, 3],
+        }
+        assert after_review(state) == "rework"
+
+    def test_budget_takes_precedence_over_pivot(self) -> None:
+        state = {
+            "review_passed": False,
+            "review_loop_count": 2,
+            "review_finding_counts": [5, 5],
+            "cost_usd": 20.0,
+            "config_snapshot": {"pipeline": {"max_cost_usd": 10.0}},
+        }
+        assert after_review(state) == "paused"
+
+    def test_circuit_breaker_takes_precedence_over_pivot(self) -> None:
+        state = {
+            "review_passed": False,
+            "review_loop_count": 3,
+            "review_finding_counts": [5, 5, 5],
+        }
+        assert after_review(state) == "paused"

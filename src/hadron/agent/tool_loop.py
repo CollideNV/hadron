@@ -8,13 +8,14 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from hadron.agent.base import ModelStats, OnAgentEvent, OnToolCall
-from hadron.agent.compaction import compact_messages
+from hadron.agent.compaction import compact_messages, context_reset
 from hadron.agent.cost import _compute_model_cost
 from hadron.agent.messages import _serialize_messages
 from hadron.agent.rate_limiter import call_with_retry
 from hadron.agent.tools import execute_tool
 from hadron.config.limits import (
     COMPACT_INPUT_TOKEN_THRESHOLD,
+    CONTEXT_RESET_TOKEN_THRESHOLD,
     MAX_TOOL_RESULT_CALLBACK_CHARS,
     MAX_TOOL_RESULT_EVENT_CHARS,
 )
@@ -196,11 +197,15 @@ async def run_tool_loop(
         if response.stop_reason == "end_turn":
             break
 
-        # Compact conversation if input tokens are growing too large
-        should_compact = (
-            response.usage.input_tokens >= COMPACT_INPUT_TOKEN_THRESHOLD
-        )
-        if should_compact and len(messages) >= 5:
+        # Manage context growth: reset at high threshold, compact at lower
+        if response.usage.input_tokens >= CONTEXT_RESET_TOKEN_THRESHOLD and len(messages) >= 3:
+            messages = await context_reset(
+                client, messages,
+                original_task=cfg.user_prompt,
+                phase=cfg.phase,
+                on_event=cfg.on_event,
+            )
+        elif response.usage.input_tokens >= COMPACT_INPUT_TOKEN_THRESHOLD and len(messages) >= 5:
             messages = await compact_messages(
                 client, messages, phase=cfg.phase, on_event=cfg.on_event,
             )

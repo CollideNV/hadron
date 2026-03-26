@@ -100,6 +100,19 @@ Feature: Code Review
     And findings are grouped by reviewer for clarity
     And the reviewer summaries are included for context
 
+  Scenario: Strategic pivot when rework stalls
+    Given the review has failed across multiple iterations
+    And the blocking finding count has not decreased between iterations
+    When the review routing decision is made
+    Then the pipeline routes to a fresh implementation instead of rework
+    And this allows the agent to take a fundamentally different approach
+
+  Scenario: Rework continues when findings decrease
+    Given the review has failed across multiple iterations
+    And the blocking finding count has decreased from the previous iteration
+    When the review routing decision is made
+    Then the pipeline routes to rework as normal
+
   Scenario: Deterministic diff scope analysis
     Given the implementation stage has produced code changes
     When the review stage performs a diff scope pre-pass

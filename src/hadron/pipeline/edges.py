@@ -44,11 +44,34 @@ def after_verification(state: PipelineState) -> str:
     return "translation"
 
 
+def _rework_is_stalled(state: PipelineState) -> bool:
+    """Detect whether incremental rework is making progress.
+
+    Compares blocking finding counts across review iterations. If the
+    current iteration has as many or more blocking findings than the
+    previous one, the rework approach is stalled and a fresh
+    implementation may be more effective.
+
+    Only triggers after at least 2 review iterations (need a comparison).
+    """
+    review_loop = state.get("review_loop_count", 0)
+    if review_loop < 2:
+        return False
+
+    history = state.get("review_finding_counts", [])
+    if len(history) < 2:
+        return False
+
+    # Not improving: current >= previous blocking count
+    return history[-1] >= history[-2]
+
+
 def after_review(state: PipelineState) -> str:
     """Route after code review.
 
     Returns:
         "rebase" — review passed, proceed
+        "implementation" — rework stalled, pivot to fresh implementation
         "rework" — review failed, loop back for targeted fixes (within circuit breaker)
         "paused" — circuit breaker tripped or node errored
     """
@@ -69,6 +92,10 @@ def after_review(state: PipelineState) -> str:
     )
     if state.get("review_loop_count", 0) >= max_loops:
         return "paused"
+
+    # Strategic pivot: if rework isn't reducing findings, restart fresh
+    if _rework_is_stalled(state):
+        return "implementation"
 
     return "rework"
 

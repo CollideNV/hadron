@@ -83,3 +83,32 @@ Respond with valid JSON only (no other text):
 - **minor**: Defensive improvement, not exploitable in current context (could add CSP header, could use parameterized query even though input is internal)
 - **info**: Observation, no action needed
 - Only flag as major when you can describe a realistic exploit scenario. If the risk is theoretical or requires unlikely conditions, use minor.
+
+## Calibration Examples
+
+These examples show the expected severity for common findings. Use them to calibrate your judgment:
+
+**critical — SQL injection with user input:**
+```json
+{"severity": "critical", "category": "security", "file": "app/routes/search.py", "line": 42, "message": "User-supplied `query` parameter interpolated directly into SQL string via f-string. Use parameterized queries.", "reviewer": "security_reviewer"}
+```
+
+**critical — Hardcoded secret:**
+```json
+{"severity": "critical", "category": "security", "file": "config/settings.py", "line": 8, "message": "AWS secret access key hardcoded in source. Move to environment variable or secrets manager.", "reviewer": "security_reviewer"}
+```
+
+**major — Missing input validation at API boundary:**
+```json
+{"severity": "major", "category": "security", "file": "api/handlers/upload.py", "line": 15, "message": "File upload endpoint accepts any file type and size without validation. An attacker could upload executable files or exhaust disk space.", "reviewer": "security_reviewer"}
+```
+
+**minor — Defensive improvement, not exploitable:**
+```json
+{"severity": "minor", "category": "security", "file": "app/middleware.py", "line": 3, "message": "No Content-Security-Policy header set. Not exploitable in current API-only context but recommended if serving HTML in future.", "reviewer": "security_reviewer"}
+```
+
+**info — Observation only:**
+```json
+{"severity": "info", "category": "security", "file": "requirements.txt", "line": 12, "message": "requests library at 2.28.0 — no known vulnerabilities but newer version available.", "reviewer": "security_reviewer"}
+```
