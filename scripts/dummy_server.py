@@ -519,6 +519,37 @@ def build_events() -> list[dict]:
     add("stage_entered", "release")
     add("stage_completed", "release")
 
+    # --- Retrospective ---
+    add("retrospective", "retrospective", {
+        "repo": REPO,
+        "insights": [
+            {
+                "category": "quality",
+                "severity": "warning",
+                "title": "Excessive review/rework cycling",
+                "detail": "The review/rework loop ran 3 times. This increases cost and duration significantly.",
+                "suggestion": "Check if the implementation prompt is missing context that reviewers consistently flag.",
+                "metrics": {"review_loop_count": 3},
+            },
+            {
+                "category": "quality",
+                "severity": "warning",
+                "title": "Rework did not reduce blocking findings",
+                "detail": "Blocking finding counts across review iterations: [3, 3, 2]. Rework was not making progress.",
+                "suggestion": "This pattern often means the rework agent is introducing new issues while fixing old ones.",
+                "metrics": {"finding_counts": [3, 3, 2]},
+            },
+            {
+                "category": "cost",
+                "severity": "info",
+                "title": "Stage 'implementation' dominated pipeline time",
+                "detail": "This stage consumed 62% of total pipeline duration (186s out of 300s).",
+                "suggestion": "Investigate why 'implementation' takes disproportionately long.",
+                "metrics": {"stage": "implementation", "duration_s": 186, "fraction": 0.62},
+            },
+        ],
+    })
+
     # --- Done ---
     add("pipeline_completed", "", dt=0.5)
 
@@ -599,6 +630,44 @@ async def nudge(cr_id: str):
 @app.get("/api/pipeline/{cr_id}/conversation")
 async def conversation(cr_id: str, key: str = ""):
     return []
+
+
+@app.get("/api/pipeline/{cr_id}/retrospective")
+async def retrospective(cr_id: str):
+    return [
+        {
+            "repo_name": REPO,
+            "final_status": "completed",
+            "duration_seconds": 300.0,
+            "total_cost_usd": 1.2345,
+            "insights": [
+                {
+                    "category": "quality",
+                    "severity": "warning",
+                    "title": "Excessive review/rework cycling",
+                    "detail": "The review/rework loop ran 3 times. This increases cost and duration significantly.",
+                    "suggestion": "Check if the implementation prompt is missing context that reviewers consistently flag.",
+                    "metrics": {"review_loop_count": 3},
+                },
+                {
+                    "category": "quality",
+                    "severity": "warning",
+                    "title": "Rework did not reduce blocking findings",
+                    "detail": "Blocking finding counts across review iterations: [3, 3, 2]. Rework was not making progress.",
+                    "suggestion": "This pattern often means the rework agent is introducing new issues while fixing old ones.",
+                    "metrics": {"finding_counts": [3, 3, 2]},
+                },
+                {
+                    "category": "cost",
+                    "severity": "info",
+                    "title": "Stage 'implementation' dominated pipeline time",
+                    "detail": "This stage consumed 62% of total pipeline duration (186s out of 300s).",
+                    "suggestion": "Investigate why 'implementation' takes disproportionately long.",
+                    "metrics": {"stage": "implementation", "duration_s": 186, "fraction": 0.62},
+                },
+            ],
+        }
+    ]
 
 
 @app.get("/api/pipeline/{cr_id}/logs")

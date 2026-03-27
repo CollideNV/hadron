@@ -144,6 +144,28 @@ export interface ErrorData {
   error?: string;
 }
 
+export interface RetrospectiveInsight {
+  category: string;
+  severity: string;
+  title: string;
+  detail: string;
+  suggestion: string;
+  metrics: Record<string, unknown>;
+}
+
+export interface RetrospectiveData {
+  repo?: string;
+  insights: RetrospectiveInsight[];
+}
+
+export interface RepoRetrospective {
+  repo_name: string;
+  final_status: string;
+  duration_seconds: number;
+  total_cost_usd: number;
+  insights: RetrospectiveInsight[];
+}
+
 /* ── Event-type → data mapping ── */
 
 export interface PipelineEventMap {
@@ -167,6 +189,7 @@ export interface PipelineEventMap {
   intervention_set: InterventionSetData;
   stage_diff: StageDiffData;
   cost_update: CostUpdateData;
+  retrospective: RetrospectiveData;
   error: ErrorData;
 }
 
@@ -330,6 +353,7 @@ export const EVENT_TYPES = [
   "intervention_set",
   "stage_diff",
   "cost_update",
+  "retrospective",
   "error",
 ] as const;
 

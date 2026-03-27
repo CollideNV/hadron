@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any, Callable, Awaitable
 
@@ -73,12 +74,19 @@ def pipeline_node(stage: str) -> Callable:
             ctx = NodeContext.from_config(config)
             cr_id = state["cr_id"]
 
+            entered_at = time.time()
+
             await ctx.event_bus.emit(PipelineEvent(
                 cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage=stage,
             ))
 
             try:
-                return await fn(state, ctx, cr_id)
+                result = await fn(state, ctx, cr_id)
+                completed_at = time.time()
+                for entry in result.get("stage_history", []):
+                    entry.setdefault("entered_at", entered_at)
+                    entry.setdefault("completed_at", completed_at)
+                return result
             except Exception as exc:
                 logger.exception(
                     "%s node crashed (CR %s): %s", stage, cr_id, exc,
@@ -94,7 +102,8 @@ def pipeline_node(stage: str) -> Callable:
                     "status": "paused",
                     "error": f"{stage} node failed: {exc}",
                     "stage_history": [
-                        {"stage": stage, "status": "error", "error": str(exc)},
+                        {"stage": stage, "status": "error", "error": str(exc),
+                         "entered_at": entered_at, "completed_at": time.time()},
                     ],
                 }
 

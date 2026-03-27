@@ -156,7 +156,10 @@ class TestIntakeNode:
         assert result["current_stage"] == "intake"
         assert result.get("status") != "paused"
         assert result["cost_usd"] == 0.01
-        assert result["stage_history"] == [{"stage": "intake", "status": "completed"}]
+        assert result["stage_history"][0]["stage"] == "intake"
+        assert result["stage_history"][0]["status"] == "completed"
+        assert "entered_at" in result["stage_history"][0]
+        assert "completed_at" in result["stage_history"][0]
 
     @pytest.mark.asyncio
     async def test_happy_path_json_in_code_fence(self) -> None:
@@ -189,7 +192,8 @@ class TestIntakeNode:
         assert result["status"] == "paused"
         assert "intake_parse_failed" in result["structured_cr"]["risk_flags"]
         assert result["error"] is not None
-        assert result["stage_history"] == [{"stage": "intake", "status": "paused"}]
+        assert result["stage_history"][0]["stage"] == "intake"
+        assert result["stage_history"][0]["status"] == "paused"
 
     @pytest.mark.asyncio
     async def test_emits_stage_events(self) -> None:
@@ -226,7 +230,8 @@ class TestRepoIdNode:
         result = await repo_id_node(state, config)
 
         assert result["current_stage"] == "repo_id"
-        assert result["stage_history"] == [{"stage": "repo_id", "status": "completed"}]
+        assert result["stage_history"][0]["stage"] == "repo_id"
+        assert result["stage_history"][0]["status"] == "completed"
         assert result.get("status") != "failed"
 
     @pytest.mark.asyncio
@@ -300,7 +305,8 @@ class TestWorktreeSetupNode:
         assert result["repo"]["languages"] == ["python"]
         assert result["repo"]["test_commands"] == ["pytest"]
         assert result["current_stage"] == "worktree_setup"
-        assert result["stage_history"] == [{"stage": "worktree_setup", "status": "completed"}]
+        assert result["stage_history"][0]["stage"] == "worktree_setup"
+        assert result["stage_history"][0]["status"] == "completed"
 
     @pytest.mark.asyncio
     async def test_agents_md_read(self, tmp_path: Path) -> None:

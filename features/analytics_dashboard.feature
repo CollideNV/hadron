@@ -2,6 +2,8 @@ Feature: Analytics Dashboard
   The analytics page provides aggregate pipeline metrics including
   success rates, stage durations, cost breakdowns, and daily trends.
   The CR detail page includes a cost breakdown modal for per-run costs.
+  Analytics data is sourced from the RunSummary table, which stores
+  structured per-run data persisted at pipeline completion.
 
   # --- Analytics page ---
 
@@ -22,40 +24,37 @@ Feature: Analytics Dashboard
     Then a donut chart shows the status distribution
     And a legend lists each status with its count
 
-  Scenario: Daily run trend chart (pending — backend stub)
-    # The /analytics/summary endpoint returns daily_stats as an empty list.
-    # The frontend shows an empty area chart until this is implemented.
-    Given the analytics page is loaded
-    Then the daily trend area chart is visible
-    And it displays an empty state when no daily stats are available
+  Scenario: Daily run trend chart
+    Given RunSummary records exist across multiple days
+    When the analytics page is loaded
+    Then the daily trend area chart shows completed vs failed runs per day
+    And the chart shows cost trends over time
 
-  Scenario: Average stage duration chart (pending — backend stub)
-    # The /analytics/summary endpoint returns stage_durations as an empty list.
-    # The frontend shows an empty bar chart until this is implemented.
-    Given the analytics page is loaded
-    Then the stage duration bar chart is visible
-    And it displays an empty state when no stage duration data is available
+  Scenario: Average stage duration chart
+    Given RunSummary records exist with stage_timings data
+    When the analytics page is loaded
+    Then the stage duration bar chart shows average and p95 duration per stage
 
-  Scenario: Cost breakdown by stage (pending — backend stub)
-    # The /analytics/cost?group_by=stage endpoint returns an empty groups list.
-    Given the analytics page is loaded
+  Scenario: Cost breakdown by stage
+    Given RunSummary records exist with stage timing data
     And the "Stage" cost tab is selected
-    Then the cost chart is visible with no data
+    Then the cost chart shows per-stage cost distribution
+    And cost is approximated proportionally by stage duration
 
-  Scenario: Cost breakdown by model (pending — backend stub)
-    # The /analytics/cost?group_by=model endpoint returns an empty groups list.
+  Scenario: Cost breakdown by model
+    Given RunSummary records exist with model_breakdown data
     When the user selects the "Model" cost tab
-    Then the cost chart is visible with no data
+    Then the cost chart shows per-model cost with API call counts and token usage
 
   Scenario: Cost breakdown by repo
     Given CRs have run against multiple repositories
     When the user selects the "Repo" cost tab
     Then the bar chart updates to show cost per repo
 
-  Scenario: Cost breakdown over time (pending — backend stub)
-    # The /analytics/cost?group_by=day endpoint returns an empty groups list.
+  Scenario: Cost breakdown over time
+    Given RunSummary records exist across multiple days
     When the user selects the "Daily" cost tab
-    Then the cost chart is visible with no data
+    Then the cost chart shows daily cost totals with run counts
 
   # --- CR detail cost modal ---
 

@@ -18,7 +18,7 @@ from hadron.controller.dependencies import (
     get_redis,
     get_session_factory,
 )
-from hadron.db.models import CRRun, RepoRun
+from hadron.db.models import CRRun, RepoRun, RunSummary
 from hadron.events.bus import EventBus
 from hadron.events.interventions import InterventionManager
 from hadron.models.events import EventType, PipelineEvent
@@ -355,6 +355,33 @@ async def get_conversation(
         return json.loads(raw)
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Failed to parse conversation data")
+
+
+@router.get("/pipeline/{cr_id}/retrospective")
+async def get_retrospective(
+    cr_id: str,
+    session_factory: Any = Depends(get_session_factory),
+) -> list[dict]:
+    """Return retrospective insights for a pipeline run."""
+    async with session_factory() as session:
+        result = await session.execute(
+            select(RunSummary).where(RunSummary.cr_id == cr_id)
+        )
+        summaries = result.scalars().all()
+
+    if not summaries:
+        raise HTTPException(status_code=404, detail="No run summary found for this CR")
+
+    return [
+        {
+            "repo_name": s.repo_name,
+            "final_status": s.final_status,
+            "duration_seconds": s.duration_seconds,
+            "total_cost_usd": s.total_cost_usd,
+            "insights": s.retrospective_json or [],
+        }
+        for s in summaries
+    ]
 
 
 @router.get("/pipeline/{cr_id}/logs")

@@ -8,6 +8,7 @@ import StageFilterBanner from "../components/pipeline/StageFilterBanner";
 import EventLog from "../components/events/EventLog";
 import StageDetailView from "../components/stages/StageDetailView";
 import LogsPanel from "../components/logs/LogsPanel";
+import RetrospectivePanel from "../components/retrospective/RetrospectivePanel";
 
 export default function CRDetailPage() {
   const { crId, stage: urlStage } = useParams<{ crId: string; stage?: string }>();
@@ -64,6 +65,12 @@ export default function CRDetailPage() {
       <div className="flex-1 overflow-hidden flex flex-col">
         <div className="flex-1 overflow-hidden">
           {selectedStage ? (
+            selectedStage === "retrospective" ? (
+              <RetrospectivePanel
+                crId={crId}
+                onBack={() => navigate(`/cr/${crId}`, { replace: true })}
+              />
+            ) : (
             <StageDataProvider
               crId={crId}
               pipelineStatus={displayStatus}
@@ -80,6 +87,7 @@ export default function CRDetailPage() {
                 onBack={() => navigate(`/cr/${crId}`, { replace: true })}
               />
             </StageDataProvider>
+            )
           ) : (
             <div className="h-full bg-bg-surface overflow-hidden">
               <EventLog

@@ -1,4 +1,4 @@
-import type { AnalyticsCost, AnalyticsSummary, ApiKeyStatus, AuditLogPage, BackendTemplate, CRRun, CRRunDetail, PipelineDefaults, PromptTemplate, PromptTemplateDetail, RawChangeRequest } from "./types";
+import type { AnalyticsCost, AnalyticsSummary, ApiKeyStatus, AuditLogPage, BackendTemplate, CRRun, CRRunDetail, PipelineDefaults, PromptTemplate, PromptTemplateDetail, RawChangeRequest, RepoRetrospective } from "./types";
 
 const BASE = "/api";
 
@@ -177,6 +177,10 @@ export async function clearApiKey(keyName: string): Promise<ApiKeyStatus> {
   return fetchJSON<ApiKeyStatus>(`/settings/api-keys/${encodeURIComponent(keyName)}`, {
     method: "DELETE",
   });
+}
+
+export async function getRetrospective(crId: string): Promise<RepoRetrospective[]> {
+  return fetchJSON<RepoRetrospective[]>(`/pipeline/${crId}/retrospective`);
 }
 
 export async function getAnalyticsSummary(days = 30): Promise<AnalyticsSummary> {

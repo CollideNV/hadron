@@ -30,6 +30,7 @@ class EventType(str, Enum):
     PHASE_COMPLETED = "phase_completed"
     STAGE_DIFF = "stage_diff"
     COST_UPDATE = "cost_update"
+    RETROSPECTIVE = "retrospective"
     ERROR = "error"
 
 

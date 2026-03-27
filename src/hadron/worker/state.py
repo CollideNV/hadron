@@ -8,8 +8,10 @@ from typing import Any
 from sqlalchemy import select, update
 
 from hadron.config.defaults import BRANCH_PREFIX, get_config_snapshot
-from hadron.db.models import CRRun, RepoRun
+from hadron.db.models import CRRun, RepoRun, RunSummary
 from hadron.models.events import EventType, PipelineEvent
+from hadron.observability.retrospective import generate_retrospective
+from hadron.observability.summary import build_run_summary
 from hadron.worker.infra import WorkerInfra
 
 logger = logging.getLogger(__name__)
@@ -79,6 +81,10 @@ async def persist_result(
     if release_results:
         pr_description = release_results[0].get("pr_description", "")
 
+    summary_dict = build_run_summary(cr_id, repo_name, final_state)
+    retrospective = generate_retrospective(summary_dict)
+    summary_dict["retrospective_json"] = retrospective
+
     async with infra.session_factory() as session:
         await session.execute(
             update(RepoRun)
@@ -101,7 +107,13 @@ async def persist_result(
                 error=final_state.get("error"),
             )
         )
+        session.add(RunSummary(**summary_dict))
         await session.commit()
+
+    await infra.event_bus.emit(PipelineEvent(
+        cr_id=cr_id, event_type=EventType.RETROSPECTIVE, stage="retrospective",
+        data={"repo": repo_name, "insights": retrospective},
+    ))
 
     event_data = {"repo": repo_name, "cost_usd": final_cost}
     if final_status == "paused":
@@ -134,6 +146,14 @@ async def persist_failure(
         cr_id=cr_id, event_type=EventType.PIPELINE_FAILED, stage="worker",
         data={"repo": repo_name, "error": str(error)},
     ))
+    failure_state: dict[str, Any] = {
+        "status": "failed",
+        "error": str(error),
+    }
+    summary_dict = build_run_summary(cr_id, repo_name, failure_state)
+    retrospective = generate_retrospective(summary_dict)
+    summary_dict["retrospective_json"] = retrospective
+
     async with infra.session_factory() as session:
         await session.execute(
             update(RepoRun)
@@ -145,4 +165,5 @@ async def persist_failure(
             .where(CRRun.cr_id == cr_id)
             .values(status="failed", error=str(error))
         )
+        session.add(RunSummary(**summary_dict))
         await session.commit()

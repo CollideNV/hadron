@@ -245,6 +245,68 @@ test.describe("Review Rounds", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Retrospective
+// ---------------------------------------------------------------------------
+
+test.describe("Retrospective", () => {
+  test("retrospective stage is marked completed after stream finishes", async ({ page }) => {
+    await openCR(page);
+    // The retrospective event should mark the stage as completed
+    await expect(page.getByTestId("stage-retrospective")).toBeVisible();
+  });
+
+  test("clicking retrospective stage shows insight cards", async ({ page }) => {
+    await openCR(page);
+    await page.getByTestId("stage-retrospective").click();
+    await expect(page.getByTestId("back-button")).toBeVisible();
+
+    // Should show insight cards from the dummy server retrospective data
+    await expect(page.getByTestId("insights-list")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("Excessive review/rework cycling")).toBeVisible();
+    await expect(page.getByText("Rework did not reduce blocking findings")).toBeVisible();
+    await expect(page.getByText("dominated pipeline time")).toBeVisible();
+  });
+
+  test("retrospective shows severity badges", async ({ page }) => {
+    await openCR(page);
+    await page.getByTestId("stage-retrospective").click();
+    await expect(page.getByTestId("insights-list")).toBeVisible({ timeout: 10_000 });
+
+    // Should show severity labels
+    await expect(page.getByText("Warning").first()).toBeVisible();
+    await expect(page.getByText("Info").first()).toBeVisible();
+  });
+
+  test("retrospective shows category tags", async ({ page }) => {
+    await openCR(page);
+    await page.getByTestId("stage-retrospective").click();
+    await expect(page.getByTestId("insights-list")).toBeVisible({ timeout: 10_000 });
+
+    await expect(page.getByText("Quality").first()).toBeVisible();
+    await expect(page.getByText("Cost").first()).toBeVisible();
+  });
+
+  test("retrospective shows summary bar with status and cost", async ({ page }) => {
+    await openCR(page);
+    await page.getByTestId("stage-retrospective").click();
+    await expect(page.getByTestId("insights-list")).toBeVisible({ timeout: 10_000 });
+
+    await expect(page.getByText("Status:")).toBeVisible();
+    await expect(page.getByText("Cost:")).toBeVisible();
+    await expect(page.getByText("3 insights")).toBeVisible();
+  });
+
+  test("retrospective back button returns to overview", async ({ page }) => {
+    await openCR(page);
+    await page.getByTestId("stage-retrospective").click();
+    await expect(page.getByTestId("back-button")).toBeVisible();
+
+    await page.getByTestId("back-button").click();
+    await expect(page.getByText("Pipeline Stages")).toBeVisible();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Logs Panel
 // ---------------------------------------------------------------------------
 

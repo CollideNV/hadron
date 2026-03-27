@@ -50,3 +50,8 @@ Feature: Event Streaming
     Then a pipeline failed event is emitted
     When the pipeline pauses for human intervention
     Then a pipeline paused event is emitted
+
+  Scenario: Retrospective event
+    When the worker persists its final result (success, pause, or failure)
+    Then a retrospective event is emitted with the list of insights
+    And the frontend marks the retrospective stage as completed

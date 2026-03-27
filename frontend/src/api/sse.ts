@@ -35,6 +35,7 @@ export function connectEventStream(
     "intervention_set",
     "stage_diff",
     "cost_update",
+    "retrospective",
     "error",
   ];
 

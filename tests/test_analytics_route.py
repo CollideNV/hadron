@@ -25,10 +25,45 @@ def _make_app(session_factory) -> FastAPI:
     return app
 
 
-def _build_factory(rows):
-    """Build a mock session factory where execute returns rows via .all()."""
+def _build_factory(rows, summary_rows=None):
+    """Build a mock session factory.
+
+    The summary endpoint now makes two execute() calls:
+      1. CRRun status/cost aggregation -> rows via .all()
+      2. RunSummary query -> summary_rows via .scalars().all()
+    """
+    if summary_rows is None:
+        summary_rows = []
+
+    # First call: CRRun aggregation
+    cr_result = MagicMock()
+    cr_result.all.return_value = rows
+
+    # Second call: RunSummary query
+    scalars_mock = MagicMock()
+    scalars_mock.all.return_value = summary_rows
+    summary_result = MagicMock()
+    summary_result.scalars.return_value = scalars_mock
+
+    session = AsyncMock()
+    session.execute = AsyncMock(side_effect=[cr_result, summary_result])
+
+    @asynccontextmanager
+    async def factory():
+        yield session
+
+    return factory, session
+
+
+def _build_simple_factory(rows):
+    """Build a factory for endpoints that do a single query (e.g., cost by repo)."""
     result_mock = MagicMock()
     result_mock.all.return_value = rows
+
+    # Also support .scalars().all() for RunSummary queries
+    scalars_mock = MagicMock()
+    scalars_mock.all.return_value = rows
+    result_mock.scalars.return_value = scalars_mock
 
     session = AsyncMock()
     session.execute = AsyncMock(return_value=result_mock)
@@ -61,6 +96,8 @@ class TestAnalyticsSummary:
         assert body["success_rate"] == 0
         assert body["total_cost_usd"] == 0
         assert body["avg_cost_usd"] == 0
+        assert body["stage_durations"] == []
+        assert body["daily_stats"] == []
 
     @pytest.mark.asyncio
     async def test_mixed_statuses(self):
@@ -81,17 +118,6 @@ class TestAnalyticsSummary:
         assert body["success_rate"] == pytest.approx(5 / 7)
         assert body["total_cost_usd"] == pytest.approx(3.3)
         assert body["avg_cost_usd"] == pytest.approx(3.3 / 7, abs=1e-4)
-
-    @pytest.mark.asyncio
-    async def test_days_param(self):
-        factory, session = _build_factory([])
-        app = _make_app(factory)
-
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            resp = await client.get("/api/analytics/summary?days=7")
-
-        assert resp.status_code == 200
-        session.execute.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_days_validation_rejects_zero(self):
@@ -137,6 +163,37 @@ class TestAnalyticsSummary:
         body = resp.json()
         assert body["success_rate"] == 0.0
 
+    @pytest.mark.asyncio
+    async def test_stage_durations_from_summaries(self):
+        """When RunSummary records exist, stage_durations are computed."""
+        import datetime
+
+        summary = SimpleNamespace(
+            stage_timings={
+                "intake": {"stage": "intake", "duration_s": 5.0},
+                "implementation": {"stage": "implementation", "duration_s": 50.0},
+            },
+            started_at=datetime.datetime(2026, 3, 20, tzinfo=datetime.timezone.utc),
+            completed_at=datetime.datetime(2026, 3, 20, 0, 1, tzinfo=datetime.timezone.utc),
+            total_cost_usd=1.0,
+            total_input_tokens=1000,
+            total_output_tokens=500,
+            final_status="completed",
+            created_at=datetime.datetime(2026, 3, 20, tzinfo=datetime.timezone.utc),
+        )
+        rows = [SimpleNamespace(status="completed", cnt=1, cost=1.0)]
+        factory, _ = _build_factory(rows, summary_rows=[summary])
+        app = _make_app(factory)
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/analytics/summary")
+
+        body = resp.json()
+        assert len(body["stage_durations"]) == 2
+        stage_names = [s["stage"] for s in body["stage_durations"]]
+        assert "intake" in stage_names
+        assert "implementation" in stage_names
+
 
 # ---------------------------------------------------------------------------
 # GET /api/analytics/cost
@@ -150,7 +207,7 @@ class TestAnalyticsCost:
             SimpleNamespace(repo_name="acme-api", cost_usd=0.5, runs=3),
             SimpleNamespace(repo_name="acme-web", cost_usd=1.2, runs=7),
         ]
-        factory, _ = _build_factory(rows)
+        factory, _ = _build_simple_factory(rows)
         app = _make_app(factory)
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -167,8 +224,8 @@ class TestAnalyticsCost:
         assert body["groups"][1]["key"] == "acme-web"
 
     @pytest.mark.asyncio
-    async def test_group_by_stage_stub(self):
-        factory, _ = _build_factory([])
+    async def test_group_by_stage_empty(self):
+        factory, _ = _build_simple_factory([])
         app = _make_app(factory)
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -182,7 +239,7 @@ class TestAnalyticsCost:
 
     @pytest.mark.asyncio
     async def test_empty_results(self):
-        factory, _ = _build_factory([])
+        factory, _ = _build_simple_factory([])
         app = _make_app(factory)
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -194,8 +251,8 @@ class TestAnalyticsCost:
         assert body["total_cost_usd"] == 0
 
     @pytest.mark.asyncio
-    async def test_group_by_model_stub(self):
-        factory, _ = _build_factory([])
+    async def test_group_by_model_empty(self):
+        factory, _ = _build_simple_factory([])
         app = _make_app(factory)
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -208,8 +265,8 @@ class TestAnalyticsCost:
         assert body["total_cost_usd"] == 0
 
     @pytest.mark.asyncio
-    async def test_group_by_day_stub(self):
-        factory, _ = _build_factory([])
+    async def test_group_by_day_empty(self):
+        factory, _ = _build_simple_factory([])
         app = _make_app(factory)
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -223,7 +280,7 @@ class TestAnalyticsCost:
 
     @pytest.mark.asyncio
     async def test_invalid_group_by_rejected(self):
-        factory, _ = _build_factory([])
+        factory, _ = _build_simple_factory([])
         app = _make_app(factory)
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

@@ -100,6 +100,9 @@ export function reduceEvent(
     case "stage_diff":
       stageDiffs = [...stageDiffs, event];
       break;
+    case "retrospective":
+      completedStages.add("retrospective");
+      break;
     case "cost_update":
       if (typeof event.data.total_cost_usd === "number") {
         costUsd = event.data.total_cost_usd;

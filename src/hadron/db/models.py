@@ -110,3 +110,56 @@ class AuditLog(Base):
     timestamp: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class RunSummary(Base):
+    """Structured summary of a single pipeline run for analytics and retrospective."""
+
+    __tablename__ = "run_summaries"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    cr_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("cr_runs.cr_id"), index=True
+    )
+    repo_name: Mapped[str] = mapped_column(String(256), index=True)
+
+    # Outcome
+    final_status: Mapped[str] = mapped_column(String(32))
+    pause_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_category: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Timing
+    started_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    duration_seconds: Mapped[float] = mapped_column(Float, default=0.0)
+    stage_timings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # Cost
+    total_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    total_input_tokens: Mapped[int] = mapped_column(default=0)
+    total_output_tokens: Mapped[int] = mapped_column(default=0)
+    model_breakdown: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # Loop counts
+    verification_loop_count: Mapped[int] = mapped_column(default=0)
+    dev_loop_count: Mapped[int] = mapped_column(default=0)
+    review_loop_count: Mapped[int] = mapped_column(default=0)
+
+    # Review findings summary
+    review_findings_summary: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # Throttling
+    throttle_count: Mapped[int] = mapped_column(default=0)
+    throttle_seconds: Mapped[float] = mapped_column(Float, default=0.0)
+
+    # Retrospective insights (populated by rule engine)
+    retrospective_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
