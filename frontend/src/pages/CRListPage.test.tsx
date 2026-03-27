@@ -193,7 +193,7 @@ describe("CRListPage", () => {
       expect.objectContaining({ title: "New Feature" }),
     );
 
-    // listPipelines was called again (refresh)
-    expect(mockListPipelines).toHaveBeenCalledTimes(2);
+    // listPipelines was called again (refresh after dialog close + polling resume)
+    expect(mockListPipelines.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 });

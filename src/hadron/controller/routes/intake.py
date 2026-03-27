@@ -86,6 +86,11 @@ async def trigger_pipeline(
         config_snapshot["pipeline"]["template_slug"] = template_slug
         if template_data:
             config_snapshot["pipeline"]["template"] = template_data
+            # Extract stage models so the worker uses the template's backends/models
+            if "stages" in template_data:
+                config_snapshot["pipeline"]["stage_models"] = template_data["stages"]
+            if "backend" in template_data:
+                config_snapshot["pipeline"]["default_backend"] = template_data["backend"]
 
     default_branch = cr.repo_default_branch
 

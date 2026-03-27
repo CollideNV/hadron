@@ -7,6 +7,7 @@ import { POLL_INTERVAL_MS } from "../utils/constants";
 export function useCRList(
   params: ListPipelinesParams = {},
   pollInterval = POLL_INTERVAL_MS,
+  paused = false,
 ) {
   const [runs, setRuns] = useState<CRRun[]>([]);
   const [loading, setLoading] = useState(true);
@@ -28,11 +29,12 @@ export function useCRList(
   }, [paramsKey]);
 
   useEffect(() => {
+    if (paused) return;
     setLoading(true);
     refresh();
     const timer = setInterval(refresh, pollInterval);
     return () => clearInterval(timer);
-  }, [refresh, pollInterval]);
+  }, [refresh, pollInterval, paused]);
 
   return { runs, loading, error, refresh };
 }

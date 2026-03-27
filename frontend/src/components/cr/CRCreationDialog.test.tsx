@@ -14,8 +14,9 @@ beforeEach(() => {
   mockTriggerPipeline.mockReset();
 });
 
-// Helper: fill in valid form fields
+// Helper: wait for the form to finish loading templates, then fill in valid fields
 async function fillValidForm(user: ReturnType<typeof userEvent.setup>) {
+  await screen.findByPlaceholderText(/health check/i);
   await user.type(screen.getByPlaceholderText(/health check/i), "My Feature");
   await user.type(
     screen.getByPlaceholderText(/describe the change/i),
@@ -25,14 +26,14 @@ async function fillValidForm(user: ReturnType<typeof userEvent.setup>) {
 
 describe("CRCreationDialog", () => {
   // Scenario: Open the creation dialog
-  it("renders the form inside the dialog when open", () => {
+  it("renders the form inside the dialog when open", async () => {
     render(
       <CRCreationDialog open={true} onClose={vi.fn()} onCreated={vi.fn()} />,
     );
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByText("Create Change Request")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /trigger pipeline/i }),
+      await screen.findByRole("button", { name: /trigger pipeline/i }),
     ).toBeInTheDocument();
   });
 
@@ -52,7 +53,7 @@ describe("CRCreationDialog", () => {
       <CRCreationDialog open={true} onClose={onClose} onCreated={vi.fn()} />,
     );
 
-    await user.click(screen.getByRole("button", { name: /cancel/i }));
+    await user.click(await screen.findByRole("button", { name: /cancel/i }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -141,9 +142,9 @@ describe("CRCreationDialog", () => {
       <CRCreationDialog open={true} onClose={onClose} onCreated={vi.fn()} />,
     );
 
-    // Try clicking submit without filling fields — button is disabled when fields empty
+    // Wait for form to load, then check button is disabled when fields empty
     expect(
-      screen.getByRole("button", { name: /trigger pipeline/i }),
+      await screen.findByRole("button", { name: /trigger pipeline/i }),
     ).toBeDisabled();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
@@ -155,7 +156,7 @@ describe("CRCreationDialog", () => {
       <CRCreationDialog open={true} onClose={vi.fn()} onCreated={vi.fn()} />,
     );
 
-    await user.type(screen.getByPlaceholderText(/github\.com/i), "bad-url");
+    await user.type(await screen.findByPlaceholderText(/github\.com/i), "bad-url");
     expect(screen.getByText(/url must start with/i)).toBeInTheDocument();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
@@ -223,7 +224,9 @@ describe("CRCreationDialog", () => {
       <CRCreationDialog open={true} onClose={vi.fn()} onCreated={vi.fn()} />,
     );
 
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
   });
 
   // Scenario: Dialog styling consistent with design system

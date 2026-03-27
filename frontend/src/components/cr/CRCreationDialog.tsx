@@ -18,13 +18,18 @@ export default function CRCreationDialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [templates, setTemplates] = useState<BackendTemplate[]>([]);
+  const [templatesLoaded, setTemplatesLoaded] = useState(false);
 
   // Reset state and load templates whenever the dialog opens
   useEffect(() => {
     if (open) {
       setSubmitting(false);
       setError(null);
-      getTemplates().then(setTemplates).catch(() => {});
+      setTemplatesLoaded(false);
+      getTemplates()
+        .then(setTemplates)
+        .catch(() => {})
+        .finally(() => setTemplatesLoaded(true));
     }
   }, [open]);
 
@@ -58,6 +63,9 @@ export default function CRCreationDialog({
           {error}
         </div>
       )}
+      {!templatesLoaded ? (
+        <div className="text-text-dim text-sm py-8 text-center">Loading…</div>
+      ) : (
       <CRForm
         onSubmit={handleSubmit}
         submitting={submitting}
@@ -65,6 +73,7 @@ export default function CRCreationDialog({
         templates={templates}
         defaultTemplateSlug={templates.find((t) => t.is_default)?.slug}
       />
+      )}
     </Modal>
   );
 }

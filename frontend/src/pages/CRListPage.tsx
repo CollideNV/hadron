@@ -29,11 +29,15 @@ export default function CRListPage() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  const { runs, loading, error, refresh } = useCRList({
-    search: debouncedSearch || undefined,
-    status: statusFilter.size > 0 ? Array.from(statusFilter).join(",") : undefined,
-    sort,
-  });
+  const { runs, loading, error, refresh } = useCRList(
+    {
+      search: debouncedSearch || undefined,
+      status: statusFilter.size > 0 ? Array.from(statusFilter).join(",") : undefined,
+      sort,
+    },
+    undefined,
+    dialogOpen,
+  );
 
   const toggleStatus = (s: string) => {
     setStatusFilter((prev) => {
