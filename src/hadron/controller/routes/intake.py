@@ -62,7 +62,9 @@ async def trigger_pipeline(
             else:
                 template_slug = "anthropic"
 
-        # Load template data from DB (or use built-in defaults via settings helper)
+        # Load template data from DB, falling back to built-in defaults
+        from hadron.controller.routes.settings import _BUILTIN_TEMPLATES
+
         result = await session.execute(
             select(PipelineSetting).where(PipelineSetting.key == "backend_templates")
         )
@@ -71,6 +73,11 @@ async def trigger_pipeline(
         if row and isinstance(row.value_json, list):
             for t in row.value_json:
                 if t.get("slug") == template_slug:
+                    template_data = t
+                    break
+        if template_data is None:
+            for t in _BUILTIN_TEMPLATES:
+                if t["slug"] == template_slug:
                     template_data = t
                     break
 
@@ -91,6 +98,13 @@ async def trigger_pipeline(
                 config_snapshot["pipeline"]["stage_models"] = template_data["stages"]
             if "backend" in template_data:
                 config_snapshot["pipeline"]["default_backend"] = template_data["backend"]
+            # Set default_model from the template's act model so uncovered stages
+            # don't fall back to a Claude model when using a non-Claude backend.
+            if "stages" in template_data:
+                impl_cfg = template_data["stages"].get("implementation", {})
+                act = impl_cfg.get("act") if isinstance(impl_cfg, dict) else None
+                if act and act.get("model"):
+                    config_snapshot["pipeline"]["default_model"] = act["model"]
 
     default_branch = cr.repo_default_branch
 

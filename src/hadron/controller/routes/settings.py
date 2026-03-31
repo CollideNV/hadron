@@ -75,6 +75,7 @@ def _make_stages(backend: str, act_model: str, explore_model: str | None, plan_m
         "behaviour_translation": {"act": _phase(act_model), "explore": None, "plan": None},
         "behaviour_verification": {"act": _phase(act_model), "explore": None, "plan": None},
         "implementation": {"act": _phase(act_model), "explore": impl_explore, "plan": impl_plan},
+        "e2e_testing": {"act": _phase(act_model), "explore": None, "plan": None},
         "review:security_reviewer": {"act": _phase(act_model), "explore": None, "plan": None},
         "review:quality_reviewer": {"act": _phase(act_model), "explore": None, "plan": None},
         "review:spec_compliance_reviewer": {"act": _phase(act_model), "explore": None, "plan": None},
@@ -89,6 +90,7 @@ _ANTHROPIC_STAGES: dict[str, dict] = {
     "behaviour_translation": {"act": {"backend": "claude", "model": "claude-sonnet-4-6"}, "explore": None, "plan": None},
     "behaviour_verification": {"act": {"backend": "claude", "model": "claude-haiku-4-5-20251001"}, "explore": None, "plan": None},
     "implementation": {"act": {"backend": "claude", "model": "claude-sonnet-4-6"}, "explore": {"backend": "claude", "model": "claude-haiku-4-5-20251001"}, "plan": {"backend": "claude", "model": "claude-opus-4-6"}},
+    "e2e_testing": {"act": {"backend": "claude", "model": "claude-sonnet-4-6"}, "explore": None, "plan": None},
     "review:security_reviewer": {"act": {"backend": "claude", "model": "claude-sonnet-4-6"}, "explore": None, "plan": None},
     "review:quality_reviewer": {"act": {"backend": "claude", "model": "claude-haiku-4-5-20251001"}, "explore": None, "plan": None},
     "review:spec_compliance_reviewer": {"act": {"backend": "claude", "model": "claude-haiku-4-5-20251001"}, "explore": None, "plan": None},
@@ -113,7 +115,7 @@ _BUILTIN_TEMPLATES: list[dict] = [
         "slug": "gemini",
         "display_name": "Gemini",
         "backend": "gemini",
-        "stages": _make_stages("gemini", "gemini-2.5-pro", "gemini-2.5-flash", None),
+        "stages": _make_stages("gemini", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-pro"),
     },
 ]
 

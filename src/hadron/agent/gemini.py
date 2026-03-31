@@ -49,6 +49,7 @@ class GeminiAgentBackend(BaseAgentBackend):
             ) from None
         self._client = genai.Client(
             api_key=api_key or os.environ.get("HADRON_GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY", ""),
+            vertexai=False,
         )
         self._transient_errors = _get_gemini_transient_errors()
 

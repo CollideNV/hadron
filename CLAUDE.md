@@ -37,7 +37,7 @@ hadron/
 ├── adr/                     Architecture Decision Record
 ├── k8s/                     Kubernetes manifests (base + local overlay)
 ├── scripts/                 Dev scripts (build, deploy, test setup, dummy server)
-└── test-repo/               Minimal FastAPI app for E2E testing
+└── test-repo/               Pipeline dev testing scaffold (NOT a CR target)
 ```
 
 ## Architecture (High Level)

@@ -331,3 +331,29 @@ class TestTemplateSlug:
         snapshot = cr_runs[0].config_snapshot_json
         # Falls back to "anthropic" when no DB default
         assert snapshot["pipeline"]["template_slug"] == "anthropic"
+
+    async def test_builtin_template_populates_stage_models(self) -> None:
+        """Built-in template stage_models are frozen into config snapshot even without DB rows."""
+        factory, session = _mock_session_factory()
+        spawner = AsyncMock()
+        app = _make_app(factory, spawner)
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            resp = await client.post(
+                "/api/pipeline/trigger",
+                json={**_BASE_CR, "template_slug": "gemini"},
+            )
+
+        assert resp.status_code == 200
+        cr_runs = [o for o in session.added if type(o).__name__ == "CRRun"]
+        snapshot = cr_runs[0].config_snapshot_json
+        assert snapshot["pipeline"]["template_slug"] == "gemini"
+        assert snapshot["pipeline"]["default_backend"] == "gemini"
+        assert "stage_models" in snapshot["pipeline"]
+        # Verify implementation stage uses gemini models
+        impl = snapshot["pipeline"]["stage_models"]["implementation"]
+        assert impl["act"]["backend"] == "gemini"
+        assert impl["act"]["model"] == "gemini-2.5-pro"

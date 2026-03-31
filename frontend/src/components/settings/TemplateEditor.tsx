@@ -7,6 +7,7 @@ const STAGE_PHASES: Record<string, { label: string; explore: boolean; plan: bool
   behaviour_translation:           { label: "Behaviour Translation",   explore: false, plan: false },
   behaviour_verification:          { label: "Behaviour Verification",  explore: false, plan: false },
   implementation:                  { label: "Implementation",          explore: true,  plan: true  },
+  e2e_testing:                     { label: "E2E Testing",             explore: false, plan: false },
   "review:security_reviewer":      { label: "Review: Security",        explore: false, plan: false },
   "review:quality_reviewer":       { label: "Review: Quality",         explore: false, plan: false },
   "review:spec_compliance_reviewer": { label: "Review: Spec Compliance", explore: false, plan: false },
@@ -106,9 +107,9 @@ function StageGrid({
               <tr key={stage} className="border-b border-border-subtle/50">
                 <td className="py-3 pr-4 font-medium text-text">{meta.label}</td>
                 <td className="py-3 px-4">
-                  {meta.explore && cfg?.explore ? (
+                  {meta.explore ? (
                     <ModelSelect
-                      value={cfg.explore.model}
+                      value={cfg?.explore?.model ?? models[0] ?? ""}
                       models={models}
                       onChange={(m) => updatePhase(stage, "explore", m)}
                     />
@@ -117,9 +118,9 @@ function StageGrid({
                   )}
                 </td>
                 <td className="py-3 px-4">
-                  {meta.plan && cfg?.plan ? (
+                  {meta.plan ? (
                     <ModelSelect
-                      value={cfg.plan.model}
+                      value={cfg?.plan?.model ?? models[0] ?? ""}
                       models={models}
                       onChange={(m) => updatePhase(stage, "plan", m)}
                     />

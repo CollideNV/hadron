@@ -30,7 +30,7 @@ hadron/
 ├── adr/                     Architecture Decision Records
 ├── k8s/                     Kubernetes manifests (base + local overlay)
 ├── scripts/                 Dev scripts (build, deploy, test setup)
-└── test-repo/               Minimal FastAPI app for E2E testing
+└── test-repo/               Pipeline dev testing scaffold (NOT a CR target — used only by scripts/setup-test-repo.sh to create throwaway local repos for testing the pipeline itself)
 ```
 
 ## Key Conventions

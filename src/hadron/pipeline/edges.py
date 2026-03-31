@@ -122,6 +122,22 @@ def after_implementation(state: PipelineState) -> str:
     return _route_to_e2e_or_review(state)
 
 
+def after_e2e_testing(state: PipelineState) -> str:
+    """Route after E2E testing.
+
+    Returns:
+        "review" — E2E tests passed
+        "paused" — E2E tests failed after all retries, or budget exceeded
+    """
+    if state.get("status") == "paused":
+        return "paused"
+    if _budget_exceeded(state):
+        return "paused"
+    if not state.get("e2e_passed", True):
+        return "paused"
+    return "review"
+
+
 def after_rework(state: PipelineState) -> str:
     """Route after rework."""
     return _route_to_e2e_or_review(state)

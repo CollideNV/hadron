@@ -9,6 +9,7 @@ from langgraph.graph import END, StateGraph
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.edges import (
+    after_e2e_testing,
     after_implementation,
     after_rebase,
     after_review,
@@ -133,8 +134,12 @@ def build_pipeline_graph() -> StateGraph:
         {"e2e_testing": "e2e_testing", "review": "review", "paused": "paused"},
     )
 
-    # E2E testing always flows into review
-    graph.add_edge("e2e_testing", "review")
+    # Conditional: e2e_testing → review (passed) | paused (failed)
+    graph.add_conditional_edges(
+        "e2e_testing",
+        after_e2e_testing,
+        {"review": "review", "paused": "paused"},
+    )
 
     # Conditional: review → rework (retry) | implementation (pivot) | rebase (proceed) | paused (circuit breaker)
     graph.add_conditional_edges(
