@@ -45,6 +45,10 @@ AGENT_EXTRA_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"^npx\s+(eslint|prettier|tsc)(\s|$)"),
     re.compile(r"^cargo\s+(clippy|fmt)(\s|$)"),
     re.compile(r"^go\s+(vet|fmt)(\s|$)"),
+    # Dependency installation (needed before running tests in cloned repos)
+    re.compile(r"^npm\s+install(\s|$)"),
+    re.compile(r"^npm\s+ci(\s|$)"),
+    re.compile(r"^(pip|pip3)\s+install(\s|$)"),
     # Build tools (read-only inspection)
     re.compile(r"^(pip|pip3)\s+list(\s|$)"),
     re.compile(r"^cat\s+"),

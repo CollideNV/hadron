@@ -71,9 +71,6 @@ class TestLinearEdges:
     def test_translation_to_verification(self) -> None:
         assert ("translation", "verification") in self._get_plain_edges()
 
-    def test_e2e_testing_to_review(self) -> None:
-        assert ("e2e_testing", "review") in self._get_plain_edges()
-
     def test_delivery_to_release(self) -> None:
         assert ("delivery", "release") in self._get_plain_edges()
 
@@ -108,8 +105,11 @@ class TestConditionalEdges:
     def test_rework_has_conditional_edge(self) -> None:
         assert "rework" in self._get_conditional_sources()
 
+    def test_e2e_testing_has_conditional_edge(self) -> None:
+        assert "e2e_testing" in self._get_conditional_sources()
+
     def test_conditional_edge_count(self) -> None:
-        """Verification, review, rebase, implementation, and rework should have conditional edges."""
+        """Verification, review, rebase, implementation, rework, and e2e_testing should have conditional edges."""
         assert self._get_conditional_sources() == {
-            "verification", "review", "rebase", "implementation", "rework",
+            "verification", "review", "rebase", "implementation", "rework", "e2e_testing",
         }

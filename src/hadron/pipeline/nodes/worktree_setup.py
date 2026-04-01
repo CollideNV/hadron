@@ -24,29 +24,31 @@ logger = logging.getLogger(__name__)
 
 async def _install_dependencies(worktree_path: Path) -> None:
     """Install project dependencies if lock files are present."""
-    installs: list[tuple[str, list[str]]] = []
+    # Each entry: (label, command, working_directory)
+    installs: list[tuple[str, list[str], str]] = []
+    root = str(worktree_path)
 
     # Python
     if (worktree_path / "pyproject.toml").exists() or (worktree_path / "requirements.txt").exists():
         if (worktree_path / "pyproject.toml").exists():
-            installs.append(("python", [sys.executable, "-m", "pip", "install", "-e", ".[dev]", "--quiet"]))
+            installs.append(("python", [sys.executable, "-m", "pip", "install", "-e", ".[dev]", "--quiet"], root))
         else:
-            installs.append(("python", [sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "--quiet"]))
+            installs.append(("python", [sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "--quiet"], root))
 
-    # Node — check root and common subdirs
+    # Node — check root and common subdirs; use cwd (not --prefix) to avoid lockfile sync issues
     for subdir in [".", "frontend", "client", "web", "app"]:
         pkg = worktree_path / subdir / "package.json"
         if pkg.exists():
             lock = worktree_path / subdir / "package-lock.json"
-            cmd = ["npm", "ci", "--prefix", str(worktree_path / subdir)] if lock.exists() else \
-                  ["npm", "install", "--prefix", str(worktree_path / subdir)]
-            installs.append((f"node ({subdir})", cmd))
+            npm_cwd = str(worktree_path / subdir)
+            cmd = ["npm", "ci"] if lock.exists() else ["npm", "install"]
+            installs.append((f"node ({subdir})", cmd, npm_cwd))
 
-    for label, cmd in installs:
-        logger.info("Installing %s dependencies: %s", label, " ".join(cmd))
+    for label, cmd, install_cwd in installs:
+        logger.info("Installing %s dependencies: %s (in %s)", label, " ".join(cmd), install_cwd)
         proc = await asyncio.create_subprocess_exec(
             *cmd,
-            cwd=str(worktree_path),
+            cwd=install_cwd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
