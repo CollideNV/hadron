@@ -115,7 +115,18 @@ _BUILTIN_TEMPLATES: list[dict] = [
         "slug": "gemini",
         "display_name": "Gemini",
         "backend": "gemini",
-        "stages": _make_stages("gemini", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-pro"),
+        "stages": {
+            "intake": {"act": {"backend": "gemini", "model": "gemini-2.5-flash"}, "explore": None, "plan": None},
+            "behaviour_translation": {"act": {"backend": "gemini", "model": "gemini-2.5-pro"}, "explore": None, "plan": None},
+            "behaviour_verification": {"act": {"backend": "gemini", "model": "gemini-2.5-flash"}, "explore": None, "plan": None},
+            "implementation": {"act": {"backend": "gemini", "model": "gemini-2.5-pro"}, "explore": {"backend": "gemini", "model": "gemini-2.5-flash"}, "plan": {"backend": "gemini", "model": "gemini-2.5-pro"}},
+            "e2e_testing": {"act": {"backend": "gemini", "model": "gemini-2.5-flash"}, "explore": None, "plan": None},
+            "review:security_reviewer": {"act": {"backend": "gemini", "model": "gemini-2.5-pro"}, "explore": None, "plan": None},
+            "review:quality_reviewer": {"act": {"backend": "gemini", "model": "gemini-2.5-flash"}, "explore": None, "plan": None},
+            "review:spec_compliance_reviewer": {"act": {"backend": "gemini", "model": "gemini-2.5-flash"}, "explore": None, "plan": None},
+            "rework": {"act": {"backend": "gemini", "model": "gemini-2.5-pro"}, "explore": None, "plan": None},
+            "rebase": {"act": {"backend": "gemini", "model": "gemini-2.5-flash"}, "explore": None, "plan": None},
+        },
     },
 ]
 
