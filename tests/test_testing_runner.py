@@ -67,3 +67,37 @@ class TestRunTestCommand:
         )
         assert passed is False
         assert "timed out" in output
+
+    @pytest.mark.asyncio
+    async def test_uses_worktree_venv(self, tmp_path) -> None:
+        """run_test_command activates the worktree .venv when present."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        venv_bin = tmp_path / ".venv" / "bin"
+        venv_bin.mkdir(parents=True)
+
+        mock_proc = MagicMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"ok\n", None))
+        mock_proc.returncode = 0
+
+        with patch("hadron.pipeline.testing.asyncio.create_subprocess_shell", return_value=mock_proc) as mock_shell:
+            await run_test_command(str(tmp_path), "pytest -x", "CR-abc")
+            env_passed = mock_shell.call_args.kwargs["env"]
+            assert str(venv_bin) in env_passed["PATH"]
+            assert env_passed["VIRTUAL_ENV"] == str(tmp_path / ".venv")
+
+    @pytest.mark.asyncio
+    async def test_no_venv_still_works(self, tmp_path) -> None:
+        """run_test_command works without a worktree .venv (non-Python projects)."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        mock_proc = MagicMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"ok\n", None))
+        mock_proc.returncode = 0
+
+        with patch("hadron.pipeline.testing.asyncio.create_subprocess_shell", return_value=mock_proc) as mock_shell:
+            await run_test_command(str(tmp_path), "npm test", "CR-abc")
+            env_passed = mock_shell.call_args.kwargs["env"]
+            # No worktree venv, so VIRTUAL_ENV should not point to tmp_path
+            if "VIRTUAL_ENV" in env_passed:
+                assert str(tmp_path) not in env_passed["VIRTUAL_ENV"]

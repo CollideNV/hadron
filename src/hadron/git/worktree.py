@@ -144,7 +144,7 @@ class WorktreeManager:
     async def commit(self, worktree_path: str | Path, message: str) -> None:
         """Stage all changes and commit (no push)."""
         wt = Path(worktree_path)
-        await _run_git("add", "-A", cwd=wt)
+        await _run_git("add", "-A", "--", ".", ":!.venv", cwd=wt)
 
         status = await _run_git("status", "--porcelain", cwd=wt)
         if not status:
@@ -230,7 +230,7 @@ class WorktreeManager:
         """Continue rebase after conflicts are resolved. Returns True if successful."""
         wt = Path(worktree_path)
         try:
-            await _run_git("add", "-A", cwd=wt)
+            await _run_git("add", "-A", "--", ".", ":!.venv", cwd=wt)
             await _run_git("rebase", "--continue", cwd=wt)
             return True
         except RuntimeError:

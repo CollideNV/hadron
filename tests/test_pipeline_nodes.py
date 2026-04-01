@@ -359,6 +359,68 @@ class TestWorktreeSetupNode:
         assert "Claude instructions" in result["repo"]["agents_md"]
 
 
+class TestInstallDependencies:
+    """Tests for _install_dependencies venv creation."""
+
+    @pytest.mark.asyncio
+    async def test_creates_venv_for_python_project(self, tmp_path: Path) -> None:
+        """A per-worktree .venv is created when pyproject.toml exists."""
+        from hadron.pipeline.nodes.worktree_setup import _install_dependencies
+
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        (worktree / "pyproject.toml").write_text('[project]\nname = "demo"')
+
+        calls: list[tuple] = []
+
+        async def fake_subprocess(*args, **kwargs):
+            calls.append(args)
+            mock_proc = AsyncMock()
+            mock_proc.communicate = AsyncMock(return_value=(b"", None))
+            mock_proc.returncode = 0
+            # After venv creation call, create the dir so the install step proceeds
+            if "-m" in args and "venv" in args:
+                (worktree / ".venv" / "bin").mkdir(parents=True, exist_ok=True)
+            return mock_proc
+
+        with patch("hadron.pipeline.nodes.worktree_setup.asyncio.create_subprocess_exec", side_effect=fake_subprocess):
+            await _install_dependencies(worktree)
+
+        # First call: venv creation (positional args to create_subprocess_exec)
+        venv_call_args = calls[0]
+        assert "-m" in venv_call_args and "venv" in venv_call_args
+        assert str(worktree / ".venv") in venv_call_args
+        # Second call: pip install using the venv's pip
+        pip_call_args = calls[1]
+        assert str(worktree / ".venv" / "bin" / "pip") == pip_call_args[0]
+
+    @pytest.mark.asyncio
+    async def test_no_venv_without_python_project(self, tmp_path: Path) -> None:
+        """No .venv created when there is no pyproject.toml or requirements.txt."""
+        from hadron.pipeline.nodes.worktree_setup import _install_dependencies
+
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        # Only a package.json — node project
+        (worktree / "package.json").write_text('{}')
+
+        calls: list[tuple] = []
+
+        async def fake_subprocess(*args, **kwargs):
+            calls.append(args)
+            mock_proc = AsyncMock()
+            mock_proc.communicate = AsyncMock(return_value=(b"", None))
+            mock_proc.returncode = 0
+            return mock_proc
+
+        with patch("hadron.pipeline.nodes.worktree_setup.asyncio.create_subprocess_exec", side_effect=fake_subprocess):
+            await _install_dependencies(worktree)
+
+        # Only npm install, no venv creation
+        assert len(calls) == 1
+        assert "npm" in calls[0][0]
+
+
 # ===========================================================================
 # Behaviour Translation Node
 # ===========================================================================

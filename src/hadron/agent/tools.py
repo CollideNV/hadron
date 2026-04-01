@@ -15,6 +15,7 @@ from typing import Any
 from hadron.config.limits import MAX_COMMAND_OUTPUT_CHARS, MAX_READ_FILE_CHARS
 from hadron.security.validators import sanitize_agent_command, validate_agent_command
 from hadron.utils.text import truncate
+from hadron.utils.venv import find_worktree_venv
 
 logger = logging.getLogger(__name__)
 
@@ -222,8 +223,13 @@ async def _execute_write_file(working_dir: str, input_data: dict[str, Any]) -> s
 
     filename = path.name
     if filename in _INSTALL_TRIGGERS:
-        install_cmd = _INSTALL_TRIGGERS[filename]
+        install_cmd = list(_INSTALL_TRIGGERS[filename])
         install_dir = str(path.parent)
+        # Use the worktree venv's pip instead of the system/shared pip
+        if install_cmd[0] == "pip":
+            venv_path = find_worktree_venv(install_dir)
+            if venv_path:
+                install_cmd[0] = os.path.join(venv_path, "bin", "pip")
         logger.info("Auto-installing deps after %s write in %s", filename, install_dir)
         proc = await asyncio.create_subprocess_exec(
             *install_cmd,
@@ -266,6 +272,12 @@ async def _execute_run_command(working_dir: str, input_data: dict[str, Any]) -> 
     if not validate_agent_command(cmd):
         return f"Error: Command rejected by safety filter: {cmd!r}"
     env = {**scrubbed_env(), "PYTHONDONTWRITEBYTECODE": "1"}
+    # Use the worktree's .venv so agent code changes and deps are isolated
+    venv_path = find_worktree_venv(working_dir)
+    if venv_path:
+        venv_bin = os.path.join(venv_path, "bin")
+        env["PATH"] = venv_bin + os.pathsep + env.get("PATH", "")
+        env["VIRTUAL_ENV"] = venv_path
     # Ensure node_modules/.bin is in PATH so npm scripts find binaries like vitest
     node_bin = os.path.join(working_dir, "node_modules", ".bin")
     if os.path.isdir(node_bin):

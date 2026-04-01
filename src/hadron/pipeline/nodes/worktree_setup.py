@@ -23,46 +23,37 @@ logger = logging.getLogger(__name__)
 
 
 async def _install_dependencies(worktree_path: Path) -> None:
-    """Install project dependencies if lock files are present.
+    """Install project dependencies into a per-worktree virtual environment.
 
-    In subprocess mode (local dev), the worker shares the controller's venv.
-    Using ``pip install -e`` would hijack the editable install to point at
-    the worktree instead of the main repo, and a plain ``pip install`` creates
-    a static copy that won't reflect the agent's edits. So we skip Python
-    deps when the package is already importable. In K8s mode each pod has
-    its own environment and ``pip install -e`` is safe.
+    Each worktree gets its own ``.venv`` so that agent edits and dependency
+    changes are fully isolated — no cross-contamination between concurrent
+    workers or with the controller's own environment.
     """
     # Each entry: (label, command, working_directory)
     installs: list[tuple[str, list[str], str]] = []
     root = str(worktree_path)
 
-    # Python — only install if the package isn't already available
-    if (worktree_path / "pyproject.toml").exists() or (worktree_path / "requirements.txt").exists():
-        # Detect the package name from pyproject.toml or directory
-        pkg_name = worktree_path.name  # fallback
-        pyproject = worktree_path / "pyproject.toml"
-        if pyproject.exists():
-            try:
-                import tomllib
-                data = tomllib.loads(pyproject.read_text())
-                pkg_name = data.get("project", {}).get("name", pkg_name)
-            except Exception:
-                pass
+    # Python — create a per-worktree venv and install deps into it
+    has_python = (worktree_path / "pyproject.toml").exists() or (worktree_path / "requirements.txt").exists()
+    venv_dir = worktree_path / ".venv"
 
-        # Check if the package is already importable (subprocess mode sharing venv)
-        already_installed = False
-        try:
-            __import__(pkg_name.replace("-", "_"))
-            already_installed = True
-        except ImportError:
-            pass
+    if has_python and not venv_dir.exists():
+        logger.info("Creating per-worktree venv at %s", venv_dir)
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, "-m", "venv", str(venv_dir),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=60)
+        if proc.returncode != 0:
+            logger.warning("venv creation failed (exit %d): %s", proc.returncode, stdout.decode(errors="replace")[-500:])
 
-        if already_installed:
-            logger.info("Python package %r already installed — skipping pip install", pkg_name)
-        elif (worktree_path / "pyproject.toml").exists():
-            installs.append(("python", [sys.executable, "-m", "pip", "install", "-e", ".[dev]", "--quiet"], root))
+    if has_python and venv_dir.exists():
+        venv_pip = str(venv_dir / "bin" / "pip")
+        if (worktree_path / "pyproject.toml").exists():
+            installs.append(("python", [venv_pip, "install", "-e", ".[dev]", "--quiet"], root))
         else:
-            installs.append(("python", [sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "--quiet"], root))
+            installs.append(("python", [venv_pip, "install", "-r", "requirements.txt", "--quiet"], root))
 
     # Node — check root and common subdirs; use cwd (not --prefix) to avoid lockfile sync issues
     for subdir in [".", "frontend", "client", "web", "app"]:

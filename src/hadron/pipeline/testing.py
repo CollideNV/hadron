@@ -7,6 +7,7 @@ import logging
 import re
 
 from hadron.security.validators import validate_test_command
+from hadron.utils.venv import worktree_env
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +37,11 @@ async def run_test_command(
         logger.error("Test command rejected by allowlist: %r", cmd)
         return False, f"Error: test command rejected by allowlist: {cmd!r}"
 
+    env = worktree_env(worktree_path)
     proc = await asyncio.create_subprocess_shell(
         cmd,
         cwd=worktree_path,
+        env=env,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
     )

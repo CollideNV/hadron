@@ -280,6 +280,43 @@ class TestRunCommandEnvScrubbing:
         env = {**_scrubbed_env(), "PYTHONDONTWRITEBYTECODE": "1"}
         assert env["PYTHONDONTWRITEBYTECODE"] == "1"
 
+    @pytest.mark.asyncio
+    async def test_venv_used_when_present(self, tmp_workdir: Path) -> None:
+        """run_command prepends worktree .venv/bin to PATH and sets VIRTUAL_ENV."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        venv_bin = tmp_workdir / ".venv" / "bin"
+        venv_bin.mkdir(parents=True)
+
+        mock_proc = MagicMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"ok\n", None))
+        mock_proc.returncode = 0
+
+        with patch("hadron.agent.tools.asyncio.create_subprocess_shell", return_value=mock_proc) as mock_shell:
+            await _execute_tool("run_command", {"command": "echo hello"}, str(tmp_workdir))
+            env_passed = mock_shell.call_args.kwargs["env"]
+            assert str(venv_bin) in env_passed["PATH"]
+            assert env_passed["VIRTUAL_ENV"] == str(tmp_workdir / ".venv")
+
+    @pytest.mark.asyncio
+    async def test_no_venv_does_not_override_virtual_env(self, tmp_workdir: Path) -> None:
+        """run_command does not set VIRTUAL_ENV to a worktree venv when none exists."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        mock_proc = MagicMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"ok\n", None))
+        mock_proc.returncode = 0
+
+        with (
+            patch("hadron.agent.tools.find_worktree_venv", return_value=None),
+            patch("hadron.agent.tools.asyncio.create_subprocess_shell", return_value=mock_proc) as mock_shell,
+        ):
+            await _execute_tool("run_command", {"command": "echo hello"}, str(tmp_workdir))
+            env_passed = mock_shell.call_args.kwargs["env"]
+            # VIRTUAL_ENV may exist from the outer env, but should not point to tmp_workdir
+            if "VIRTUAL_ENV" in env_passed:
+                assert str(tmp_workdir) not in env_passed["VIRTUAL_ENV"]
+
 
 # ---------------------------------------------------------------------------
 # _execute_tool — unknown tool
