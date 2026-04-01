@@ -46,11 +46,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.event_bus = RedisEventBus(redis_client)
     app.state.intervention_mgr = InterventionManager(redis_client)
 
-    if _running_in_k8s():
-        logger.info("Running in Kubernetes — using K8sJobSpawner")
-        app.state.job_spawner = K8sJobSpawner()
+    if _running_in_k8s() or os.environ.get("HADRON_USE_K8S", "").lower() in ("1", "true", "yes"):
+        logger.info("Using K8sJobSpawner")
+        app.state.job_spawner = K8sJobSpawner(redis=redis_client)
     else:
-        logger.info("Running outside Kubernetes — using SubprocessJobSpawner")
+        logger.info("Using SubprocessJobSpawner")
         app.state.job_spawner = SubprocessJobSpawner(redis=redis_client)
 
     yield

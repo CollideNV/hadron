@@ -93,10 +93,12 @@ class K8sJobSpawner:
     def __init__(
         self,
         namespace: str = "hadron",
-        worker_image: str = "hadron-worker:latest",
+        worker_image: str | None = None,
+        redis: Any = None,
     ) -> None:
         self._namespace = namespace
-        self._worker_image = worker_image
+        self._worker_image = worker_image or os.environ.get("HADRON_WORKER_IMAGE", "hadron-worker:latest")
+        self._redis = redis
 
     async def spawn(
         self, cr_id: str, repo_url: str, repo_name: str = "",
@@ -138,7 +140,7 @@ class K8sJobSpawner:
                             client.V1Container(
                                 name="worker",
                                 image=self._worker_image,
-                                image_pull_policy="Never",
+                                image_pull_policy="IfNotPresent",
                                 command=[
                                     "python", "-m", "hadron.worker.main",
                                     f"--cr-id={cr_id}",
@@ -160,6 +162,27 @@ class K8sJobSpawner:
                                             secret_key_ref=client.V1SecretKeySelector(
                                                 name="hadron-secrets",
                                                 key="anthropic-api-key",
+                                                optional=True,
+                                            )
+                                        ),
+                                    ),
+                                    client.V1EnvVar(
+                                        name="HADRON_GEMINI_API_KEY",
+                                        value_from=client.V1EnvVarSource(
+                                            secret_key_ref=client.V1SecretKeySelector(
+                                                name="hadron-secrets",
+                                                key="gemini-api-key",
+                                                optional=True,
+                                            )
+                                        ),
+                                    ),
+                                    client.V1EnvVar(
+                                        name="HADRON_OPENAI_API_KEY",
+                                        value_from=client.V1EnvVarSource(
+                                            secret_key_ref=client.V1SecretKeySelector(
+                                                name="hadron-secrets",
+                                                key="openai-api-key",
+                                                optional=True,
                                             )
                                         ),
                                     ),
@@ -195,3 +218,103 @@ class K8sJobSpawner:
             lambda: batch_v1.create_namespaced_job(namespace=self._namespace, body=job),
         )
         logger.info("K8s Job %s created for CR %s", job_name, cr_id)
+
+        # Stream pod logs to Redis in the background so the UI can display them
+        if self._redis:
+            worker_key = f"{cr_id}:{repo_name}"
+            asyncio.create_task(self._stream_pod_logs(worker_key, job_name))
+
+    async def _stream_pod_logs(self, worker_key: str, job_name: str) -> None:
+        """Tail K8s pod logs and write them to Redis, mirroring SubprocessJobSpawner."""
+        from kubernetes import client, config as k8s_config, watch
+
+        redis_key = f"hadron:cr:{worker_key}:worker_log"
+        try:
+            try:
+                k8s_config.load_incluster_config()
+            except k8s_config.ConfigException:
+                k8s_config.load_kube_config()
+
+            v1 = client.CoreV1Api()
+
+            # Wait for the pod to be created (up to 60s)
+            pod_name = None
+            for _ in range(30):
+                pods = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: v1.list_namespaced_pod(
+                        namespace=self._namespace,
+                        label_selector=f"job-name={job_name}",
+                    ),
+                )
+                if pods.items:
+                    pod_name = pods.items[0].metadata.name
+                    break
+                await asyncio.sleep(2)
+
+            if not pod_name:
+                logger.warning("No pod found for job %s, cannot stream logs", job_name)
+                return
+
+            # Wait for container to be running
+            for _ in range(30):
+                pod = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: v1.read_namespaced_pod(name=pod_name, namespace=self._namespace),
+                )
+                phase = pod.status.phase
+                if phase in ("Running", "Succeeded", "Failed"):
+                    break
+                await asyncio.sleep(2)
+
+            # Clear stale logs
+            try:
+                await self._redis.delete(redis_key)
+            except Exception:
+                pass
+
+            # Stream logs using the K8s API follow mode
+            def _follow_logs() -> None:
+                w = watch.Watch()
+                for line in w.stream(
+                    v1.read_namespaced_pod_log,
+                    name=pod_name,
+                    namespace=self._namespace,
+                    follow=True,
+                ):
+                    # write synchronously — will be called from executor
+                    pass  # yield lines to caller
+
+            # Use a simpler approach: poll logs periodically
+            last_len = 0
+            while True:
+                try:
+                    pod = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: v1.read_namespaced_pod(name=pod_name, namespace=self._namespace),
+                    )
+                    phase = pod.status.phase
+
+                    logs = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: v1.read_namespaced_pod_log(
+                            name=pod_name,
+                            namespace=self._namespace,
+                        ),
+                    )
+                    if logs and len(logs) > last_len:
+                        new_content = logs[last_len:]
+                        await self._redis.append(redis_key, new_content)
+                        await self._redis.expire(redis_key, 86400)
+                        last_len = len(logs)
+
+                    if phase in ("Succeeded", "Failed"):
+                        break
+                except Exception:
+                    break
+
+                await asyncio.sleep(3)
+
+            logger.info("Log streaming finished for %s", worker_key)
+        except Exception as e:
+            logger.error("Error streaming pod logs for %s: %s", worker_key, e)
