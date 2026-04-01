@@ -57,27 +57,17 @@ class SubprocessJobSpawner:
         asyncio.create_task(self._log_output(worker_key, proc))
 
     async def _log_output(self, worker_key: str, proc: asyncio.subprocess.Process) -> None:
-        """Stream worker output line-by-line to logs and Redis."""
-        redis_key = f"hadron:cr:{worker_key}:worker_log"
+        """Drain worker stdout to the controller log.
+
+        The worker writes its own logs directly to Redis via RedisLogHandler,
+        so this method only needs to drain the pipe (preventing the worker
+        from blocking on a full stdout buffer) and echo to the controller log.
+        """
         try:
             assert proc.stdout is not None
-            # Clear any stale log from a previous run
-            if self._redis:
-                try:
-                    await self._redis.delete(redis_key)
-                except Exception:
-                    logger.warning("Failed to clear stale worker log in Redis for %s", worker_key, exc_info=True)
-
             async for raw_line in proc.stdout:
                 line = raw_line.decode(errors="replace").rstrip("\n")
                 logger.info("[worker:%s] %s", worker_key, line)
-                # Append each line to Redis so the UI can poll incrementally
-                if self._redis:
-                    try:
-                        await self._redis.append(redis_key, line + "\n")
-                        await self._redis.expire(redis_key, 86400)
-                    except Exception:
-                        logger.debug("Failed to write worker log line to Redis for %s", worker_key, exc_info=True)
 
             await proc.wait()
             logger.info("Worker %s exited with code %s", worker_key, proc.returncode)

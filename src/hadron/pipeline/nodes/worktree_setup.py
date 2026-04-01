@@ -23,14 +23,43 @@ logger = logging.getLogger(__name__)
 
 
 async def _install_dependencies(worktree_path: Path) -> None:
-    """Install project dependencies if lock files are present."""
+    """Install project dependencies if lock files are present.
+
+    In subprocess mode (local dev), the worker shares the controller's venv.
+    Using ``pip install -e`` would hijack the editable install to point at
+    the worktree instead of the main repo, and a plain ``pip install`` creates
+    a static copy that won't reflect the agent's edits. So we skip Python
+    deps when the package is already importable. In K8s mode each pod has
+    its own environment and ``pip install -e`` is safe.
+    """
     # Each entry: (label, command, working_directory)
     installs: list[tuple[str, list[str], str]] = []
     root = str(worktree_path)
 
-    # Python
+    # Python — only install if the package isn't already available
     if (worktree_path / "pyproject.toml").exists() or (worktree_path / "requirements.txt").exists():
-        if (worktree_path / "pyproject.toml").exists():
+        # Detect the package name from pyproject.toml or directory
+        pkg_name = worktree_path.name  # fallback
+        pyproject = worktree_path / "pyproject.toml"
+        if pyproject.exists():
+            try:
+                import tomllib
+                data = tomllib.loads(pyproject.read_text())
+                pkg_name = data.get("project", {}).get("name", pkg_name)
+            except Exception:
+                pass
+
+        # Check if the package is already importable (subprocess mode sharing venv)
+        already_installed = False
+        try:
+            __import__(pkg_name.replace("-", "_"))
+            already_installed = True
+        except ImportError:
+            pass
+
+        if already_installed:
+            logger.info("Python package %r already installed — skipping pip install", pkg_name)
+        elif (worktree_path / "pyproject.toml").exists():
             installs.append(("python", [sys.executable, "-m", "pip", "install", "-e", ".[dev]", "--quiet"], root))
         else:
             installs.append(("python", [sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "--quiet"], root))

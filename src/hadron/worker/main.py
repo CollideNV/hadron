@@ -180,6 +180,39 @@ async def _execute_pipeline(
 # ---------------------------------------------------------------------------
 
 
+class _RedisLogHandler(logging.Handler):
+    """Logging handler that appends formatted log lines directly to Redis.
+
+    This ensures worker logs reach the dashboard even if the controller
+    process restarts and stops reading the subprocess stdout pipe.
+    """
+
+    def __init__(self, redis_client: Any, cr_id: str, repo_name: str) -> None:
+        super().__init__()
+        self._redis = redis_client
+        self._key = f"hadron:cr:{cr_id}:{repo_name}:worker_log"
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = self.format(record) + "\n"
+            loop = self._loop or asyncio.get_event_loop()
+            self._loop = loop
+            if loop.is_running():
+                loop.create_task(self._write(msg))
+            else:
+                loop.run_until_complete(self._write(msg))
+        except Exception:
+            self.handleError(record)
+
+    async def _write(self, msg: str) -> None:
+        try:
+            await self._redis.append(self._key, msg)
+            await self._redis.expire(self._key, 86400)
+        except Exception:
+            pass
+
+
 async def run_worker(cr_id: str, repo_url: str, repo_name: str = "", default_branch: str = "main") -> None:
     """Execute the pipeline for a single repo within a CR."""
     cfg = load_bootstrap_config()
@@ -192,6 +225,15 @@ async def run_worker(cr_id: str, repo_url: str, repo_name: str = "", default_bra
     logger.info("Worker starting for CR %s, repo %s (%s)", cr_id, repo_name, safe_url)
 
     infra = connect(cfg)
+
+    # Write logs directly to Redis so the dashboard works even if the
+    # controller restarts and stops reading the subprocess stdout pipe.
+    redis_log_key = f"hadron:cr:{cr_id}:{repo_name}:worker_log"
+    await infra.redis_client.delete(redis_log_key)
+    redis_handler = _RedisLogHandler(infra.redis_client, cr_id, repo_name)
+    redis_handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
+    logging.getLogger().addHandler(redis_handler)
+
     try:
         cr_run = await load_cr_and_mark_running(infra, cr_id, repo_name)
         if cr_run is None:
@@ -231,6 +273,7 @@ async def run_worker(cr_id: str, repo_url: str, repo_name: str = "", default_bra
         logger.exception("Full traceback:")
         await persist_failure(infra, cr_id, repo_name, e)
     finally:
+        logging.getLogger().removeHandler(redis_handler)
         await infra.close()
 
 

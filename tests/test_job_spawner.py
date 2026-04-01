@@ -84,35 +84,17 @@ class TestSubprocessJobSpawner:
             assert "cr-1:my-service" in spawner._processes
 
     @pytest.mark.asyncio
-    async def test_log_output_stores_in_redis(self) -> None:
-        redis = AsyncMock()
+    async def test_log_output_drains_stdout(self) -> None:
+        """_log_output drains stdout (worker writes to Redis directly)."""
         mock_proc = AsyncMock()
-        # _log_output reads proc.stdout as an async iterator line-by-line
         mock_proc.stdout = _AsyncLineIter([b"test output\n"])
         mock_proc.wait = AsyncMock(return_value=0)
         mock_proc.returncode = 0
 
-        spawner = SubprocessJobSpawner(redis=redis)
+        spawner = SubprocessJobSpawner(redis=AsyncMock())
         await spawner._log_output("cr-1:repo", mock_proc)
 
-        redis.append.assert_awaited_once()
-        call_args = redis.append.call_args
-        assert "worker_log" in call_args[0][0]
-        redis.expire.assert_awaited_once()
-        assert redis.expire.call_args[0][1] == 86400
-
-    @pytest.mark.asyncio
-    async def test_log_output_handles_redis_failure(self) -> None:
-        redis = AsyncMock()
-        redis.append = AsyncMock(side_effect=ConnectionError("redis down"))
-        mock_proc = AsyncMock()
-        mock_proc.stdout = _AsyncLineIter([b"output\n"])
-        mock_proc.wait = AsyncMock(return_value=0)
-        mock_proc.returncode = 0
-
-        spawner = SubprocessJobSpawner(redis=redis)
-        # Should not raise
-        await spawner._log_output("cr-1:repo", mock_proc)
+        mock_proc.wait.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_log_output_no_redis(self) -> None:
