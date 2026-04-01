@@ -15,7 +15,7 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "python3 ../scripts/dummy_server.py",
+      command: "../.venv/bin/python ../scripts/dummy_server.py",
       port: 8000,
       reuseExistingServer: true,
     },
