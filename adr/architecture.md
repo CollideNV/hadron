@@ -1,6 +1,6 @@
 # Hadron — Architecture Decision Record
 
-**Version:** 1.0 — March 2026
+**Version:** 1.1 — April 2026
 
 This document captures the key architectural decisions, their rationale, and the resulting technical design of Hadron. It replaces the earlier multi-file ideation documents that were used during the initial design phase.
 
@@ -223,7 +223,8 @@ All three reviewers include few-shot calibration examples showing expected sever
 - DB keys override env vars
 - Never shown in full via API (masked: `sk-••••abcd`)
 - Never included in config snapshots or audit logs
-- Passed to workers as env vars at spawn time
+- K8s workers receive keys via optional Secret refs (`hadron-secrets`) and DB-stored keys via `extra_env`
+- DB keys override K8s secrets when both are set
 
 ---
 
@@ -271,8 +272,52 @@ Single installation serves multiple tenants on shared infrastructure:
 ### Kubernetes-Native
 
 - **Controller:** Deployment (2+ replicas), lightweight, always-on
-- **Worker:** Job (one per repo per CR), ephemeral, auto-cleanup
+- **Worker:** Job (one per repo per CR), ephemeral, auto-cleanup after 1 hour
 - **Scanner:** CronJob (nightly + incremental)
+
+### Worker Pod Specification
+
+Workers run as K8s Jobs spawned by the Controller via `K8sJobSpawner`:
+
+| Aspect | Detail |
+|--------|--------|
+| **Image** | Configurable via `HADRON_WORKER_IMAGE` env var (default: `hadron-worker:latest`) |
+| **Base** | Python 3.12-slim + Node.js 20 + Git + Playwright Chromium |
+| **Resources** | Requests: 512Mi / 500m CPU. Limits: 2Gi / 2 CPU |
+| **Restart** | `Never` — failures are handled by the pipeline's pause mechanism |
+| **Backoff** | `backoffLimit: 1` — single retry before permanent failure |
+| **Cleanup** | `ttlSecondsAfterFinished: 3600` — auto-deleted 1 hour after completion |
+| **Service Account** | `hadron-controller` — needs RBAC for job creation in the hadron namespace |
+
+### K8s Resources Required
+
+| Resource | Name | Purpose |
+|----------|------|---------|
+| **Namespace** | `hadron` | Isolation for all Hadron resources |
+| **ServiceAccount** | `hadron-controller` | Pod identity for job spawning |
+| **Role + RoleBinding** | `hadron-job-manager` | RBAC: create/get/list/watch/delete Jobs and Pods, read Pod logs |
+| **ConfigMap** | `hadron-config` | Non-secret env vars: `HADRON_POSTGRES_URL`, `HADRON_REDIS_URL`, etc. |
+| **Secret** | `hadron-secrets` | API keys: `anthropic-api-key`, `gemini-api-key`, `openai-api-key`, `github-token` (all optional) |
+
+API keys stored in the database (via the settings API) are passed as `extra_env` to the Job spec and take precedence over K8s secrets.
+
+### Worker Log Streaming
+
+Both spawner implementations write worker output to Redis for the dashboard:
+- **SubprocessJobSpawner:** Streams stdout line-by-line to `hadron:cr:{cr_id}:{repo_name}:worker_log`
+- **K8sJobSpawner:** Polls K8s pod logs API every 3 seconds, appends new content to the same Redis key
+- Logs expire after 24 hours
+
+### Spawner Selection
+
+The Controller auto-detects the environment:
+1. If `/var/run/secrets/kubernetes.io/serviceaccount/token` exists → `K8sJobSpawner`
+2. If `HADRON_USE_K8S=true` env var is set → `K8sJobSpawner` (override for local K8s dev)
+3. Otherwise → `SubprocessJobSpawner` (local dev, inherits parent env)
+
+### E2E Testing in Worker Pods
+
+Worker images include Playwright with Chromium (`npx playwright install --with-deps chromium`) so E2E tests can run inside the pod without a browser sidecar. Each pod has its own network namespace, so dev servers started by E2E tests don't conflict across concurrent workers.
 
 ### Local Development
 
@@ -286,5 +331,13 @@ Full stack requires Docker Compose for Postgres + Redis:
 ```bash
 docker compose up -d
 alembic upgrade head
+uvicorn hadron.controller.app:create_app --factory
+```
+
+For local K8s development (Docker Desktop or minikube):
+```bash
+docker build -f Dockerfile.worker -t hadron-worker:v1 .
+export HADRON_USE_K8S=true
+export HADRON_WORKER_IMAGE=hadron-worker:v1
 uvicorn hadron.controller.app:create_app --factory
 ```

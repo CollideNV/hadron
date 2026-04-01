@@ -17,6 +17,15 @@ Feature: Agent Execution
     Then it can read files, write files, delete files, and list directories
     And it can execute shell commands within the worktree
 
+  Scenario: Allowed shell commands
+    Given an agent is executing in a repo worktree
+    Then it can run test runners (pytest, npm test, npx playwright test, cargo test, etc.)
+    And it can run linters and formatters (ruff, eslint, prettier, tsc, etc.)
+    And it can install dependencies (npm install, npm ci, pip install)
+    And it can run read-only inspection commands (cat, head, tail, ls, find, grep, etc.)
+    But shell chaining (&&, ||, |, ;) is rejected except for a single "cd <dir> && <cmd>" prefix
+    And dangerous find flags (-exec, -delete) are rejected
+
   Scenario: File tools are confined to the working directory
     Given an agent is executing in a working directory
     When a tool receives a path that escapes the working directory

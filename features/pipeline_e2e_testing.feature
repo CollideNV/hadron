@@ -72,11 +72,12 @@ Feature: E2E Testing Stage
     Then a STAGE_DIFF event is emitted with the test file changes
     And reviewers can see what the E2E agent changed
 
-  Scenario: E2E failures proceed to review with context
+  Scenario: E2E failures pause the pipeline
     Given E2E tests that fail after max retries
     When the e2e_testing stage completes
-    Then the pipeline proceeds to review with e2e_passed=False
-    And reviewers can see the E2E failure output
+    Then the pipeline pauses with e2e_passed=False
+    And the pause reason indicates E2E test failure
+    And the operator can review the failure output and decide how to proceed
 
   Scenario: E2E runs after rework
     Given a repository with E2E test configuration

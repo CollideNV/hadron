@@ -79,3 +79,16 @@ Feature: Worktree Setup
     When the worktree setup stage detects dependency files
     Then it installs Python dependencies via pip if pyproject.toml or requirements.txt are present
     And it installs Node dependencies via npm if package.json is present
+
+  Scenario: Install monorepo subdirectory dependencies
+    Given a monorepo with a frontend/package.json
+    When the worktree setup stage executes
+    Then it detects the nested package.json
+    And runs npm ci (or npm install) from within the frontend directory
+    And the working directory is set to the subdirectory, not via --prefix
+
+  Scenario: Dependency install failure does not block pipeline
+    Given a repo with a package.json whose npm install fails
+    When the worktree setup stage executes
+    Then the failure is logged as a warning
+    And the pipeline continues to language and test detection
