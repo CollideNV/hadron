@@ -34,7 +34,8 @@ async def _install_dependencies(worktree_path: Path) -> None:
     root = str(worktree_path)
 
     # Python — create a per-worktree venv and install deps into it
-    has_python = (worktree_path / "pyproject.toml").exists() or (worktree_path / "requirements.txt").exists()
+    pyproject = worktree_path / "pyproject.toml"
+    has_python = pyproject.exists() or (worktree_path / "requirements.txt").exists() or (worktree_path / "setup.py").exists()
     venv_dir = worktree_path / ".venv"
 
     if has_python and not venv_dir.exists():
@@ -50,10 +51,24 @@ async def _install_dependencies(worktree_path: Path) -> None:
 
     if has_python and venv_dir.exists():
         venv_pip = str(venv_dir / "bin" / "pip")
-        if (worktree_path / "pyproject.toml").exists():
-            installs.append(("python", [venv_pip, "install", "-e", ".[dev]", "--quiet"], root))
-        else:
+        if (worktree_path / "requirements.txt").exists() and not pyproject.exists():
             installs.append(("python", [venv_pip, "install", "-r", "requirements.txt", "--quiet"], root))
+        elif pyproject.exists() or (worktree_path / "setup.py").exists():
+            # Detect optional-dependency groups from pyproject.toml
+            extras: list[str] = []
+            if pyproject.exists():
+                try:
+                    import tomllib
+                    data = tomllib.loads(pyproject.read_text())
+                    optional_deps = data.get("project", {}).get("optional-dependencies", {})
+                    if "dev" in optional_deps:
+                        extras = ["dev"]
+                    elif optional_deps:
+                        extras = list(optional_deps.keys())
+                except Exception:
+                    pass
+            install_spec = f".[{','.join(extras)}]" if extras else "."
+            installs.append(("python", [venv_pip, "install", "-e", install_spec, "--quiet"], root))
 
     # Node — check root and common subdirs; use cwd (not --prefix) to avoid lockfile sync issues
     for subdir in [".", "frontend", "client", "web", "app"]:

@@ -362,14 +362,9 @@ class TestWorktreeSetupNode:
 class TestInstallDependencies:
     """Tests for _install_dependencies venv creation."""
 
-    @pytest.mark.asyncio
-    async def test_creates_venv_for_python_project(self, tmp_path: Path) -> None:
-        """A per-worktree .venv is created when pyproject.toml exists."""
+    async def _run_install(self, worktree: Path) -> list[tuple]:
+        """Helper: run _install_dependencies with mocked subprocess, return call args."""
         from hadron.pipeline.nodes.worktree_setup import _install_dependencies
-
-        worktree = tmp_path / "worktree"
-        worktree.mkdir()
-        (worktree / "pyproject.toml").write_text('[project]\nname = "demo"')
 
         calls: list[tuple] = []
 
@@ -378,7 +373,6 @@ class TestInstallDependencies:
             mock_proc = AsyncMock()
             mock_proc.communicate = AsyncMock(return_value=(b"", None))
             mock_proc.returncode = 0
-            # After venv creation call, create the dir so the install step proceeds
             if "-m" in args and "venv" in args:
                 (worktree / ".venv" / "bin").mkdir(parents=True, exist_ok=True)
             return mock_proc
@@ -386,37 +380,76 @@ class TestInstallDependencies:
         with patch("hadron.pipeline.nodes.worktree_setup.asyncio.create_subprocess_exec", side_effect=fake_subprocess):
             await _install_dependencies(worktree)
 
-        # First call: venv creation (positional args to create_subprocess_exec)
-        venv_call_args = calls[0]
-        assert "-m" in venv_call_args and "venv" in venv_call_args
-        assert str(worktree / ".venv") in venv_call_args
-        # Second call: pip install using the venv's pip
-        pip_call_args = calls[1]
-        assert str(worktree / ".venv" / "bin" / "pip") == pip_call_args[0]
+        return calls
+
+    @pytest.mark.asyncio
+    async def test_dev_extra_used_when_present(self, tmp_path: Path) -> None:
+        """pip install -e .[dev] when pyproject.toml has [dev] extra."""
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        (worktree / "pyproject.toml").write_text(
+            '[project]\nname = "demo"\n[project.optional-dependencies]\ndev = ["pytest"]'
+        )
+        calls = await self._run_install(worktree)
+        pip_args = calls[1]
+        assert ".[dev]" in pip_args
+
+    @pytest.mark.asyncio
+    async def test_all_extras_when_no_dev(self, tmp_path: Path) -> None:
+        """All extras installed when [dev] is absent but others exist."""
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        (worktree / "pyproject.toml").write_text(
+            '[project]\nname = "demo"\n[project.optional-dependencies]\ntest = ["pytest"]\nlint = ["ruff"]'
+        )
+        calls = await self._run_install(worktree)
+        pip_args = calls[1]
+        # Should contain both extras (order may vary)
+        install_spec = [a for a in pip_args if a.startswith(".")][0]
+        assert "test" in install_spec
+        assert "lint" in install_spec
+
+    @pytest.mark.asyncio
+    async def test_bare_install_no_extras(self, tmp_path: Path) -> None:
+        """pip install -e . when pyproject.toml has no optional-dependencies."""
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        (worktree / "pyproject.toml").write_text('[project]\nname = "demo"')
+        calls = await self._run_install(worktree)
+        pip_args = calls[1]
+        assert "." in pip_args
+        # No extras bracket
+        assert not any("[" in a for a in pip_args)
+
+    @pytest.mark.asyncio
+    async def test_setup_py_only_project(self, tmp_path: Path) -> None:
+        """Venv created and pip install -e . used for setup.py-only projects."""
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        (worktree / "setup.py").write_text('from setuptools import setup; setup(name="demo")')
+        calls = await self._run_install(worktree)
+        assert len(calls) == 2
+        assert "-m" in calls[0] and "venv" in calls[0]
+        assert "." in calls[1]
+
+    @pytest.mark.asyncio
+    async def test_requirements_txt_project(self, tmp_path: Path) -> None:
+        """Uses pip install -r requirements.txt when no pyproject.toml."""
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        (worktree / "requirements.txt").write_text("requests\n")
+        calls = await self._run_install(worktree)
+        pip_args = calls[1]
+        assert "-r" in pip_args
+        assert "requirements.txt" in pip_args
 
     @pytest.mark.asyncio
     async def test_no_venv_without_python_project(self, tmp_path: Path) -> None:
-        """No .venv created when there is no pyproject.toml or requirements.txt."""
-        from hadron.pipeline.nodes.worktree_setup import _install_dependencies
-
+        """No .venv created when there is no Python project marker."""
         worktree = tmp_path / "worktree"
         worktree.mkdir()
-        # Only a package.json — node project
         (worktree / "package.json").write_text('{}')
-
-        calls: list[tuple] = []
-
-        async def fake_subprocess(*args, **kwargs):
-            calls.append(args)
-            mock_proc = AsyncMock()
-            mock_proc.communicate = AsyncMock(return_value=(b"", None))
-            mock_proc.returncode = 0
-            return mock_proc
-
-        with patch("hadron.pipeline.nodes.worktree_setup.asyncio.create_subprocess_exec", side_effect=fake_subprocess):
-            await _install_dependencies(worktree)
-
-        # Only npm install, no venv creation
+        calls = await self._run_install(worktree)
         assert len(calls) == 1
         assert "npm" in calls[0][0]
 

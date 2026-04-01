@@ -206,7 +206,7 @@ def _execute_read_file(working_dir: str, input_data: dict[str, Any]) -> str:
 
 _INSTALL_TRIGGERS: dict[str, list[str]] = {
     "package.json": ["npm", "install"],
-    "pyproject.toml": ["pip", "install", "-e", ".[dev]", "--quiet"],
+    "pyproject.toml": ["pip", "install", "-e", ".", "--quiet"],
     "requirements.txt": ["pip", "install", "-r", "requirements.txt", "--quiet"],
 }
 
