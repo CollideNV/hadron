@@ -47,10 +47,19 @@ class GeminiAgentBackend(BaseAgentBackend):
             raise ImportError(
                 "Install google-genai to use the Gemini backend: pip install hadron[gemini]"
             ) from None
-        self._client = genai.Client(
-            api_key=api_key or os.environ.get("HADRON_GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY", ""),
-            vertexai=False,
-        )
+        # google-genai SDK bug: GOOGLE_GENAI_USE_VERTEXAI env var overrides
+        # the vertexai=False constructor kwarg, routing requests to Vertex AI
+        # (aiplatform.googleapis.com) which rejects API keys with 401.
+        # Temporarily clear it so the explicit kwarg takes effect.
+        saved_vertex_env = os.environ.pop("GOOGLE_GENAI_USE_VERTEXAI", None)
+        try:
+            self._client = genai.Client(
+                api_key=api_key or os.environ.get("HADRON_GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY", ""),
+                vertexai=False,
+            )
+        finally:
+            if saved_vertex_env is not None:
+                os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = saved_vertex_env
         self._transient_errors = _get_gemini_transient_errors()
 
     async def _call_tool_loop(self, cfg: ToolLoopConfig) -> _PhaseResult:
