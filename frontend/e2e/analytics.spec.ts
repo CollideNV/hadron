@@ -9,7 +9,7 @@ test.describe("Analytics Page", () => {
     await page.goto("/");
     await page.getByTestId("nav-analytics").click();
     await expect(page).toHaveURL("/analytics");
-    await expect(page.getByText("Analytics")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Analytics" })).toBeVisible();
   });
 
   test("displays KPI summary cards", async ({ page }) => {
@@ -81,7 +81,7 @@ test.describe("Analytics Page", () => {
     await page.goto("/analytics");
     const section = page.getByTestId("analytics-cost-breakdown");
     // Should show a dollar amount
-    await expect(section.getByText(/\$\d+\.\d+/)).toBeVisible();
+    await expect(section.getByText(/\$\d+\.\d+/).first()).toBeVisible();
   });
 });
 
@@ -122,7 +122,7 @@ test.describe("Live Activity Feed", () => {
     await expect(page.getByTestId("activity-CR-demo-002")).toBeVisible({ timeout: 10_000 });
     // After a few seconds, events stream in and update the row
     // The stage_entered event sets the stage to "implementation"
-    await expect(page.getByTestId("activity-CR-demo-002").getByText("Implementation")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("activity-CR-demo-002").getByText("Implementation").first()).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -142,7 +142,7 @@ test.describe("Navigation with Analytics", () => {
 
   test("full navigation cycle includes analytics", async ({ page }) => {
     await page.goto("/analytics");
-    await expect(page.getByText("Analytics")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Analytics" })).toBeVisible();
 
     await page.getByTestId("nav-pipelines").click();
     await expect(page).toHaveURL("/");

@@ -566,8 +566,8 @@ ALL_EVENTS = build_events()
 DUMMY_RUNS = [
     CR_RUN,
     {**CR_RUN, "cr_id": "CR-demo-002", "title": "Fix pagination bug in user list", "status": "running", "cost_usd": 0.12, "error": None, "created_at": "2026-03-18T10:00:00Z", "updated_at": "2026-03-18T10:05:00Z", "repos": []},
-    {**CR_RUN, "cr_id": "CR-demo-003", "title": "Add dark mode support", "status": "paused", "cost_usd": 10.12, "error": "Budget exceeded ($10.12 >= $10.00 max)", "created_at": "2026-03-16T14:00:00Z", "updated_at": "2026-03-16T14:10:00Z", "repos": [
-        {"repo_name": "acme-web", "repo_url": "https://github.com/acme/acme-web.git", "status": "paused", "branch_name": "hadron/CR-demo-003", "pr_url": None, "cost_usd": 10.12, "error": None},
+    {**CR_RUN, "cr_id": "CR-demo-003", "title": "Add dark mode support", "status": "failed", "cost_usd": 10.12, "error": "Budget exceeded ($10.12 >= $10.00 max)", "created_at": "2026-03-16T14:00:00Z", "updated_at": "2026-03-16T14:10:00Z", "repos": [
+        {"repo_name": "acme-web", "repo_url": "https://github.com/acme/acme-web.git", "status": "failed", "branch_name": "hadron/CR-demo-003", "pr_url": None, "cost_usd": 10.12, "error": None},
     ]},
     {**CR_RUN, "cr_id": "CR-demo-004", "title": "Refactor auth module", "status": "paused", "cost_usd": 0.25, "error": None, "created_at": "2026-03-19T08:00:00Z", "updated_at": "2026-03-19T08:03:00Z", "repos": []},
     {**CR_RUN, "cr_id": "CR-demo-005", "title": "Add rate limiting to API", "status": "pending", "cost_usd": 0.0, "error": None, "created_at": "2026-03-20T09:00:00Z", "updated_at": "2026-03-20T09:00:00Z", "repos": []},
@@ -829,7 +829,7 @@ async def clear_api_key(key_name: str):
 @app.get("/api/audit-log")
 async def get_audit_log(page: int = 1, page_size: int = 50, action: str | None = None):
     fake_entries = [
-        {"id": 1, "cr_id": None, "action": "backend_templates_updated", "details": {"slugs": ["anthropic", "openai", "gemini"]}, "timestamp": "2026-03-17T09:00:00Z"},
+        {"id": 1, "cr_id": "CR-demo-001", "action": "backend_templates_updated", "details": {"slugs": ["anthropic", "openai", "gemini"]}, "timestamp": "2026-03-17T09:00:00Z"},
         {"id": 2, "cr_id": None, "action": "default_template_updated", "details": {"slug": "anthropic"}, "timestamp": "2026-03-17T08:30:00Z"},
         {"id": 3, "cr_id": None, "action": "pipeline_defaults_updated", "details": {"max_cost_usd": 15.0}, "timestamp": "2026-03-17T08:00:00Z"},
         {"id": 4, "cr_id": None, "action": "prompt_template_updated", "details": {"role": "spec_writer", "version": 2}, "timestamp": "2026-03-16T14:00:00Z"},

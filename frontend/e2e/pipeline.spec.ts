@@ -31,7 +31,7 @@ test.describe("Navigation", () => {
     // Navigate to Settings
     await page.getByTestId("nav-settings").click();
     await expect(page).toHaveURL("/settings");
-    await expect(page.getByText("Model Settings")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Backend Templates" })).toBeVisible();
 
     // Navigate to Prompts
     await page.getByTestId("nav-prompts").click();
@@ -427,29 +427,32 @@ test.describe("Audit Log Page", () => {
 
   test("displays audit entries with timestamps and actions", async ({ page }) => {
     await page.goto("/audit");
-    await expect(page.getByText("pipeline triggered")).toBeVisible();
-    await expect(page.getByText("model settings updated")).toBeVisible();
-    await expect(page.getByText("pipeline defaults updated")).toBeVisible();
+    const table = page.locator("table");
+    await expect(table.getByText("backend templates updated")).toBeVisible();
+    await expect(table.getByText("pipeline defaults updated")).toBeVisible();
+    await expect(table.getByText("api key updated")).toBeVisible();
   });
 
   test("filter by action type", async ({ page }) => {
     await page.goto("/audit");
-    await page.getByTestId("audit-filter-pipeline_triggered").click();
-    // Only pipeline_triggered entries should be visible
-    await expect(page.getByText("pipeline triggered").first()).toBeVisible();
-    // Other action types should not be visible
-    await expect(page.getByText("model settings updated")).not.toBeVisible();
+    const table = page.locator("table");
+    await page.getByTestId("audit-filter-backend_templates_updated").click();
+    // Only backend_templates_updated entries should be visible in the table
+    await expect(table.getByText("backend templates updated").first()).toBeVisible();
+    // Other action types should not be in the table
+    await expect(table.getByText("api key updated")).not.toBeVisible();
   });
 
   test("clear filter shows all entries", async ({ page }) => {
     await page.goto("/audit");
+    const table = page.locator("table");
     // Apply filter
-    await page.getByTestId("audit-filter-pipeline_triggered").click();
-    await expect(page.getByText("model settings updated")).not.toBeVisible();
+    await page.getByTestId("audit-filter-backend_templates_updated").click();
+    await expect(table.getByText("api key updated")).not.toBeVisible();
 
     // Clear filter
     await page.getByTestId("audit-filter-all").click();
-    await expect(page.getByText("model settings updated")).toBeVisible();
+    await expect(table.getByText("api key updated")).toBeVisible();
   });
 
   test("CR ID links to CR detail page", async ({ page }) => {
@@ -472,9 +475,9 @@ test.describe("CR List Search & Filters", () => {
     // Search for "auth"
     await page.getByTestId("cr-search").fill("auth");
     // Wait for debounce + results
-    await expect(page.getByText("Add user authentication with JWT tokens")).toBeVisible();
-    await expect(page.getByText("Refactor auth module")).toBeVisible();
-    await expect(page.getByText("Fix pagination bug")).not.toBeVisible();
+    await expect(page.getByTestId("cr-card-CR-demo-001")).toBeVisible();
+    await expect(page.getByTestId("cr-card-CR-demo-004")).toBeVisible();
+    await expect(page.getByTestId("cr-card-CR-demo-002")).not.toBeVisible();
   });
 
   test("status filter chips filter by status", async ({ page }) => {
@@ -483,8 +486,8 @@ test.describe("CR List Search & Filters", () => {
 
     await page.getByTestId("status-filter-failed").click();
     // Only failed CR should be visible
-    await expect(page.getByText("Add dark mode support")).toBeVisible();
-    await expect(page.getByText("Fix pagination bug")).not.toBeVisible();
+    await expect(page.getByTestId("cr-card-CR-demo-003")).toBeVisible();
+    await expect(page.getByTestId("cr-card-CR-demo-002")).not.toBeVisible();
   });
 
   test("multiple status filters combine", async ({ page }) => {
@@ -492,18 +495,18 @@ test.describe("CR List Search & Filters", () => {
     await page.getByTestId("status-filter-running").click();
     await page.getByTestId("status-filter-paused").click();
 
-    await expect(page.getByText("Fix pagination bug")).toBeVisible();
-    await expect(page.getByText("Refactor auth module")).toBeVisible();
-    await expect(page.getByText("Add dark mode support")).not.toBeVisible();
+    await expect(page.getByTestId("cr-card-CR-demo-002")).toBeVisible();
+    await expect(page.getByTestId("cr-card-CR-demo-004")).toBeVisible();
+    await expect(page.getByTestId("cr-card-CR-demo-003")).not.toBeVisible();
   });
 
   test("sort by highest cost", async ({ page }) => {
     await page.goto("/");
     await page.getByTestId("cr-sort").selectOption("cost");
 
-    // First CR card should be the most expensive one
+    // First CR card should be the most expensive one (CR-demo-003 at $10.12)
     const cards = page.locator("[data-testid^='cr-card-']");
-    await expect(cards.first()).toContainText("Add user authentication");
+    await expect(cards.first()).toContainText("Add dark mode support");
   });
 
   test("empty state with filters shows helpful message", async ({ page }) => {
