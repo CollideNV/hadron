@@ -61,9 +61,7 @@ async def _install_dependencies(worktree_path: Path) -> None:
                     import tomllib
                     data = tomllib.loads(pyproject.read_text())
                     optional_deps = data.get("project", {}).get("optional-dependencies", {})
-                    if "dev" in optional_deps:
-                        extras = ["dev"]
-                    elif optional_deps:
+                    if optional_deps:
                         extras = list(optional_deps.keys())
                 except Exception:
                     pass

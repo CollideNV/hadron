@@ -383,16 +383,18 @@ class TestInstallDependencies:
         return calls
 
     @pytest.mark.asyncio
-    async def test_dev_extra_used_when_present(self, tmp_path: Path) -> None:
-        """pip install -e .[dev] when pyproject.toml has [dev] extra."""
+    async def test_all_extras_installed_when_dev_present(self, tmp_path: Path) -> None:
+        """All extras installed even when [dev] exists alongside other groups."""
         worktree = tmp_path / "worktree"
         worktree.mkdir()
         (worktree / "pyproject.toml").write_text(
-            '[project]\nname = "demo"\n[project.optional-dependencies]\ndev = ["pytest"]'
+            '[project]\nname = "demo"\n[project.optional-dependencies]\ndev = ["pytest"]\ngemini = ["google-genai"]'
         )
         calls = await self._run_install(worktree)
         pip_args = calls[1]
-        assert ".[dev]" in pip_args
+        install_spec = [a for a in pip_args if a.startswith(".")][0]
+        assert "dev" in install_spec
+        assert "gemini" in install_spec
 
     @pytest.mark.asyncio
     async def test_all_extras_when_no_dev(self, tmp_path: Path) -> None:
