@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -227,13 +227,20 @@ class TestCreateWorktree:
         wm = WorktreeManager(tmp_path)
         bare_path = tmp_path / "repos" / "my-repo"
         bare_path.mkdir(parents=True)
+        expected_wt = tmp_path / "runs" / "cr-42" / "my-repo"
+        # rev-parse --git-dir returns the worktree's git dir
+        fake_git_dir = tmp_path / "fake-git-dir"
 
-        with patch("hadron.git.worktree._run_git", new_callable=AsyncMock) as mock_git:
+        async def mock_run_git(*args, **kwargs):
+            if args[0] == "rev-parse":
+                return str(fake_git_dir)
+            return ""
+
+        with patch("hadron.git.worktree._run_git", side_effect=mock_run_git) as mock_git:
             result = await wm.create_worktree("my-repo", "42")
 
-        expected_wt = tmp_path / "runs" / "cr-42" / "my-repo"
         assert result == expected_wt
-        mock_git.assert_called_once_with(
+        assert mock_git.call_args_list[0] == call(
             "worktree", "add", "-b", "ai/cr-42",
             str(expected_wt), "main",
             cwd=bare_path,
@@ -245,11 +252,16 @@ class TestCreateWorktree:
         bare_path = tmp_path / "repos" / "my-repo"
         bare_path.mkdir(parents=True)
 
-        with patch("hadron.git.worktree._run_git", new_callable=AsyncMock) as mock_git:
+        async def mock_run_git(*args, **kwargs):
+            if args[0] == "rev-parse":
+                return str(tmp_path / "fake-git-dir")
+            return ""
+
+        with patch("hadron.git.worktree._run_git", side_effect=mock_run_git) as mock_git:
             await wm.create_worktree("my-repo", "42", start_branch="develop")
 
-        call_args = mock_git.call_args
-        assert call_args[0][-1] == "develop"
+        worktree_add_call = mock_git.call_args_list[0]
+        assert worktree_add_call[0][-1] == "develop"
 
     @pytest.mark.asyncio
     async def test_skips_when_worktree_exists(self, tmp_path: Path) -> None:

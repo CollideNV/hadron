@@ -140,8 +140,11 @@ class WorktreeManager:
             cwd=bare_path,
         )
 
-        # Ensure .venv is excluded even if the repo's .gitignore doesn't list it
-        exclude_dir = worktree_path / ".git" / "info"
+        # Ensure .venv is excluded even if the repo's .gitignore doesn't list it.
+        # In a worktree, .git is a file, not a directory — use rev-parse to find
+        # the actual git dir (e.g. bare_repo/worktrees/<name>/).
+        git_dir = await _run_git("rev-parse", "--git-dir", cwd=worktree_path)
+        exclude_dir = Path(git_dir.strip()) / "info"
         exclude_dir.mkdir(parents=True, exist_ok=True)
         exclude_file = exclude_dir / "exclude"
         existing = exclude_file.read_text() if exclude_file.exists() else ""
