@@ -292,7 +292,7 @@ class TestCommitAndPush:
             await wm.commit_and_push(wt, "feat: add feature")
 
         calls = [c[0] for c in mock_git.call_args_list]
-        assert calls[0] == ("add", "-A", "--", ".", ":!.venv")
+        assert calls[0] == ("add", "-A", "--", ".")
         assert calls[1] == ("status", "--porcelain")
         assert calls[2] == ("commit", "-m", "feat: add feature")
         assert calls[3] == ("rev-parse", "--abbrev-ref", "HEAD")
@@ -315,7 +315,7 @@ class TestCommitAndPush:
         # Should call add + status (skipping commit), then push
         calls = [c[0] for c in mock_git.call_args_list]
         assert len(calls) == 4
-        assert calls[0] == ("add", "-A", "--", ".", ":!.venv")
+        assert calls[0] == ("add", "-A", "--", ".")
         assert calls[1] == ("status", "--porcelain")
         # No commit call — skipped because nothing to commit
         assert calls[2] == ("rev-parse", "--abbrev-ref", "HEAD")
