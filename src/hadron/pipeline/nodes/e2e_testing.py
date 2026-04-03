@@ -12,7 +12,7 @@ from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.nodes import NodeContext, RepoInfo, pipeline_node, run_agent
 from hadron.pipeline.nodes.cr_format import format_cr_section
 from hadron.pipeline.nodes.diff_capture import emit_stage_diff
-from hadron.pipeline.testing import run_test_command
+from hadron.pipeline.testing import _find_free_port, run_test_command
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,14 @@ async def e2e_testing_node(state: PipelineState, ctx: NodeContext, cr_id: str) -
 
     e2e_command = ri.e2e_test_commands[0]
 
+    # Allocate ephemeral ports so multiple workers don't collide
+    e2e_env = {
+        "HADRON_TEST_BACKEND_PORT": str(_find_free_port()),
+        "HADRON_TEST_FRONTEND_PORT": str(_find_free_port()),
+    }
+    logger.info("E2E ports: backend=%s, frontend=%s",
+                e2e_env["HADRON_TEST_BACKEND_PORT"], e2e_env["HADRON_TEST_FRONTEND_PORT"])
+
     max_retries = (
         state.get("config_snapshot", {})
         .get("pipeline", {})
@@ -54,6 +62,7 @@ async def e2e_testing_node(state: PipelineState, ctx: NodeContext, cr_id: str) -
     # Initial E2E test run
     tests_passing, test_output = await run_test_command(
         ri.worktree_path, e2e_command, cr_id, timeout=E2E_TEST_TIMEOUT_SECONDS,
+        extra_env=e2e_env,
     )
 
     await ctx.event_bus.emit(PipelineEvent(
@@ -105,6 +114,7 @@ async def e2e_testing_node(state: PipelineState, ctx: NodeContext, cr_id: str) -
         # Re-run E2E tests after agent modifications
         tests_passing, test_output = await run_test_command(
             ri.worktree_path, e2e_command, cr_id, timeout=E2E_TEST_TIMEOUT_SECONDS,
+            extra_env=e2e_env,
         )
 
         await ctx.event_bus.emit(PipelineEvent(

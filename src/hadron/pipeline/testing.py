@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import socket
 
 from hadron.security.validators import validate_test_command
 from hadron.utils.venv import worktree_env
@@ -12,11 +13,19 @@ from hadron.utils.venv import worktree_env
 logger = logging.getLogger(__name__)
 
 
+def _find_free_port() -> int:
+    """Ask the OS for a free TCP port."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
 async def run_test_command(
     worktree_path: str,
     test_command: str,
     cr_id: str,
     timeout: int = 120,
+    extra_env: dict[str, str] | None = None,
 ) -> tuple[bool, str]:
     """Run a test command inside a worktree and return (passed, output).
 
@@ -38,6 +47,8 @@ async def run_test_command(
         return False, f"Error: test command rejected by allowlist: {cmd!r}"
 
     env = worktree_env(worktree_path)
+    if extra_env:
+        env.update(extra_env)
     proc = await asyncio.create_subprocess_shell(
         cmd,
         cwd=worktree_path,

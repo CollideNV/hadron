@@ -1013,9 +1013,11 @@ async def global_event_stream(request: Request):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    import os
     import uvicorn
-    print(f"\n  Dummy server starting on http://localhost:8000")
+    port = int(os.environ.get("HADRON_CONTROLLER_PORT", "8000"))
+    print(f"\n  Dummy server starting on http://localhost:{port}")
     print(f"  CR ID: {CR_ID}")
     print(f"  Events: {len(ALL_EVENTS)} total across all stages")
     print(f"\n  Start the frontend:  cd frontend && npm run dev\n")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=port)
