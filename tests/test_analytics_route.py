@@ -194,6 +194,38 @@ class TestAnalyticsSummary:
         assert "intake" in stage_names
         assert "implementation" in stage_names
 
+    @pytest.mark.asyncio
+    async def test_stage_durations_groups_sub_stages(self):
+        """Sub-stages like review:security_reviewer are grouped under 'review'."""
+        import datetime
+
+        summary = SimpleNamespace(
+            stage_timings={
+                "review_sec": {"stage": "review:security_reviewer", "duration_s": 10.0},
+                "review_qual": {"stage": "review:quality_reviewer", "duration_s": 15.0},
+                "implementation": {"stage": "implementation", "duration_s": 50.0},
+            },
+            started_at=datetime.datetime(2026, 3, 20, tzinfo=datetime.timezone.utc),
+            completed_at=datetime.datetime(2026, 3, 20, 0, 1, tzinfo=datetime.timezone.utc),
+            total_cost_usd=1.0,
+            total_input_tokens=1000,
+            total_output_tokens=500,
+            final_status="completed",
+            created_at=datetime.datetime(2026, 3, 20, tzinfo=datetime.timezone.utc),
+        )
+        rows = [SimpleNamespace(status="completed", cnt=1, cost=1.0)]
+        factory, _ = _build_factory(rows, summary_rows=[summary])
+        app = _make_app(factory)
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/analytics/summary")
+
+        body = resp.json()
+        stage_names = [s["stage"] for s in body["stage_durations"]]
+        assert "review" in stage_names
+        assert "review:security_reviewer" not in stage_names
+        assert "review:quality_reviewer" not in stage_names
+
 
 # ---------------------------------------------------------------------------
 # GET /api/analytics/cost
@@ -277,6 +309,42 @@ class TestAnalyticsCost:
         assert body["group_by"] == "day"
         assert body["groups"] == []
         assert body["total_cost_usd"] == 0
+
+    @pytest.mark.asyncio
+    async def test_group_by_stage_groups_sub_stages(self):
+        """Sub-stages like review:security_reviewer are grouped under 'review'."""
+        import datetime
+
+        summary = SimpleNamespace(
+            stage_timings={
+                "review_sec": {"stage": "review:security_reviewer", "duration_s": 10.0},
+                "review_qual": {"stage": "review:quality_reviewer", "duration_s": 15.0},
+                "implementation": {"stage": "implementation", "duration_s": 50.0},
+            },
+            started_at=datetime.datetime(2026, 3, 20, tzinfo=datetime.timezone.utc),
+            completed_at=datetime.datetime(2026, 3, 20, 0, 1, tzinfo=datetime.timezone.utc),
+            total_cost_usd=3.0,
+            total_input_tokens=1000,
+            total_output_tokens=500,
+            final_status="completed",
+            created_at=datetime.datetime(2026, 3, 20, tzinfo=datetime.timezone.utc),
+            model_breakdown=None,
+        )
+        factory, _ = _build_simple_factory([summary])
+        app = _make_app(factory)
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/analytics/cost?group_by=stage")
+
+        body = resp.json()
+        stage_keys = [g["key"] for g in body["groups"]]
+        assert "review" in stage_keys
+        assert "implementation" in stage_keys
+        assert "review:security_reviewer" not in stage_keys
+
+        # Review should have cost from both sub-stages combined
+        review_group = next(g for g in body["groups"] if g["key"] == "review")
+        assert review_group["runs"] == 2  # two sub-stage entries
 
     @pytest.mark.asyncio
     async def test_invalid_group_by_rejected(self):

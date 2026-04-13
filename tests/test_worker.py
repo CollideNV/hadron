@@ -26,6 +26,9 @@ class TestPickResumeNodeSingle:
     def test_behaviour_verified(self) -> None:
         assert pick_resume_node({"behaviour_verified": True}) == "verification"
 
+    def test_ci_failure_routes_to_implementation(self) -> None:
+        assert pick_resume_node({"ci_failure_log": "FAILED: exit 1"}) == "implementation"
+
 
 # ---------------------------------------------------------------------------
 # pick_resume_node — multiple overrides (latest in pipeline order wins)
@@ -86,5 +89,5 @@ class TestConstants:
             assert node in PIPELINE_NODE_ORDER, f"{node} not in PIPELINE_NODE_ORDER"
 
     def test_override_node_map_has_expected_keys(self) -> None:
-        expected = {"rebase_clean", "review_passed", "behaviour_verified"}
+        expected = {"rebase_clean", "review_passed", "behaviour_verified", "ci_failure_log"}
         assert set(OVERRIDE_NODE_MAP.keys()) == expected

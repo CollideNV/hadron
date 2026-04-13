@@ -52,6 +52,15 @@ class AnalyticsCostResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+def _base_stage(name: str) -> str:
+    """Extract the parent stage from a colon-delimited sub-stage name.
+
+    e.g. ``"review:security_reviewer"`` → ``"review"``
+    """
+    colon = name.find(":")
+    return name[:colon] if colon != -1 else name
+
+
 def _compute_stage_durations(
     summaries: list[RunSummary],
 ) -> list[dict[str, object]]:
@@ -62,7 +71,7 @@ def _compute_stage_durations(
         timings = s.stage_timings or {}
         for key, info in timings.items():
             dur = info.get("duration_s")
-            stage_name = info.get("stage", key)
+            stage_name = _base_stage(info.get("stage", key))
             if dur is not None:
                 stage_durations[stage_name].append(dur)
 
@@ -119,7 +128,7 @@ def _aggregate_cost_by_stage(
     for s in summaries:
         timings = s.stage_timings or {}
         for key, info in timings.items():
-            stage_name = info.get("stage", key)
+            stage_name = _base_stage(info.get("stage", key))
             entry = stage_data[stage_name]
             entry["runs"] += 1
 
@@ -133,7 +142,7 @@ def _aggregate_cost_by_stage(
         if total_dur <= 0:
             continue
         for key, info in timings.items():
-            stage_name = info.get("stage", key)
+            stage_name = _base_stage(info.get("stage", key))
             dur = info.get("duration_s") or 0
             fraction = dur / total_dur
             stage_data[stage_name]["cost_usd"] += (s.total_cost_usd or 0) * fraction

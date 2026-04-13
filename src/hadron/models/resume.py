@@ -8,6 +8,7 @@ OVERRIDE_NODE_MAP: dict[str, str] = {
     "rebase_clean": "rebase",
     "review_passed": "review",
     "behaviour_verified": "verification",
+    "ci_failure_log": "implementation",
 }
 
 # Pipeline node execution order (used to pick the latest node from multiple overrides).
