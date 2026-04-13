@@ -9,6 +9,7 @@ from langgraph.graph import END, StateGraph
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
 from hadron.pipeline.edges import (
+    after_delivery,
     after_e2e_testing,
     after_implementation,
     after_rebase,
@@ -162,7 +163,12 @@ def build_pipeline_graph() -> StateGraph:
         {"delivery": "delivery", "paused": "paused"},
     )
 
-    graph.add_edge("delivery", "release")
+    # Conditional: delivery → release (proceed) | paused (push_and_wait awaiting CI)
+    graph.add_conditional_edges(
+        "delivery",
+        after_delivery,
+        {"release": "release", "paused": "paused"},
+    )
     graph.add_edge("release", END)
     graph.add_edge("paused", END)
 

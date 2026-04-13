@@ -143,6 +143,18 @@ def after_rework(state: PipelineState) -> str:
     return _route_to_e2e_or_review(state)
 
 
+def after_delivery(state: PipelineState) -> str:
+    """Route after delivery.
+
+    Returns:
+        "release" — delivery completed (self_contained or push_and_forget)
+        "paused" — push_and_wait strategy, awaiting external CI callback
+    """
+    if state.get("status") == "paused":
+        return "paused"
+    return "release"
+
+
 def after_rebase(state: PipelineState) -> str:
     """Route after rebase.
 

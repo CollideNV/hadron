@@ -13,23 +13,39 @@ from hadron.controller.routes.health import router
 
 
 def _make_app(session_factory=None, redis=None) -> FastAPI:
-    app = FastAPI()
+    app = FastAPI(version="0.1.0")
     app.include_router(router)
     app.state.session_factory = session_factory
     app.state.redis = redis
     return app
 
 
+class TestLivez:
+    @pytest.mark.asyncio
+    async def test_returns_ok(self) -> None:
+        app = _make_app()
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/livez")
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "ok"}
+
+
 class TestHealthz:
     @pytest.mark.asyncio
-    async def test_healthz_returns_ok(self) -> None:
+    async def test_returns_version_and_uptime(self) -> None:
         app = _make_app()
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
             resp = await client.get("/healthz")
         assert resp.status_code == 200
-        assert resp.json() == {"status": "ok"}
+        body = resp.json()
+        assert body["status"] == "ok"
+        assert body["version"] == "0.1.0"
+        assert isinstance(body["uptime"], (int, float))
+        assert body["uptime"] >= 0
 
 
 class TestReadyz:
@@ -74,6 +90,7 @@ class TestReadyz:
         ) as client:
             resp = await client.get("/readyz")
 
+        assert resp.status_code == 503
         body = resp.json()
         assert body["status"] == "not_ready"
         assert body["checks"]["postgres"] is False
@@ -94,6 +111,7 @@ class TestReadyz:
         ) as client:
             resp = await client.get("/readyz")
 
+        assert resp.status_code == 503
         body = resp.json()
         assert body["status"] == "not_ready"
         assert body["checks"]["postgres"] is True
@@ -116,6 +134,7 @@ class TestReadyz:
         ) as client:
             resp = await client.get("/readyz")
 
+        assert resp.status_code == 503
         body = resp.json()
         assert body["status"] == "not_ready"
         assert body["checks"]["postgres"] is False

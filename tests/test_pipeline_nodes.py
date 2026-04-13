@@ -1351,6 +1351,102 @@ class TestDeliveryNode:
 
         assert len(result["delivery_results"][0]["test_output"]) <= 2000
 
+    # --- push_and_wait strategy ---
+
+    @pytest.mark.asyncio
+    async def test_push_and_wait_pushes_and_pauses(self) -> None:
+        """push_and_wait pushes without running tests and pauses."""
+        from hadron.pipeline.nodes.delivery import delivery_node
+
+        config = _make_config()
+        state = _base_state(
+            config_snapshot={"pipeline": {"delivery_strategy": "push_and_wait"}},
+        )
+
+        with patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM:
+            MockWM.return_value.commit_and_push = AsyncMock()
+            result = await delivery_node(state, config)
+
+        assert result["all_delivered"] is False
+        assert result["status"] == "paused"
+        assert result["pause_reason"] == "waiting_for_ci"
+        assert result["delivery_results"][0]["branch_pushed"] is True
+
+    @pytest.mark.asyncio
+    async def test_push_and_wait_push_failure(self) -> None:
+        """push_and_wait still pauses even if push fails."""
+        from hadron.pipeline.nodes.delivery import delivery_node
+
+        config = _make_config()
+        state = _base_state(
+            config_snapshot={"pipeline": {"delivery_strategy": "push_and_wait"}},
+        )
+
+        with patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM:
+            MockWM.return_value.commit_and_push = AsyncMock(side_effect=RuntimeError("push rejected"))
+            result = await delivery_node(state, config)
+
+        assert result["status"] == "paused"
+        assert result["delivery_results"][0]["branch_pushed"] is False
+
+    # --- push_and_forget strategy ---
+
+    @pytest.mark.asyncio
+    async def test_push_and_forget_pushes_and_proceeds(self) -> None:
+        """push_and_forget pushes without running tests and marks delivered."""
+        from hadron.pipeline.nodes.delivery import delivery_node
+
+        config = _make_config()
+        state = _base_state(
+            config_snapshot={"pipeline": {"delivery_strategy": "push_and_forget"}},
+        )
+
+        with patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM:
+            MockWM.return_value.commit_and_push = AsyncMock()
+            result = await delivery_node(state, config)
+
+        assert result["all_delivered"] is True
+        assert result["delivery_results"][0]["branch_pushed"] is True
+        assert "status" not in result  # not paused
+
+    @pytest.mark.asyncio
+    async def test_push_and_forget_push_failure(self) -> None:
+        """push_and_forget marks not delivered if push fails."""
+        from hadron.pipeline.nodes.delivery import delivery_node
+
+        config = _make_config()
+        state = _base_state(
+            config_snapshot={"pipeline": {"delivery_strategy": "push_and_forget"}},
+        )
+
+        with patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM:
+            MockWM.return_value.commit_and_push = AsyncMock(side_effect=RuntimeError("no remote"))
+            result = await delivery_node(state, config)
+
+        assert result["all_delivered"] is False
+        assert result["delivery_results"][0]["branch_pushed"] is False
+
+    # --- unknown strategy fallback ---
+
+    @pytest.mark.asyncio
+    async def test_unknown_strategy_falls_back_to_self_contained(self) -> None:
+        """Unknown strategy name falls back to self_contained."""
+        from hadron.pipeline.nodes.delivery import delivery_node
+
+        config = _make_config()
+        state = _base_state(
+            config_snapshot={"pipeline": {"delivery_strategy": "bogus"}},
+        )
+
+        with (
+            patch("hadron.pipeline.nodes.context.WorktreeManager") as MockWM,
+            patch("hadron.pipeline.nodes.delivery.run_test_command", return_value=(True, "ok")),
+        ):
+            MockWM.return_value.commit_and_push = AsyncMock()
+            result = await delivery_node(state, config)
+
+        assert result["all_delivered"] is True
+
 
 # ===========================================================================
 # Release Node

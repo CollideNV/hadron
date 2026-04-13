@@ -7,6 +7,7 @@ import pytest
 from hadron.pipeline.edges import (
     _budget_exceeded,
     _rework_is_stalled,
+    after_delivery,
     after_implementation,
     after_rebase,
     after_review,
@@ -190,6 +191,25 @@ class TestAfterRebase:
         """rebase_clean defaults to True — a fresh state routes to delivery."""
         state = {}
         assert after_rebase(state) == "delivery"
+
+
+# ---------------------------------------------------------------------------
+# after_delivery
+# ---------------------------------------------------------------------------
+
+
+class TestAfterDelivery:
+    def test_completed_routes_to_release(self) -> None:
+        state: dict = {}
+        assert after_delivery(state) == "release"
+
+    def test_paused_routes_to_paused(self) -> None:
+        state = {"status": "paused"}
+        assert after_delivery(state) == "paused"
+
+    def test_explicit_status_running_routes_to_release(self) -> None:
+        state = {"status": "running"}
+        assert after_delivery(state) == "release"
 
 
 # ---------------------------------------------------------------------------

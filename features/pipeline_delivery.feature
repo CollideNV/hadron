@@ -1,23 +1,54 @@
 Feature: Delivery
-  The delivery stage runs the full test suite and pushes the feature
-  branch. It does not open a PR — PR description generation happens
-  in the release stage. After delivery, the pipeline proceeds to
-  the release stage.
+  The delivery stage dispatches to the configured delivery strategy,
+  which determines how changes reach the target repository and whether
+  the pipeline waits for external CI before proceeding to release.
 
-  Scenario: Deliver successfully after tests pass
+  # --- self_contained (default) ---
+
+  Scenario: Self-contained delivery succeeds after tests pass
     Given the rebase completed cleanly
+    And the delivery strategy is "self_contained"
     When the delivery stage runs the full test suite
     And all tests pass
     Then the changes are committed and pushed to the feature branch
     And the pipeline proceeds to the release stage
 
-  Scenario: Delivery fails when tests fail
+  Scenario: Self-contained delivery fails when tests fail
     Given the rebase completed cleanly
+    And the delivery strategy is "self_contained"
     When the delivery stage runs the full test suite
     And tests fail
     Then the delivery result is marked as not delivered
     And the test failure output is recorded
     And the pipeline still proceeds unconditionally to the release stage
+
+  # --- push_and_wait ---
+
+  Scenario: Push-and-wait pushes branch and pauses for CI callback
+    Given the rebase completed cleanly
+    And the delivery strategy is "push_and_wait"
+    When the delivery stage executes
+    Then the changes are committed and pushed to the feature branch
+    And the pipeline pauses with reason "waiting_for_ci"
+    And the worker terminates and checkpoints state
+
+  Scenario: Push-and-wait resumes after CI callback
+    Given the pipeline is paused with reason "waiting_for_ci"
+    When the controller receives a CI result via POST /pipeline/{cr_id}/ci-result
+    Then the worker is resumed from the checkpoint
+    And the pipeline proceeds to the release stage
+
+  # --- push_and_forget ---
+
+  Scenario: Push-and-forget pushes branch and proceeds immediately
+    Given the rebase completed cleanly
+    And the delivery strategy is "push_and_forget"
+    When the delivery stage executes
+    Then the changes are committed and pushed to the feature branch
+    And the delivery result is marked as delivered
+    And the pipeline proceeds to the release stage without waiting for CI
+
+  # --- PR description (always in release stage) ---
 
   Scenario: PR description generated in release stage
     When the release stage executes after a successful delivery
