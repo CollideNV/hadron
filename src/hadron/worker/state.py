@@ -78,8 +78,10 @@ async def persist_result(
 
     release_results = final_state.get("release_results", [])
     pr_description = ""
+    pr_url = ""
     if release_results:
         pr_description = release_results[0].get("pr_description", "")
+        pr_url = release_results[0].get("pr_url", "")
 
     summary_dict = build_run_summary(cr_id, repo_name, final_state)
     retrospective = generate_retrospective(summary_dict)
@@ -92,6 +94,7 @@ async def persist_result(
             .values(
                 status=final_status,
                 cost_usd=final_cost,
+                pr_url=pr_url or None,
                 pr_description=pr_description,
                 branch_name=f"{BRANCH_PREFIX}{cr_id}",
                 error=final_state.get("error"),

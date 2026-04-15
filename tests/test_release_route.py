@@ -216,7 +216,7 @@ class TestApproveRelease:
         assert resp.json()["detail"] == "CR not found"
 
     @pytest.mark.asyncio
-    async def test_all_completed_succeeds(self) -> None:
+    async def test_all_completed_and_approved_merges(self) -> None:
         cr = _make_cr("cr-1", status="running")
         repos = [
             _make_repo("cr-1", "backend", "completed"),
@@ -226,10 +226,12 @@ class TestApproveRelease:
         event_bus = AsyncMock()
         app = _make_app(factory, event_bus=event_bus)
 
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
-            resp = await client.post("/api/pipeline/cr-1/release/approve")
+        with patch("hadron.controller.routes.release.is_pr_approved", AsyncMock(return_value=True)), \
+             patch("hadron.controller.routes.release.merge_pull_request", AsyncMock(return_value={"sha": "abc", "message": "ok"})):
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.post("/api/pipeline/cr-1/release/approve")
 
         assert resp.status_code == 200
         body = resp.json()
@@ -245,6 +247,62 @@ class TestApproveRelease:
         emitted_event = event_bus.emit.call_args[0][0]
         assert emitted_event.cr_id == "cr-1"
         assert emitted_event.event_type.value == "pipeline_completed"
+
+    @pytest.mark.asyncio
+    async def test_unapproved_pr_returns_409(self) -> None:
+        cr = _make_cr("cr-1", status="running")
+        repos = [
+            _make_repo("cr-1", "backend", "completed"),
+            _make_repo("cr-1", "frontend", "completed"),
+        ]
+        factory, _ = _build_session_factory_for_approve(cr, repos)
+        app = _make_app(factory, event_bus=AsyncMock())
+
+        with patch("hadron.controller.routes.release.is_pr_approved", AsyncMock(return_value=False)):
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.post("/api/pipeline/cr-1/release/approve")
+
+        assert resp.status_code == 409
+        assert "not yet approved" in resp.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    async def test_merge_failure_returns_409(self) -> None:
+        cr = _make_cr("cr-1", status="running")
+        repos = [_make_repo("cr-1", "backend", "completed")]
+        factory, _ = _build_session_factory_for_approve(cr, repos)
+        app = _make_app(factory, event_bus=AsyncMock())
+
+        from hadron.git.github import GitHubAPIError
+
+        with patch("hadron.controller.routes.release.is_pr_approved", AsyncMock(return_value=True)), \
+             patch("hadron.controller.routes.release.merge_pull_request", AsyncMock(side_effect=GitHubAPIError(405, "conflict"))):
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.post("/api/pipeline/cr-1/release/approve")
+
+        assert resp.status_code == 409
+        assert "Merge failed" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_missing_pr_url_skipped(self) -> None:
+        cr = _make_cr("cr-1", status="running")
+        repos = [_make_repo("cr-1", "backend", "completed", pr_url=None)]
+        factory, session_write = _build_session_factory_for_approve(cr, repos)
+        event_bus = AsyncMock()
+        app = _make_app(factory, event_bus=event_bus)
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post("/api/pipeline/cr-1/release/approve")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["repos_merged"] == []
+        assert body["repos_skipped"] == ["backend"]
 
     @pytest.mark.asyncio
     async def test_not_all_completed_returns_409(self) -> None:

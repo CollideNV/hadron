@@ -48,9 +48,11 @@ Feature: Delivery
     And the delivery result is marked as delivered
     And the pipeline proceeds to the release stage without waiting for CI
 
-  # --- PR description (always in release stage) ---
+  # --- PR creation (always in release stage, not delivery) ---
 
-  Scenario: PR description generated in release stage
+  Scenario: PR description generated and PR created in release stage
     When the release stage executes after a successful delivery
     Then it generates a PR description including the CR title, acceptance criteria, and pipeline stats
     And the description includes review findings and cost
+    And a pull request is created on GitHub with this description
+    And the pr_url is stored in the database for use by the release gate

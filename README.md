@@ -88,8 +88,8 @@ API keys can also be configured via the Settings dashboard (encrypted at rest, D
 | **Code Review** | 3 parallel reviewers + diff scope pre-pass | Security, Quality, Spec Compliance |
 | **Rework** | Targeted fixes from review findings | Rework agent |
 | **Rebase** | Rebase onto latest main | Conflict Resolver (if needed) |
-| **Delivery** | Push branch, create PR | None (git ops) |
-| **Release** | Human approves, Controller merges all PRs | None (human gate) |
+| **Delivery** | Push branch to remote | None (git ops) |
+| **Release** | Create PR on GitHub, human approves, Controller merges all PRs | None (GitHub API + human gate) |
 
 ### Feedback Loops
 
@@ -118,10 +118,10 @@ API keys can also be configured via the Settings dashboard (encrypted at rest, D
 ## Testing
 
 ```bash
-# Backend (703 tests, ~6s)
+# Backend
 pytest
 
-# Frontend (496 tests, ~7s)
+# Frontend
 cd frontend && npm test
 
 # Lint
@@ -132,14 +132,14 @@ All infrastructure is mocked in tests -- no database or Redis needed.
 
 ### BDD Specs
 
-32 Gherkin feature files in `features/` describe the full pipeline behaviour:
-- Pipeline stages (12 files) -- one per stage
-- Agent system (5 files) -- execution, phases, backends, prompts, cost tracking
-- Budget and CI (2 files) -- enforcement, webhook integration
-- Security (1 file) -- prompt injection defense
-- Settings (4 files) -- defaults, templates, API keys, audit
-- Frontend (7 files) -- API, events, CR management, analytics
-- Infrastructure (1 file) -- checkpoint/resume
+Gherkin feature files in `features/` describe the full pipeline behaviour:
+- Pipeline stages -- one per stage
+- Agent system -- execution, phases, backends, prompts, cost tracking
+- Budget and CI -- enforcement, webhook integration
+- Security -- prompt injection defense
+- Settings -- defaults, templates, API keys, audit
+- Frontend -- API, events, CR management, analytics
+- Infrastructure -- checkpoint/resume
 
 ## Project Structure
 
@@ -165,8 +165,8 @@ hadron/
 │   ├── src/hooks/           Custom React hooks
 │   └── src/pages/           Route pages (CR list, CR detail, analytics, settings)
 │
-├── tests/                   Backend pytest suite (703 tests)
-├── features/                Gherkin BDD specs (32 files)
+├── tests/                   Backend pytest suite
+├── features/                Gherkin BDD specs
 ├── adr/                     Architecture Decision Record
 ├── k8s/                     Kubernetes manifests (base + local overlay)
 ├── scripts/                 Dev scripts (dummy server, build, deploy, test setup)

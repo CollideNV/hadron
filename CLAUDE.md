@@ -32,8 +32,8 @@ hadron/
 │   ├── src/hooks/           Custom React hooks
 │   └── src/pages/           Route pages (CR list, new CR, CR detail, analytics, settings)
 │
-├── tests/                   Backend pytest suite (703 tests)
-├── features/                Gherkin BDD specs (32 files)
+├── tests/                   Backend pytest suite
+├── features/                Gherkin BDD specs
 ├── adr/                     Architecture Decision Record
 ├── k8s/                     Kubernetes manifests (base + local overlay)
 ├── scripts/                 Dev scripts (build, deploy, test setup, dummy server)
@@ -75,9 +75,9 @@ Key feedback loops: Verification<->Translation, Review<->Rework (with strategic 
 
 ## Testing
 
-- **Backend:** `pytest` -- 703 tests in `tests/`, async auto-detected, all infra mocked (no DB/Redis needed). Run: `pytest`
-- **Frontend:** `vitest` -- 496 tests co-located as `*.test.ts(x)` next to source. Run: `cd frontend && npm test`
-- **BDD specs:** `features/*.feature` -- 32 Gherkin files describing pipeline behaviour
+- **Backend:** `pytest` -- `tests/`, async auto-detected, all infra mocked (no DB/Redis needed). Run: `pytest`
+- **Frontend:** `vitest` -- co-located as `*.test.ts(x)` next to source. Run: `cd frontend && npm test`
+- **BDD specs:** `features/*.feature` -- Gherkin files describing pipeline behaviour
 - **Dummy server:** `scripts/dummy_server.py` -- standalone FastAPI server with deterministic fake events. No LLM, no Postgres, no Redis.
 - **See `AGENTS.md`** for detailed test patterns, mocking conventions, and example code.
 

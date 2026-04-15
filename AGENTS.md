@@ -139,7 +139,7 @@ cd frontend && npm run dev
 The dummy server provides:
 - `GET /api/pipeline/list` — returns one CR (`CR-demo-001`)
 - `GET /api/pipeline/{cr_id}` — returns CR detail with repo status
-- `GET /api/events/stream?cr_id=...` — SSE stream of all 114 events at ~25/sec
+- `GET /api/events/stream?cr_id=...` — SSE stream of all events
 - All other endpoints (trigger, intervene, resume, nudge, etc.) return stub responses
 
 The event stream covers: intake, worktree setup, behaviour translation/verification, implementation (explore/plan/act phases with tool calls), review (3 parallel reviewers, round 1 fails, rework, round 2 passes), rebase, delivery, and completion. Includes `stage_diff` events with realistic unified diffs and Gherkin feature files.
@@ -178,6 +178,8 @@ The frontend at `frontend/` consumes these backend endpoints:
 | `/api/settings/models` | GET/PUT | `ModelSettings` |
 | `/api/settings/backends` | GET | `BackendModels[]` |
 | `/api/settings/opencode-endpoints` | GET/PUT | `OpenCodeEndpoint[]` |
+| `/api/pipeline/{cr_id}/release` | GET | `{cr_id, cr_status, ready_for_release, repos[]}` |
+| `/api/pipeline/{cr_id}/release/approve` | POST | `{cr_id, status, repos_merged, repos_skipped}` |
 
 Frontend types are defined in `frontend/src/api/types.ts` and must stay in sync with the backend response shapes in `src/hadron/controller/routes/`.
 
