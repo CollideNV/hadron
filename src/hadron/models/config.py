@@ -64,3 +64,11 @@ class BootstrapConfig(BaseModel):
         default="http://localhost:4317",
         description="OTLP gRPC endpoint for trace export.",
     )
+    embed_sse: bool = Field(
+        default=True,
+        description="Embed SSE event routes in the controller. Set to false when running a separate SSE gateway.",
+    )
+    embed_orchestrator: bool = Field(
+        default=True,
+        description="Embed orchestrator mutation routes in the controller. Set to false when running a separate orchestrator.",
+    )

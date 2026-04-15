@@ -14,11 +14,15 @@ CR Source ──> Intake ──> Behaviour Specs ──> Implementation ──> 
                └────────────────── Control Room (pause / redirect / intervene) ─┘
 ```
 
-**One pipeline, three process types:**
+**One pipeline, five process types:**
 
-- **Controller** -- Always-on FastAPI service. Handles intake, dashboard API, SSE events, worker spawning, and release coordination.
+- **Dashboard API** (controller) -- Always-on FastAPI service. Serves analytics, settings, pipeline status, config mutations, and the React frontend.
+- **Orchestrator** -- FastAPI service for pipeline mutations: intake, worker spawning, interventions, release coordination. Scales to zero via KEDA when idle.
+- **SSE Gateway** -- Lightweight, always-on FastAPI service (~64Mi). Handles real-time event streaming and proxies CI webhooks to the orchestrator.
 - **Worker** -- Ephemeral K8s pod (one per repo per CR). Runs the full pipeline: specs -> TDD -> review -> push PR -> terminate.
 - **Scanner** -- Background CronJob that builds landscape knowledge of your repos.
+
+All three API services share the same Docker image with different entry points. In local dev, a single process serves everything (controlled by `HADRON_EMBED_SSE` and `HADRON_EMBED_ORCHESTRATOR` flags, both defaulting to `true`).
 
 ## Quick Start
 
@@ -73,6 +77,8 @@ All prefixed with `HADRON_`:
 | `HADRON_LOG_FORMAT` | No | `text` (coloured) or `json` (structured) (default: `text`) |
 | `HADRON_OTEL_ENABLED` | No | Enable OpenTelemetry tracing (default: `false`) |
 | `HADRON_OTLP_ENDPOINT` | No | OTLP gRPC endpoint for traces (default: `http://localhost:4317`) |
+| `HADRON_EMBED_SSE` | No | Embed SSE routes in controller (default: `true`). Set `false` when running separate gateway. |
+| `HADRON_EMBED_ORCHESTRATOR` | No | Embed orchestrator routes in controller (default: `true`). Set `false` when running separate orchestrator. |
 
 API keys can also be configured via the Settings dashboard (encrypted at rest, DB keys override env vars).
 
@@ -92,7 +98,7 @@ API keys can also be configured via the Settings dashboard (encrypted at rest, D
 | **Rework** | Targeted fixes from review findings | Rework agent |
 | **Rebase** | Rebase onto latest main | Conflict Resolver (if needed) |
 | **Delivery** | Push branch to remote | None (git ops) |
-| **Release** | Create PR on GitHub, human approves, Controller merges all PRs | None (GitHub API + human gate) |
+| **Release** | Create PR on GitHub, human approves, Orchestrator merges all PRs | None (GitHub API + human gate) |
 
 ### Feedback Loops
 
@@ -152,9 +158,11 @@ hadron/
 ├── src/hadron/              Python backend (pip-installable, src-layout)
 │   ├── agent/               Agent backends, tool execution, prompt composition
 │   ├── config/              Bootstrap config, defaults, API key resolution
-│   ├── controller/          FastAPI app, REST routes, job spawning
+│   ├── controller/          Dashboard API app, read routes, settings mutations
 │   ├── db/                  SQLAlchemy models, Alembic migrations
 │   ├── events/              Redis event bus, intervention manager
+│   ├── gateway/             SSE Gateway app (lightweight, always-on)
+│   ├── orchestrator/        Orchestrator app (intake, interventions, release)
 │   ├── git/                 WorktreeManager, URL parsing, repo detection
 │   ├── models/              PipelineState, CR models, events
 │   ├── observability/       Structured logging, Prometheus metrics, OpenTelemetry tracing

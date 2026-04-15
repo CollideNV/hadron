@@ -6,3 +6,6 @@ resources:
   - postgres.yaml
   - redis.yaml
   - controller-deployment.yaml
+  - gateway-deployment.yaml
+  - orchestrator-deployment.yaml
+  - keda-scaledobject.yaml

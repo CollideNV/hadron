@@ -1,0 +1,56 @@
+# KEDA ScaledObject — scales the controller Deployment from 0 to N replicas.
+#
+# Requires KEDA to be installed in the cluster:
+#   helm repo add kedacore https://kedacore.github.io/charts
+#   helm install keda kedacore/keda --namespace keda --create-namespace
+#
+# The controller scales to zero after 5 minutes of inactivity, and wakes up
+# when any of these conditions are met:
+#   1. Redis stream has pending CRs (primary trigger)
+#   2. Cron schedule keeps at least 1 replica during business hours (optional)
+#
+# When the controller is scaled to zero, incoming HTTP requests are queued
+# by KEDA's HTTP add-on or the Ingress controller's retry logic until a
+# pod is ready (~5-10s cold start).
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: hadron-redis-auth
+  namespace: hadron
+spec:
+  env:
+    - parameter: address
+      name: HADRON_REDIS_URL
+      containerName: orchestrator
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: hadron-orchestrator
+  namespace: hadron
+  labels:
+    app: hadron-orchestrator
+spec:
+  scaleTargetRef:
+    name: hadron-orchestrator
+  minReplicaCount: 0
+  maxReplicaCount: 3
+  cooldownPeriod: 300          # 5 minutes idle before scaling to zero
+  pollingInterval: 15          # Check triggers every 15 seconds
+  advanced:
+    restoreToOriginalReplicaCount: false
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 120
+  triggers:
+    # Scale up when there are active pipeline runs.
+    # The controller increments this key when accepting a CR and decrements
+    # on completion/failure. KEDA checks the value periodically.
+    - type: redis
+      metadata:
+        address: hadron-redis.hadron.svc.cluster.local:6379
+        listName: "hadron:active_cr_count"
+        listLength: "1"
+        enableTLS: "false"
+        databaseIndex: "0"

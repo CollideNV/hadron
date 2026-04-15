@@ -1,7 +1,13 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: hadron-controller
+  name: hadron-dashboard
+  namespace: hadron
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hadron-orchestrator
   namespace: hadron
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -20,11 +26,11 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: hadron-controller-job-manager
+  name: hadron-orchestrator-job-manager
   namespace: hadron
 subjects:
   - kind: ServiceAccount
-    name: hadron-controller
+    name: hadron-orchestrator
     namespace: hadron
 roleRef:
   kind: Role

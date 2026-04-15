@@ -9,9 +9,11 @@ hadron/
 ├── src/hadron/              Python backend (pip-installable, src-layout)
 │   ├── agent/               Agent backend, tool execution, prompt composition
 │   ├── config/              Bootstrap config, defaults, limits
-│   ├── controller/          FastAPI app, REST routes, job spawning
+│   ├── controller/          Dashboard API app, read routes, settings mutations
 │   ├── db/                  SQLAlchemy models, Alembic migrations
 │   ├── events/              Redis event bus, intervention manager
+│   ├── gateway/             SSE Gateway app (lightweight, always-on)
+│   ├── orchestrator/        Orchestrator app (intake, interventions, release)
 │   ├── git/                 WorktreeManager, URL parsing, repo detection
 │   ├── models/              PipelineState, CR models, events
 │   ├── observability/       Structured logging, Prometheus metrics, OTel tracing

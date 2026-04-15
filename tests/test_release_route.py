@@ -226,8 +226,8 @@ class TestApproveRelease:
         event_bus = AsyncMock()
         app = _make_app(factory, event_bus=event_bus)
 
-        with patch("hadron.controller.routes.release.is_pr_approved", AsyncMock(return_value=True)), \
-             patch("hadron.controller.routes.release.merge_pull_request", AsyncMock(return_value={"sha": "abc", "message": "ok"})):
+        with patch("hadron.controller.routes.release_ops.is_pr_approved", AsyncMock(return_value=True)), \
+             patch("hadron.controller.routes.release_ops.merge_pull_request", AsyncMock(return_value={"sha": "abc", "message": "ok"})):
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
@@ -258,7 +258,7 @@ class TestApproveRelease:
         factory, _ = _build_session_factory_for_approve(cr, repos)
         app = _make_app(factory, event_bus=AsyncMock())
 
-        with patch("hadron.controller.routes.release.is_pr_approved", AsyncMock(return_value=False)):
+        with patch("hadron.controller.routes.release_ops.is_pr_approved", AsyncMock(return_value=False)):
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
@@ -276,8 +276,8 @@ class TestApproveRelease:
 
         from hadron.git.github import GitHubAPIError
 
-        with patch("hadron.controller.routes.release.is_pr_approved", AsyncMock(return_value=True)), \
-             patch("hadron.controller.routes.release.merge_pull_request", AsyncMock(side_effect=GitHubAPIError(405, "conflict"))):
+        with patch("hadron.controller.routes.release_ops.is_pr_approved", AsyncMock(return_value=True)), \
+             patch("hadron.controller.routes.release_ops.merge_pull_request", AsyncMock(side_effect=GitHubAPIError(405, "conflict"))):
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:

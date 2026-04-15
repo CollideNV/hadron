@@ -74,19 +74,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.session_factory = session_factory
     app.state.redis = redis_client
     app.state.event_bus = RedisEventBus(redis_client)
-    app.state.intervention_mgr = InterventionManager(redis_client)
 
-    if _running_in_k8s() or os.environ.get("HADRON_USE_K8S", "").lower() in ("1", "true", "yes"):
-        logger.info("Using K8sJobSpawner")
-        app.state.job_spawner = K8sJobSpawner(redis=redis_client)
-    else:
-        logger.info("Using SubprocessJobSpawner")
-        app.state.job_spawner = SubprocessJobSpawner(redis=redis_client)
-
-    # Start background listener for worker metrics via Redis pub/sub
+    # Only set up orchestrator dependencies when orchestrator is embedded
     metrics_task = None
-    if metrics_available():
-        metrics_task = asyncio.create_task(_metrics_listener(redis_client))
+    if cfg.embed_orchestrator:
+        if _running_in_k8s() or os.environ.get("HADRON_USE_K8S", "").lower() in ("1", "true", "yes"):
+            logger.info("Using K8sJobSpawner")
+            app.state.job_spawner = K8sJobSpawner(redis=redis_client)
+        else:
+            logger.info("Using SubprocessJobSpawner")
+            app.state.job_spawner = SubprocessJobSpawner(redis=redis_client)
+
+        app.state.intervention_mgr = InterventionManager(redis_client)
+
+        # Start background listener for worker metrics via Redis pub/sub
+        if metrics_available():
+            metrics_task = asyncio.create_task(_metrics_listener(redis_client))
+    else:
+        logger.info("Orchestrator routes disabled (running as Dashboard API)")
 
     yield
 
@@ -109,27 +114,42 @@ def create_app() -> FastAPI:
 
     app.add_middleware(RequestIdMiddleware)
 
+    # --- Dashboard routes (always included) ---
     from hadron.controller.routes.analytics import router as analytics_router
     from hadron.controller.routes.audit import router as audit_router
     from hadron.controller.routes.health import router as health_router
-    from hadron.controller.routes.intake import router as intake_router
     from hadron.controller.routes.metrics import router as metrics_router
-    from hadron.controller.routes.events import router as events_router
-    from hadron.controller.routes.pipeline import router as pipeline_router
+    from hadron.controller.routes.pipeline_queries import router as pipeline_queries_router
     from hadron.controller.routes.prompts import router as prompts_router
-    from hadron.controller.routes.release import router as release_router
+    from hadron.controller.routes.release_queries import router as release_queries_router
     from hadron.controller.routes.settings import router as settings_router
 
     app.include_router(health_router)
     app.include_router(metrics_router)
     app.include_router(analytics_router, prefix="/api")
     app.include_router(audit_router, prefix="/api")
-    app.include_router(intake_router, prefix="/api")
-    app.include_router(events_router, prefix="/api")
-    app.include_router(pipeline_router, prefix="/api")
-    app.include_router(release_router, prefix="/api")
+    app.include_router(pipeline_queries_router, prefix="/api")
+    app.include_router(release_queries_router, prefix="/api")
     app.include_router(prompts_router, prefix="/api")
     app.include_router(settings_router, prefix="/api")
+
+    # SSE routes are embedded by default (local dev). When running a separate
+    # SSE gateway (K8s), set HADRON_EMBED_SSE=false to exclude them.
+    cfg = load_bootstrap_config()
+    if cfg.embed_sse:
+        from hadron.controller.routes.events import router as events_router
+        app.include_router(events_router, prefix="/api")
+
+    # Orchestrator routes are embedded by default (local dev). When running a
+    # separate orchestrator (K8s), set HADRON_EMBED_ORCHESTRATOR=false.
+    if cfg.embed_orchestrator:
+        from hadron.controller.routes.intake import router as intake_router
+        from hadron.controller.routes.pipeline_ops import router as pipeline_ops_router
+        from hadron.controller.routes.release_ops import router as release_ops_router
+
+        app.include_router(intake_router, prefix="/api")
+        app.include_router(pipeline_ops_router, prefix="/api")
+        app.include_router(release_ops_router, prefix="/api")
 
     # Instrument FastAPI with OpenTelemetry if available
     try:

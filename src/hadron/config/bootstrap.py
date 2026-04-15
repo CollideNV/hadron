@@ -24,6 +24,8 @@ _FIELD_MAP = {
     "log_format": "LOG_FORMAT",
     "otel_enabled": "OTEL_ENABLED",
     "otlp_endpoint": "OTLP_ENDPOINT",
+    "embed_sse": "EMBED_SSE",
+    "embed_orchestrator": "EMBED_ORCHESTRATOR",
 }
 
 

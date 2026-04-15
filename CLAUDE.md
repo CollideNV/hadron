@@ -15,9 +15,11 @@ hadron/
 ├── src/hadron/              Python backend (pip-installable, src-layout)
 │   ├── agent/               Agent backend, tool execution, prompt composition
 │   ├── config/              Bootstrap config, defaults, limits, API key resolution
-│   ├── controller/          FastAPI app, REST routes, job spawning
+│   ├── controller/          Dashboard API app, read routes, settings mutations
 │   ├── db/                  SQLAlchemy models, Alembic migrations
 │   ├── events/              Redis event bus, intervention manager
+│   ├── gateway/             SSE Gateway app (lightweight, always-on)
+│   ├── orchestrator/        Orchestrator app (intake, interventions, release)
 │   ├── git/                 WorktreeManager, URL parsing, repo detection
 │   ├── models/              PipelineState, CR models, events
 │   ├── observability/       Structured logging, Prometheus metrics, OTel tracing
@@ -57,11 +59,13 @@ Intake -> Worktree Setup -> Translation <-> Verification -> Implementation -> [E
 
 Key feedback loops: Verification<->Translation, Review<->Rework (with strategic pivot to fresh implementation if stalled), CI<->Implementation.
 
-### Three Process Types
+### Five Process Types
 
 | Process | Lifecycle | Role |
 |---------|-----------|------|
-| **Controller** | Always-on (2+ replicas), lightweight | Intake, dashboard API (FastAPI), webhooks, job spawning, release coordination |
+| **Dashboard API** (controller) | Always-on (1 replica) | Dashboard REST API, analytics, settings, pipeline reads, config mutations |
+| **Orchestrator** | KEDA-managed (0→N replicas) | Intake, job spawning, interventions, CI webhooks, release coordination |
+| **SSE Gateway** | Always-on (1 replica, ~64Mi) | Real-time event streaming (SSE) for the dashboard |
 | **Worker** | Ephemeral K8s Job (one per repo per CR) | LangGraph executor, agent backends, worktree management |
 | **Scanner** | CronJob (nightly + incremental) | Landscape knowledge building via LLM analysis |
 

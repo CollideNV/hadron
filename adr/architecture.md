@@ -14,11 +14,13 @@ Hadron is an AI-powered SDLC pipeline that transforms change requests into produ
 - **Core:** LangGraph-based orchestration with feedback loops, persistent checkpointing, and human intervention
 - **Tail:** Delivery strategies (`self_contained`, `push_and_wait`, `push_and_forget`)
 
-### Three Process Types
+### Five Process Types
 
 | Process | Lifecycle | Role |
 |---------|-----------|------|
-| **Controller** | Always-on (2+ replicas) | FastAPI REST API, dashboard serving, SSE events, worker spawning, release coordination |
+| **Dashboard API** (controller) | Always-on (1 replica) | Read-only dashboard REST API, analytics, settings + config mutations, static file serving |
+| **Orchestrator** | KEDA-managed (0→N replicas) | Intake, worker spawning, interventions, CI webhooks, release coordination |
+| **SSE Gateway** | Always-on (1 replica, ~64Mi) | Real-time event streaming (SSE), CI webhook proxy to orchestrator |
 | **Worker** | Ephemeral K8s Job (one per repo per CR) | LangGraph pipeline executor, agent backends, worktree management |
 | **Scanner** | CronJob (nightly + incremental) | Landscape knowledge building via LLM analysis |
 
@@ -125,8 +127,24 @@ Hadron is an AI-powered SDLC pipeline that transforms change requests into produ
 - `structlog` is a core dependency — all logging uses structlog wrapping stdlib. JSON output for machines, coloured text for humans (controlled by `HADRON_LOG_FORMAT`).
 - `prometheus-client` and `opentelemetry-*` are optional `[observability]` extras. All metrics/tracing code gracefully no-ops when not installed.
 - Three config fields: `log_format` (text/json), `otel_enabled` (bool), `otlp_endpoint` (OTLP gRPC endpoint).
-- Trace context propagated from controller to worker via `TRACEPARENT` env var, creating a single distributed trace per CR.
-- Workers publish metrics to Redis pub/sub before terminating; the controller's background listener records them into Prometheus.
+- Trace context propagated from orchestrator to worker via `TRACEPARENT` env var, creating a single distributed trace per CR.
+- Workers publish metrics to Redis pub/sub before terminating; the orchestrator's background listener records them into Prometheus.
+
+### AD-12: Three-Way Process Split + KEDA Scale-to-Zero
+
+**Decision:** Split the monolithic controller into three separate processes: Dashboard API (reads + config), Orchestrator (mutations + job spawning), and SSE Gateway (event streaming). Use KEDA to scale the orchestrator to zero when idle.
+
+**Rationale:** The original controller mixed read-only dashboard queries, workflow orchestration (job spawning, interventions, release coordination), and long-lived SSE connections. These have fundamentally different scaling profiles and RBAC needs:
+- Dashboard reads are always-on and lightweight — no K8s Job RBAC needed.
+- Orchestration is bursty — should scale to zero when idle, needs job-manager RBAC.
+- SSE connections are long-lived — prevent the process from scaling to zero.
+
+**Consequence:**
+- **SSE Gateway** (`hadron.gateway.app`) — always-on, tiny footprint (~64Mi RAM). Serves `/api/events/stream` and `/api/events/global-stream`. Proxies CI webhooks to the orchestrator. Same container image, different entry point.
+- **Dashboard API** (`hadron.controller.app`) — always-on (1 replica). Serves analytics, audit, pipeline reads, settings (reads + mutations), prompts, metrics, and static frontend files. No K8s Job RBAC needed.
+- **Orchestrator** (`hadron.orchestrator.app`) — KEDA-managed, scales 0→N based on active CR count in Redis. Handles intake, resume, CI results, interventions, nudges, and release approval. Only process with job-manager RBAC.
+- **`HADRON_EMBED_SSE`** and **`HADRON_EMBED_ORCHESTRATOR`** env vars (default `true`) control whether SSE/orchestrator routes are included in the controller. Local dev keeps the single-process experience; K8s sets both to `false`.
+- **Routing:** K8s Ingress routes `/api/events/*` to gateway, mutation endpoints to orchestrator, everything else to dashboard.
 
 ---
 
@@ -313,13 +331,15 @@ Single installation serves multiple tenants on shared infrastructure:
 
 ### Kubernetes-Native
 
-- **Controller:** Deployment (2+ replicas), lightweight, always-on
+- **Dashboard API** (controller): Always-on Deployment (1 replica), serves reads + config mutations + frontend static files
+- **Orchestrator:** KEDA-managed Deployment (0→N replicas), scales to zero when idle, only SA with job-manager RBAC
+- **SSE Gateway:** Always-on Deployment (1 replica, ~64Mi), handles long-lived SSE connections, proxies CI webhooks to orchestrator
 - **Worker:** Job (one per repo per CR), ephemeral, auto-cleanup after 1 hour
 - **Scanner:** CronJob (nightly + incremental)
 
 ### Worker Pod Specification
 
-Workers run as K8s Jobs spawned by the Controller via `K8sJobSpawner`:
+Workers run as K8s Jobs spawned by the Orchestrator via `K8sJobSpawner`:
 
 | Aspect | Detail |
 |--------|--------|
