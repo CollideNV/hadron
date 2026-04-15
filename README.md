@@ -46,7 +46,7 @@ docker compose up -d                                    # Postgres + Redis
 
 # Backend
 source .venv/bin/activate
-pip install -e ".[all-backends,dev]"
+pip install -e ".[all-backends,observability,dev]"
 alembic upgrade head                                    # Run migrations
 uvicorn hadron.controller.app:create_app --factory      # Controller on :8000
 
@@ -70,6 +70,9 @@ All prefixed with `HADRON_`:
 | `HADRON_ENCRYPTION_KEY` | For API key mgmt | Fernet key for encrypting stored API keys |
 | `HADRON_WORKSPACE_DIR` | No | Working directory for git worktrees (default: `/tmp/hadron`) |
 | `HADRON_LOG_LEVEL` | No | Logging level (default: `INFO`) |
+| `HADRON_LOG_FORMAT` | No | `text` (coloured) or `json` (structured) (default: `text`) |
+| `HADRON_OTEL_ENABLED` | No | Enable OpenTelemetry tracing (default: `false`) |
+| `HADRON_OTLP_ENDPOINT` | No | OTLP gRPC endpoint for traces (default: `http://localhost:4317`) |
 
 API keys can also be configured via the Settings dashboard (encrypted at rest, DB keys override env vars).
 
@@ -113,6 +116,7 @@ API keys can also be configured via the Settings dashboard (encrypted at rest, D
 | **Frontend** | React 19, TypeScript, Vite, Tailwind CSS, Recharts |
 | **Database** | PostgreSQL (checkpoints, config, audit), Redis (events, interventions) |
 | **AI** | Anthropic Claude (primary), OpenAI, Google Gemini (configurable per stage) |
+| **Observability** | structlog (structured logging), Prometheus (metrics), OpenTelemetry (tracing) |
 | **Infrastructure** | Kubernetes, Docker Compose (local dev) |
 
 ## Testing
@@ -153,6 +157,7 @@ hadron/
 │   ├── events/              Redis event bus, intervention manager
 │   ├── git/                 WorktreeManager, URL parsing, repo detection
 │   ├── models/              PipelineState, CR models, events
+│   ├── observability/       Structured logging, Prometheus metrics, OpenTelemetry tracing
 │   ├── pipeline/            LangGraph graph, stage nodes, conditional edges
 │   ├── prompts/v1/          Markdown prompt templates per agent role
 │   ├── security/            Command validators, diff scope analysis, encryption

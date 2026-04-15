@@ -20,6 +20,7 @@ hadron/
 │   ├── events/              Redis event bus, intervention manager
 │   ├── git/                 WorktreeManager, URL parsing, repo detection
 │   ├── models/              PipelineState, CR models, events
+│   ├── observability/       Structured logging, Prometheus metrics, OTel tracing
 │   ├── pipeline/            LangGraph graph, stage nodes, edges
 │   ├── prompts/v1/          Markdown prompt templates per agent role
 │   ├── security/            Command validators, diff scope analysis, encryption
@@ -72,6 +73,7 @@ Key feedback loops: Verification<->Translation, Review<->Rework (with strategic 
 - **Six-layer prompt injection defense:** Input screening -> spec firewall -> adversarial security review -> deterministic diff scope analysis -> runtime containment -> optional human review.
 - **Context management:** Compaction at 80k tokens, full context reset with structured handoff at 150k tokens.
 - **Budget enforcement:** Every conditional edge checks cost against configurable limit (default $10). Pause reasons inferred from state.
+- **Observability stack:** structlog (structured logging, core dep), Prometheus metrics + OpenTelemetry tracing (optional `[observability]` extra). See `adr/architecture.md` Section 6 and AD-11.
 
 ## Testing
 
@@ -115,3 +117,4 @@ cd frontend && npm run dev                                # Start frontend on :5
 - **Database-driven runtime config** -- all settings editable via dashboard/API without redeployment
 - **Behaviour specs as firewall** -- code agents work from Gherkin specs, not raw CR text
 - **Pipeline never silently fails** -- always pauses with a decision screen for the human
+- **Vendor-neutral observability** -- structlog + Prometheus + OTLP; no vendor SDKs; works on any cloud

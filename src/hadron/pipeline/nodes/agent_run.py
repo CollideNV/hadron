@@ -8,6 +8,8 @@ from typing import Any
 from hadron.agent.base import AgentCallbacks, AgentResult, AgentTask, OnAgentEvent, OnToolCall, PhaseConfig
 from hadron.events.bus import EventBus
 from hadron.models.events import EventType, PipelineEvent
+from hadron.observability.logging import bind_contextvars
+from hadron.observability.tracing import set_span_attributes, span
 from hadron.pipeline.nodes.callbacks import (
     emit_cost_update,
     make_agent_event_emitter,
@@ -44,6 +46,8 @@ async def run_agent(
     loop_iteration: int = 0,
 ) -> AgentRunResult:
     """Run an agent with full event emission, cost tracking, and conversation storage."""
+    bind_contextvars(agent_role=role)
+
     # Per-stage model/backend lookup from DB settings (highest priority)
     stage_cfg = ctx.stage_models.get(stage, {}) if ctx.stage_models else {}
     act_cfg = stage_cfg.get("act") if stage_cfg else None
@@ -94,7 +98,15 @@ async def run_agent(
             },
         ))
 
-    result = await effective_backend.execute(task)
+    with span(f"agent.{role}", {"role": role, "stage": stage, "model": effective_model}) as s:
+        result = await effective_backend.execute(task)
+        set_span_attributes(s, {
+            "input_tokens": result.input_tokens,
+            "output_tokens": result.output_tokens,
+            "cost_usd": result.cost_usd,
+            "tool_calls_count": len(result.tool_calls),
+            "round_count": result.round_count,
+        })
     await emit_cost_update(ctx.event_bus, cr_id, stage, result, prior_cost)
 
     conv_key = ""

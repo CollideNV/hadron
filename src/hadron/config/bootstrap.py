@@ -21,6 +21,9 @@ _FIELD_MAP = {
     "controller_host": "CONTROLLER_HOST",
     "controller_port": "CONTROLLER_LISTEN_PORT",
     "log_level": "LOG_LEVEL",
+    "log_format": "LOG_FORMAT",
+    "otel_enabled": "OTEL_ENABLED",
+    "otlp_endpoint": "OTLP_ENDPOINT",
 }
 
 

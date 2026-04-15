@@ -19,12 +19,16 @@ from dotenv import load_dotenv
 load_dotenv()  # read .env before anything else
 from typing import Any
 
+import structlog
+
 from hadron.agent.prompt import PromptComposer
 from hadron.config.bootstrap import load_bootstrap_config
 from hadron.config.defaults import DEFAULT_MODEL, get_config_snapshot
 from hadron.git.url import extract_repo_name
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.resume import pick_resume_node
+from hadron.observability.logging import bind_contextvars, configure_logging
+from hadron.observability.tracing import configure_tracing
 from hadron.pipeline.graph import build_pipeline_graph
 from hadron.worker.infra import WorkerInfra, connect
 from hadron.worker.state import (
@@ -34,7 +38,7 @@ from hadron.worker.state import (
     persist_result,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.stdlib.get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -216,13 +220,20 @@ class _RedisLogHandler(logging.Handler):
 async def run_worker(cr_id: str, repo_url: str, repo_name: str = "", default_branch: str = "main") -> None:
     """Execute the pipeline for a single repo within a CR."""
     cfg = load_bootstrap_config()
-    logging.basicConfig(level=getattr(logging, cfg.log_level), format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    configure_logging(level=cfg.log_level, log_format=cfg.log_format)
+    configure_tracing(
+        enabled=cfg.otel_enabled,
+        otlp_endpoint=cfg.otlp_endpoint,
+        service_name="hadron-worker",
+    )
 
     if not repo_name:
         repo_name = extract_repo_name(repo_url)
 
+    bind_contextvars(cr_id=cr_id, repo_name=repo_name)
+
     safe_url = re.sub(r"://[^@]+@", "://***@", repo_url)
-    logger.info("Worker starting for CR %s, repo %s (%s)", cr_id, repo_name, safe_url)
+    logger.info("worker_starting", repo_url=safe_url)
 
     infra = connect(cfg)
 
@@ -231,7 +242,17 @@ async def run_worker(cr_id: str, repo_url: str, repo_name: str = "", default_bra
     redis_log_key = f"hadron:cr:{cr_id}:{repo_name}:worker_log"
     await infra.redis_client.delete(redis_log_key)
     redis_handler = _RedisLogHandler(infra.redis_client, cr_id, repo_name)
-    redis_handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
+    # Always emit JSON to Redis so the dashboard log viewer can parse entries
+    redis_handler.setFormatter(structlog.stdlib.ProcessorFormatter(
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog.stdlib.add_logger_name,
+            structlog.stdlib.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            structlog.processors.JSONRenderer(),
+        ],
+    ))
     logging.getLogger().addHandler(redis_handler)
 
     try:

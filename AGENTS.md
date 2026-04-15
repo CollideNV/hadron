@@ -14,6 +14,7 @@ hadron/
 │   ├── events/              Redis event bus, intervention manager
 │   ├── git/                 WorktreeManager, URL parsing, repo detection
 │   ├── models/              PipelineState, CR models, events
+│   ├── observability/       Structured logging, Prometheus metrics, OTel tracing
 │   ├── pipeline/            LangGraph graph, stage nodes, edges
 │   ├── prompts/v1/          Markdown prompt templates per agent role
 │   ├── security/            Command validators, diff scope analysis
@@ -41,6 +42,48 @@ hadron/
 - **Agent tool-use loop** is manual (anthropic SDK `messages.create`, not a higher-level framework)
 - **Git ops** via `asyncio.create_subprocess_exec`
 - **Env vars** all prefixed `HADRON_`
+- **Logging** uses `structlog` (not stdlib `logging` directly) — see Observability section below
+
+## Observability
+
+### Logging
+
+All logging uses `structlog` wrapping stdlib. Get a logger with:
+
+```python
+import structlog
+logger = structlog.stdlib.get_logger(__name__)
+```
+
+Do **not** use `logging.getLogger()` directly — structlog processors won't be applied.
+
+Use structured key-value pairs instead of f-strings:
+
+```python
+# Good
+logger.info("worker_starting", repo_url=safe_url, cr_id=cr_id)
+
+# Bad
+logger.info(f"Worker starting for {safe_url}")
+```
+
+Context is automatically bound via `bind_contextvars()` in the pipeline_node decorator (`cr_id`, `stage`) and run_agent (`agent_role`).
+
+### Metrics (optional)
+
+Prometheus metrics are defined in `observability/metrics.py`. All metric objects gracefully no-op when `prometheus-client` is not installed. Record metrics by importing and calling the metric objects directly — no guards needed.
+
+### Tracing (optional)
+
+OpenTelemetry spans are created via the `span()` context manager from `observability/tracing.py`. When tracing is disabled (default), `span()` is a zero-cost no-op.
+
+```python
+from hadron.observability.tracing import span, set_span_attributes
+
+with span("my_operation", {"key": "value"}) as s:
+    result = do_work()
+    set_span_attributes(s, {"result_size": len(result)})
+```
 
 ## Testing
 
@@ -180,6 +223,7 @@ The frontend at `frontend/` consumes these backend endpoints:
 | `/api/settings/opencode-endpoints` | GET/PUT | `OpenCodeEndpoint[]` |
 | `/api/pipeline/{cr_id}/release` | GET | `{cr_id, cr_status, ready_for_release, repos[]}` |
 | `/api/pipeline/{cr_id}/release/approve` | POST | `{cr_id, status, repos_merged, repos_skipped}` |
+| `/metrics` | GET | Prometheus text exposition (requires `[observability]` extra) |
 
 Frontend types are defined in `frontend/src/api/types.ts` and must stay in sync with the backend response shapes in `src/hadron/controller/routes/`.
 

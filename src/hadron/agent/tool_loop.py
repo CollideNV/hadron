@@ -13,6 +13,7 @@ from hadron.agent.cost import _compute_model_cost
 from hadron.agent.messages import _serialize_messages
 from hadron.agent.rate_limiter import call_with_retry
 from hadron.agent.tools import execute_tool
+from hadron.observability.tracing import set_span_attributes, span
 from hadron.config.limits import (
     COMPACT_INPUT_TOKEN_THRESHOLD,
     CONTEXT_RESET_TOKEN_THRESHOLD,
@@ -132,18 +133,23 @@ async def run_tool_loop(
                     "round": round_num,
                 })
 
-        retry_result = await call_with_retry(
-            lambda: client.messages.create(
-                model=cfg.model,
-                max_tokens=cfg.max_tokens,
-                system=system,
-                tools=tools,
-                messages=messages,
-            ),
-            label=cfg.phase,
-            on_retry=_on_retry,
-        )
-        response = retry_result.value
+        with span(f"llm.{cfg.phase}", {"model": cfg.model, "round": round_num}) as llm_span:
+            retry_result = await call_with_retry(
+                lambda: client.messages.create(
+                    model=cfg.model,
+                    max_tokens=cfg.max_tokens,
+                    system=system,
+                    tools=tools,
+                    messages=messages,
+                ),
+                label=cfg.phase,
+                on_retry=_on_retry,
+            )
+            response = retry_result.value
+            set_span_attributes(llm_span, {
+                "input_tokens": response.usage.input_tokens,
+                "output_tokens": response.usage.output_tokens,
+            })
         total_throttle_count += retry_result.throttle_count
         total_throttle_seconds += retry_result.throttle_seconds
 
@@ -176,7 +182,8 @@ async def run_tool_loop(
                     "tool": tu.name, "input": tu.input, "round": round_num,
                 })
 
-            result_text = await execute_tool(tu.name, tu.input, cfg.working_dir)
+            with span(f"tool.{tu.name}", {"tool": tu.name}):
+                result_text = await execute_tool(tu.name, tu.input, cfg.working_dir)
 
             if cfg.on_event:
                 await cfg.on_event("tool_result", {

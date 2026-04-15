@@ -9,6 +9,7 @@ import sys
 from typing import Any, Protocol
 
 from hadron.git.url import extract_repo_name
+from hadron.observability.tracing import inject_trace_context
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ class SubprocessJobSpawner:
         worker_key = f"{cr_id}:{repo_name}"
         logger.info("Spawning subprocess worker for CR %s, repo %s", cr_id, repo_name)
         env = dict(os.environ)
+        env.update(inject_trace_context())
         if extra_env:
             env.update(extra_env)
         proc = await asyncio.create_subprocess_exec(
@@ -186,6 +188,10 @@ class K8sJobSpawner:
                                             )
                                         ),
                                     ),
+                                ] + [
+                                    # Trace context propagation (controller → worker)
+                                    client.V1EnvVar(name=k, value=v)
+                                    for k, v in inject_trace_context().items()
                                 ] + [
                                     # DB-stored keys override K8s secrets when set
                                     client.V1EnvVar(name=k, value=v)

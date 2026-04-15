@@ -1,6 +1,6 @@
 # Hadron — Architecture Decision Record
 
-**Version:** 1.1 — April 2026
+**Version:** 1.2 — April 2026
 
 This document captures the key architectural decisions, their rationale, and the resulting technical design of Hadron. It replaces the earlier multi-file ideation documents that were used during the initial design phase.
 
@@ -114,6 +114,19 @@ Hadron is an AI-powered SDLC pipeline that transforms change requests into produ
 **Rationale:** Operators need to adjust models, loop limits, and budgets without SSH access. Only bootstrap config (DB URL, Redis URL, encryption key) stays in env vars.
 
 **Consequence:** PipelineSetting table with JSON values. Backend template system for per-model configuration. API keys encrypted with Fernet at rest.
+
+### AD-11: Vendor-Neutral Observability Stack
+
+**Decision:** Use structlog (structured logging), Prometheus (metrics), and OpenTelemetry (distributed tracing) — all open standards with no vendor lock-in.
+
+**Rationale:** Production K8s deployments need structured logs, metrics, and tracing. JSON logs + Prometheus text exposition + OTLP work on AWS, GCP, self-hosted, or any cloud without vendor SDKs. Prometheus and OpenTelemetry are optional extras (`pip install hadron[observability]`) so the core stays lightweight. Tracing is disabled by default with zero overhead.
+
+**Consequence:**
+- `structlog` is a core dependency — all logging uses structlog wrapping stdlib. JSON output for machines, coloured text for humans (controlled by `HADRON_LOG_FORMAT`).
+- `prometheus-client` and `opentelemetry-*` are optional `[observability]` extras. All metrics/tracing code gracefully no-ops when not installed.
+- Three config fields: `log_format` (text/json), `otel_enabled` (bool), `otlp_endpoint` (OTLP gRPC endpoint).
+- Trace context propagated from controller to worker via `TRACEPARENT` env var, creating a single distributed trace per CR.
+- Workers publish metrics to Redis pub/sub before terminating; the controller's background listener records them into Prometheus.
 
 ---
 
@@ -230,9 +243,38 @@ All three reviewers include few-shot calibration examples showing expected sever
 
 ## 6. Observability and Control
 
+### Observability Stack
+
+Three layers, all vendor-neutral open standards (see AD-11):
+
+| Layer | Technology | Scope | Install |
+|-------|-----------|-------|---------|
+| **Structured Logging** | structlog wrapping stdlib | All processes | Core dependency |
+| **Metrics** | Prometheus via `prometheus-client` | Controller + Workers (relayed via Redis pub/sub) | Optional `[observability]` extra |
+| **Distributed Tracing** | OpenTelemetry with OTLP gRPC export | Controller → Worker → Agent → Tool | Optional `[observability]` extra |
+
+**Structured Logging** — `configure_logging()` sets up structlog for the entire process. Output format is controlled by `HADRON_LOG_FORMAT`: `text` (coloured, human-friendly, default) or `json` (newline-delimited JSON for log aggregators). Context is bound automatically per pipeline stage (`cr_id`, `stage`) and agent invocation (`agent_role`) via structlog's contextvars. The Redis log handler always emits JSON regardless of the console format so the dashboard log viewer can parse entries.
+
+**Prometheus Metrics** — Controller exposes `/metrics` in Prometheus text exposition format. Key metrics:
+- `hadron_http_requests_total`, `hadron_http_request_duration_seconds` — HTTP layer
+- `hadron_pipeline_runs_total`, `hadron_pipeline_stage_duration_seconds`, `hadron_pipeline_cost_usd_total` — pipeline layer
+- `hadron_agent_runs_total`, `hadron_agent_tokens_total`, `hadron_agent_tool_calls_total` — agent layer
+- `hadron_active_workers` — gauge for running worker pods
+
+Workers publish metrics payloads to a Redis pub/sub channel (`hadron:metrics`) before terminating. The controller runs a background listener that records these into Prometheus counters/histograms.
+
+**Distributed Tracing** — Disabled by default (`HADRON_OTEL_ENABLED=false`). When enabled, spans are exported via OTLP gRPC to `HADRON_OTLP_ENDPOINT`. Span hierarchy:
+1. `pipeline.{stage}` — one span per pipeline node
+2. `agent.{role}` — one span per agent invocation
+3. `backend.{phase}` — explore / plan / act phases
+4. `llm.{phase}` — individual LLM API calls
+5. `tool.{name}` — individual tool executions
+
+Trace context is propagated from the controller to the worker via the `TRACEPARENT` environment variable, creating a single distributed trace for the entire CR lifecycle.
+
 ### Event System
 
-Redis Streams + SSE provide three levels of observability:
+Redis Streams + SSE provide three levels of real-time observability:
 - **Pipeline level** — stage started/completed, pause/resume
 - **Stage level** — diffs, review findings, test results
 - **Agent level** — tool calls, outputs, compaction events

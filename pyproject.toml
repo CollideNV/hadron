@@ -24,6 +24,7 @@ dependencies = [
     "httpx>=0.28",
     "python-dotenv>=1.0",
     "cryptography>=42.0",
+    "structlog>=24.1",
 ]
 
 [project.optional-dependencies]
@@ -31,6 +32,13 @@ gemini = ["google-genai>=1.0"]
 openai = ["openai>=1.0"]
 opencode = ["openai>=1.0"]
 all-backends = ["google-genai>=1.0", "openai>=1.0"]
+observability = [
+    "prometheus-client>=0.21",
+    "opentelemetry-api>=1.20",
+    "opentelemetry-sdk>=1.20",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.20",
+    "opentelemetry-instrumentation-fastapi>=0.41b0",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",

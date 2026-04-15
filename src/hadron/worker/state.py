@@ -10,6 +10,7 @@ from sqlalchemy import select, update
 from hadron.config.defaults import BRANCH_PREFIX, get_config_snapshot
 from hadron.db.models import CRRun, RepoRun, RunSummary
 from hadron.models.events import EventType, PipelineEvent
+from hadron.observability.metrics import publish_worker_metrics
 from hadron.observability.retrospective import generate_retrospective
 from hadron.observability.summary import build_run_summary
 from hadron.worker.infra import WorkerInfra
@@ -113,6 +114,14 @@ async def persist_result(
         session.add(RunSummary(**summary_dict))
         await session.commit()
 
+    try:
+        await publish_worker_metrics(infra.redis_client, {
+            "status": "failed",
+            "cr_id": cr_id,
+            "repo_name": repo_name,
+        })
+    except Exception:
+        logger.debug("Failed to publish worker failure metrics", exc_info=True)
     await infra.event_bus.emit(PipelineEvent(
         cr_id=cr_id, event_type=EventType.RETROSPECTIVE, stage="retrospective",
         data={"repo": repo_name, "insights": retrospective},
@@ -134,6 +143,17 @@ async def persist_result(
             cr_id=cr_id, event_type=EventType.PIPELINE_FAILED, stage="worker",
             data={**event_data, "error": final_state.get("error", "")},
         ))
+
+    # Publish metrics to controller via Redis pub/sub
+    try:
+        await publish_worker_metrics(infra.redis_client, {
+            "status": final_status,
+            "cr_id": cr_id,
+            "repo_name": repo_name,
+            "cost_usd": final_cost,
+        })
+    except Exception:
+        logger.debug("Failed to publish worker metrics", exc_info=True)
 
     logger.info(
         "Worker completed for CR %s repo %s with status=%s cost=$%.4f",

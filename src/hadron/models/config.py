@@ -52,3 +52,15 @@ class BootstrapConfig(BaseModel):
     controller_host: str = Field(default="0.0.0.0")
     controller_port: int = Field(default=8000)
     log_level: str = Field(default="INFO")
+    log_format: str = Field(
+        default="text",
+        description="Log output format: 'text' (colored, human-friendly) or 'json' (structured).",
+    )
+    otel_enabled: bool = Field(
+        default=False,
+        description="Enable OpenTelemetry tracing. Requires [observability] extra.",
+    )
+    otlp_endpoint: str = Field(
+        default="http://localhost:4317",
+        description="OTLP gRPC endpoint for trace export.",
+    )

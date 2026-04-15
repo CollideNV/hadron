@@ -12,6 +12,8 @@ from langgraph.types import RunnableConfig
 from hadron.events.bus import EventBus
 from hadron.models.events import EventType, PipelineEvent
 from hadron.models.pipeline_state import PipelineState
+from hadron.observability.logging import bind_contextvars
+from hadron.observability.tracing import record_span_error, set_span_attributes, span
 from hadron.pipeline.nodes.context import NodeContext
 
 # Re-export from sub-modules for backwards compatibility
@@ -73,6 +75,7 @@ def pipeline_node(stage: str) -> Callable:
         ) -> dict[str, Any]:
             ctx = NodeContext.from_config(config)
             cr_id = state["cr_id"]
+            bind_contextvars(cr_id=cr_id, stage=stage)
 
             entered_at = time.time()
 
@@ -80,32 +83,36 @@ def pipeline_node(stage: str) -> Callable:
                 cr_id=cr_id, event_type=EventType.STAGE_ENTERED, stage=stage,
             ))
 
-            try:
-                result = await fn(state, ctx, cr_id)
-                completed_at = time.time()
-                for entry in result.get("stage_history", []):
-                    entry.setdefault("entered_at", entered_at)
-                    entry.setdefault("completed_at", completed_at)
-                return result
-            except Exception as exc:
-                logger.exception(
-                    "%s node crashed (CR %s): %s", stage, cr_id, exc,
-                )
-                await ctx.event_bus.emit(PipelineEvent(
-                    cr_id=cr_id,
-                    event_type=EventType.STAGE_COMPLETED,
-                    stage=stage,
-                    data={"error": str(exc)},
-                ))
-                return {
-                    "current_stage": stage,
-                    "status": "paused",
-                    "error": f"{stage} node failed: {exc}",
-                    "stage_history": [
-                        {"stage": stage, "status": "error", "error": str(exc),
-                         "entered_at": entered_at, "completed_at": time.time()},
-                    ],
-                }
+            with span(f"pipeline.{stage}", {"cr_id": cr_id, "stage": stage}) as s:
+                try:
+                    result = await fn(state, ctx, cr_id)
+                    completed_at = time.time()
+                    duration = completed_at - entered_at
+                    set_span_attributes(s, {"duration_seconds": duration})
+                    for entry in result.get("stage_history", []):
+                        entry.setdefault("entered_at", entered_at)
+                        entry.setdefault("completed_at", completed_at)
+                    return result
+                except Exception as exc:
+                    record_span_error(s, exc)
+                    logger.exception(
+                        "%s node crashed (CR %s): %s", stage, cr_id, exc,
+                    )
+                    await ctx.event_bus.emit(PipelineEvent(
+                        cr_id=cr_id,
+                        event_type=EventType.STAGE_COMPLETED,
+                        stage=stage,
+                        data={"error": str(exc)},
+                    ))
+                    return {
+                        "current_stage": stage,
+                        "status": "paused",
+                        "error": f"{stage} node failed: {exc}",
+                        "stage_history": [
+                            {"stage": stage, "status": "error", "error": str(exc),
+                             "entered_at": entered_at, "completed_at": time.time()},
+                        ],
+                    }
 
         # Copy metadata but NOT __wrapped__/__annotations__ — LangGraph uses
         # inspect.signature() which follows __wrapped__, and the inner fn has

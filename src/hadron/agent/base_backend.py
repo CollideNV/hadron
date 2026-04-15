@@ -9,6 +9,7 @@ from hadron.agent.base import AgentEvent, AgentResult, AgentTask, ModelStats, On
 from hadron.agent.phases import PhasePromptBuilder
 from hadron.agent.tool_loop import ToolLoopConfig, _PhaseResult
 from hadron.agent.tools import make_tools
+from hadron.observability.tracing import set_span_attributes, span
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +104,8 @@ class BaseAgentBackend:
         if task.on_event:
             await task.on_event("phase_started", {"phase": "explore", "model": task.explore_model})
 
-        result = await self._call_tool_loop(ToolLoopConfig(
+        with span("backend.explore", {"model": task.explore_model}) as s:
+            result = await self._call_tool_loop(ToolLoopConfig(
             model=task.explore_model,
             system_prompt=self._prompts.build_explore_system(task),
             user_prompt=task.user_prompt,
@@ -113,7 +115,12 @@ class BaseAgentBackend:
             max_tokens=task.max_tokens,
             on_event=task.on_event,
             phase="explore",
-        ))
+            ))
+            set_span_attributes(s, {
+                "rounds": result.round_count,
+                "input_tokens": result.input_tokens,
+                "output_tokens": result.output_tokens,
+            })
         acc.add(result, task.explore_model)
 
         if task.on_event:
@@ -136,12 +143,17 @@ class BaseAgentBackend:
         if task.on_event:
             await task.on_event("phase_started", {"phase": "plan", "model": task.plan_model})
 
-        result = await self._call_plan(
-            model=task.plan_model,
-            system_prompt=self._prompts.build_plan_system(task),
-            user_prompt=self._prompts.build_plan_user(task, exploration_summary),
-            max_tokens=task.max_tokens,
-        )
+        with span("backend.plan", {"model": task.plan_model}) as s:
+            result = await self._call_plan(
+                model=task.plan_model,
+                system_prompt=self._prompts.build_plan_system(task),
+                user_prompt=self._prompts.build_plan_user(task, exploration_summary),
+                max_tokens=task.max_tokens,
+            )
+            set_span_attributes(s, {
+                "input_tokens": result.input_tokens,
+                "output_tokens": result.output_tokens,
+            })
         acc.add(result, task.plan_model)
 
         if task.on_event and result.output:
@@ -173,19 +185,25 @@ class BaseAgentBackend:
         if task.on_event and act_user_prompt != task.user_prompt:
             await task.on_event("prompt", {"text": act_user_prompt})
 
-        result = await self._call_tool_loop(ToolLoopConfig(
-            model=task.model,
-            system_prompt=act_system_prompt,
-            user_prompt=act_user_prompt,
-            tools=make_tools(task.allowed_tools, task.working_directory),
-            working_dir=task.working_directory or ".",
-            max_rounds=task.max_tool_rounds,
-            max_tokens=task.max_tokens,
-            on_event=task.on_event,
-            on_tool_call=task.on_tool_call,
-            nudge_poll=task.nudge_poll,
-            phase="act",
-        ))
+        with span("backend.act", {"model": task.model}) as s:
+            result = await self._call_tool_loop(ToolLoopConfig(
+                model=task.model,
+                system_prompt=act_system_prompt,
+                user_prompt=act_user_prompt,
+                tools=make_tools(task.allowed_tools, task.working_directory),
+                working_dir=task.working_directory or ".",
+                max_rounds=task.max_tool_rounds,
+                max_tokens=task.max_tokens,
+                on_event=task.on_event,
+                on_tool_call=task.on_tool_call,
+                nudge_poll=task.nudge_poll,
+                phase="act",
+            ))
+            set_span_attributes(s, {
+                "rounds": result.round_count,
+                "input_tokens": result.input_tokens,
+                "output_tokens": result.output_tokens,
+            })
         acc.add(result, task.model)
 
         if task.on_event and is_multiphase:

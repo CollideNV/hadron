@@ -1,1 +1,1 @@
-"""Observability — run summaries, error classification, and retrospective insights."""
+"""Observability — structured logging, metrics, tracing, run summaries, and retrospective insights."""

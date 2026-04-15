@@ -9,6 +9,9 @@ data:
   HADRON_REDIS_URL: "redis://hadron-redis:6379/0"
   HADRON_WORKSPACE_DIR: "/workspace"
   HADRON_LOG_LEVEL: "INFO"
+  HADRON_LOG_FORMAT: "json"
+  HADRON_OTEL_ENABLED: "false"
+  HADRON_OTLP_ENDPOINT: "http://localhost:4317"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -26,6 +29,10 @@ spec:
     metadata:
       labels:
         app: hadron-controller
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: hadron-controller
       containers:
