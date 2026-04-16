@@ -105,6 +105,12 @@ async def trigger_pipeline(
                 act = impl_cfg.get("act") if isinstance(impl_cfg, dict) else None
                 if act and act.get("model"):
                     config_snapshot["pipeline"]["default_model"] = act["model"]
+            # Propagate opencode base_url to worker's BackendPool. Bare
+            # "opencode" backend (no named endpoint) reads cfg.opencode_base_url,
+            # so the template's base_url must land in the snapshot for the
+            # worker to pick it up at startup.
+            if template_data.get("backend") == "opencode" and template_data.get("base_url"):
+                config_snapshot["pipeline"]["opencode_base_url"] = template_data["base_url"]
 
     default_branch = cr.repo_default_branch
 

@@ -274,9 +274,15 @@ async def run_worker(cr_id: str, repo_url: str, repo_name: str = "", default_bra
         config_snapshot = cr_run.config_snapshot_json or get_config_snapshot()
 
         # Inject named OpenCode endpoints into the backend pool
-        opencode_endpoints = config_snapshot.get("pipeline", {}).get("opencode_endpoints", [])
+        pipeline_snapshot = config_snapshot.get("pipeline", {})
+        opencode_endpoints = pipeline_snapshot.get("opencode_endpoints", [])
         if opencode_endpoints:
             infra.backend_pool.set_opencode_endpoints(opencode_endpoints)
+        # Bare "opencode" backend reads cfg.opencode_base_url — override from
+        # the frozen template's base_url when present.
+        snapshot_opencode_url = pipeline_snapshot.get("opencode_base_url")
+        if snapshot_opencode_url:
+            cfg.opencode_base_url = snapshot_opencode_url
 
         # Build PromptComposer from snapshot if available
         snapshot_prompts = config_snapshot.get("prompts")

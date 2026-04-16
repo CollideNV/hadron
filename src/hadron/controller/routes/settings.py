@@ -260,8 +260,12 @@ async def update_templates(
             stage: cfg.model_dump() if hasattr(cfg, "model_dump") else cfg
             for stage, cfg in data["stages"].items()
         }
-        # Don't persist computed fields
-        data.pop("available_models", None)
+        # Built-in templates re-derive available_models from the cost table on
+        # load, so we don't persist it for them. Custom (opencode) templates
+        # have no cost-table fallback — their available_models is user-supplied
+        # and must round-trip through the database.
+        if t.slug in _BUILTIN_SLUGS:
+            data.pop("available_models", None)
         data.pop("is_default", None)
         templates_json.append(data)
 

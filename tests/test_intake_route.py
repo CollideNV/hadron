@@ -332,6 +332,79 @@ class TestTemplateSlug:
         # Falls back to "anthropic" when no DB default
         assert snapshot["pipeline"]["template_slug"] == "anthropic"
 
+    async def test_opencode_template_base_url_in_snapshot(self) -> None:
+        """Custom opencode template's base_url is frozen into the config snapshot.
+
+        Bare "opencode" backend in the worker reads cfg.opencode_base_url, so
+        the template's base_url must land in pipeline.opencode_base_url for
+        the worker to pick it up — otherwise BackendPool.get("opencode")
+        falls back to the empty default and connection fails.
+        """
+        session = AsyncMock()
+        session.added = []  # type: ignore[attr-defined]
+        session.add = MagicMock(side_effect=lambda o: session.added.append(o))  # type: ignore[attr-defined]
+
+        from types import SimpleNamespace
+
+        opencode_template = {
+            "slug": "opencode-ollama",
+            "display_name": "Local Ollama",
+            "backend": "opencode",
+            "stages": {
+                "implementation": {
+                    "act": {"backend": "opencode", "model": "qwen3:7b"},
+                    "explore": {"backend": "opencode", "model": "qwen3:7b"},
+                    "plan": {"backend": "opencode", "model": "qwen3:7b"},
+                },
+            },
+            "base_url": "http://host.docker.internal:11434/v1",
+            "available_models": ["qwen3:7b"],
+        }
+
+        call_idx = {"i": 0}
+
+        # Execute calls in order:
+        # 0. duplicate external_id check (returns None — CR has no external_id)
+        # 1. backend_templates load (returns the opencode template list)
+        # 2. pipeline_defaults load (returns None)
+        async def fake_execute(stmt):
+            idx = call_idx["i"]
+            call_idx["i"] += 1
+            result = MagicMock()
+            if idx == 1:
+                result.scalar_one_or_none.return_value = SimpleNamespace(
+                    key="backend_templates", value_json=[opencode_template],
+                )
+            else:
+                result.scalar_one_or_none.return_value = None
+            return result
+
+        session.execute = fake_execute
+
+        @asynccontextmanager
+        async def factory():
+            yield session
+
+        spawner = AsyncMock()
+        app = _make_app(factory, spawner)
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            resp = await client.post(
+                "/api/pipeline/trigger",
+                json={**_BASE_CR, "template_slug": "opencode-ollama"},
+            )
+
+        assert resp.status_code == 200
+        cr_runs = [o for o in session.added if type(o).__name__ == "CRRun"]
+        assert len(cr_runs) == 1
+        snapshot = cr_runs[0].config_snapshot_json
+        assert snapshot["pipeline"]["template_slug"] == "opencode-ollama"
+        assert snapshot["pipeline"]["default_backend"] == "opencode"
+        assert snapshot["pipeline"]["opencode_base_url"] == "http://host.docker.internal:11434/v1"
+
     async def test_builtin_template_populates_stage_models(self) -> None:
         """Built-in template stage_models are frozen into config snapshot even without DB rows."""
         factory, session = _mock_session_factory()

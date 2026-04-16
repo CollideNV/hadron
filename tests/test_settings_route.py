@@ -209,6 +209,57 @@ class TestUpdateTemplates:
         assert mock_session.add.call_count == 2
 
     @pytest.mark.asyncio
+    async def test_persists_available_models_for_opencode_templates(self):
+        """Custom opencode templates must round-trip available_models.
+
+        Built-in templates re-derive the list from the cost table, but opencode
+        templates have no such fallback — if the handler strips available_models
+        it is lost forever.
+        """
+        # Capture whatever the handler writes to PipelineSetting.value_json.
+        added: list = []
+        mock_session = AsyncMock()
+        mock_session.add = MagicMock(side_effect=lambda obj: added.append(obj))
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None  # no existing row
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        @asynccontextmanager
+        async def factory():
+            yield mock_session
+
+        app = _make_app(factory)
+
+        payload = [
+            {
+                "slug": "opencode-ollama",
+                "display_name": "Local Ollama",
+                "backend": "opencode",
+                "stages": {
+                    "intake": {
+                        "act": {"backend": "opencode", "model": "qwen3:7b"},
+                        "explore": None,
+                        "plan": None,
+                    },
+                },
+                "base_url": "http://localhost:11434/v1",
+                "available_models": ["qwen3:7b", "llama3.2"],
+                "is_default": False,
+            },
+        ]
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.put("/api/settings/templates", json=payload)
+
+        assert resp.status_code == 200
+        # The PipelineSetting that was added should carry available_models through.
+        setting = next(o for o in added if getattr(o, "key", None) == "backend_templates")
+        persisted = setting.value_json[0]
+        assert persisted["slug"] == "opencode-ollama"
+        assert persisted["available_models"] == ["qwen3:7b", "llama3.2"]
+
+    @pytest.mark.asyncio
     async def test_rejects_duplicate_slugs(self):
         factory, _ = _build_factory()
         app = _make_app(factory)

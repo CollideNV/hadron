@@ -305,14 +305,41 @@ export default function TemplateEditor({ templates, onChange, defaultSlug, onDef
                   type="text"
                   data-testid="opencode-models"
                   value={(activeTemplate.available_models ?? []).join(", ")}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const newModels = e.target.value
+                      .split(",")
+                      .map((m) => m.trim())
+                      .filter(Boolean);
+                    // Reconcile stage models against the new list: any stage
+                    // whose model is not a member of newModels is replaced with
+                    // newModels[0]. This covers three cases:
+                    //   1. Freshly-added template — stage.model is "" and the
+                    //      <select> visually shows newModels[0] but React state
+                    //      never fires onChange, so we'd save empty strings.
+                    //   2. User mid-typing — the previous fallback ("h") is no
+                    //      longer in newModels (["hf"]), so it re-reconciles.
+                    //   3. User deletes a model from the list that a stage
+                    //      pointed at — the dropdown would render invalid
+                    //      state without coercion.
+                    const set = new Set(newModels);
+                    const fallback = newModels[0];
+                    const reconcile = (p: PhaseModel | null | undefined) => {
+                      if (!p) return p ?? null;
+                      return set.has(p.model) ? p : { ...p, model: fallback ?? p.model };
+                    };
+                    const updatedStages: Record<string, StageConfig> = {};
+                    for (const [stage, cfg] of Object.entries(activeTemplate.stages)) {
+                      updatedStages[stage] = {
+                        act: reconcile(cfg.act) as PhaseModel,
+                        explore: reconcile(cfg.explore) ?? null,
+                        plan: reconcile(cfg.plan) ?? null,
+                      };
+                    }
                     updateTemplate(activeTemplate.slug, {
-                      available_models: e.target.value
-                        .split(",")
-                        .map((m) => m.trim())
-                        .filter(Boolean),
-                    })
-                  }
+                      available_models: newModels,
+                      stages: updatedStages,
+                    });
+                  }}
                   placeholder="qwen3:7b, llama3.2"
                   className="w-full bg-bg border border-border-subtle rounded px-2 py-1 text-sm text-text"
                 />
