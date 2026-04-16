@@ -29,7 +29,7 @@ hadron/
 │   ├── utils/               Shared utilities (text truncation)
 │   └── worker/              CLI entry point for pipeline execution
 │
-├── frontend/                React 19 + Vite + TypeScript dashboard
+├── frontend/                React + Vite + TypeScript dashboard
 │   ├── src/api/             API client, SSE stream, TypeScript types
 │   ├── src/components/      UI components (pipeline, agents, events, diff, etc.)
 │   ├── src/hooks/           Custom React hooks
@@ -59,14 +59,16 @@ Intake -> Worktree Setup -> Translation <-> Verification -> Implementation -> [E
 
 Key feedback loops: Verification<->Translation, Review<->Rework (with strategic pivot to fresh implementation if stalled), CI<->Implementation.
 
-### Five Process Types
+### Seven Process Types
 
 | Process | Lifecycle | Role |
 |---------|-----------|------|
+| **Frontend** (nginx) | Always-on (1 replica, ~32Mi) | Serves the React SPA on port 8080 and reverse-proxies `/api/*` to the right backend |
 | **Dashboard API** (controller) | Always-on (1 replica) | Dashboard REST API, analytics, settings, pipeline reads, config mutations |
 | **Orchestrator** | KEDA-managed (0→N replicas) | Intake, job spawning, interventions, CI webhooks, release coordination |
 | **SSE Gateway** | Always-on (1 replica, ~64Mi) | Real-time event streaming (SSE) for the dashboard |
 | **Worker** | Ephemeral K8s Job (one per repo per CR) | LangGraph executor, agent backends, worktree management |
+| **E2E Runner** | Persistent K8s Job (one per CR-repo, spawned at Worktree Setup when E2E is detected, ttl 1h) | Runs Playwright suites outside the worker; Redis-dispatched, shared log stream with worker |
 | **Scanner** | CronJob (nightly + incremental) | Landscape knowledge building via LLM analysis |
 
 ### Key Patterns

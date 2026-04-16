@@ -2,7 +2,7 @@
 
 ## Coding Conventions
 
-- Use Python 3.12+ with type hints
+- Use Python with type hints
 - FastAPI for all endpoints
 - Use `async def` for route handlers
 - Tests use `pytest` with `fastapi.testclient.TestClient`

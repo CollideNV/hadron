@@ -132,6 +132,19 @@ async def worktree_setup_node(state: PipelineState, ctx: NodeContext, cr_id: str
 
     dir_tree = await wm.get_directory_tree(worktree_path)
 
+    # Spawn the CR-scoped E2E runner pod eagerly when E2E is declared —
+    # boot happens in parallel with translation/implementation so the pod
+    # is warm by the time the E2E node runs. `ensure_running` is idempotent
+    # (label lookup) so a resuming worker won't duplicate the pod.
+    if ctx.e2e_lifecycle and e2e_test_commands:
+        try:
+            from hadron.pipeline.e2e_runner import derive_stack_hint
+            stack_hint = derive_stack_hint(languages, str(worktree_path))
+            await ctx.e2e_lifecycle.ensure_running(cr_id, repo_name, stack_hint)
+        except Exception as e:  # noqa: BLE001 — runner failure should not abort worktree setup
+            logger.warning("E2E runner ensure_running failed for %s (%s:%s): %s",
+                           repo_name, cr_id, repo_name, e)
+
     updated_repo = {
         **repo,
         "repo_name": repo_name,

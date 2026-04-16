@@ -31,9 +31,16 @@ kubectl -n hadron wait --for=condition=ready pod -l app=hadron-orchestrator --ti
 echo "==> Waiting for SSE Gateway..."
 kubectl -n hadron wait --for=condition=ready pod -l app=hadron-gateway --timeout=60s
 
+echo "==> Waiting for Frontend (nginx)..."
+kubectl -n hadron wait --for=condition=ready pod -l app=hadron-frontend --timeout=60s
+
 echo ""
-echo "Hadron deployed! Port-forward the services:"
+echo "Hadron deployed! Open the dashboard via:"
 echo ""
+echo "  kubectl -n hadron port-forward svc/hadron-frontend 8080:8080"
+echo "  open http://localhost:8080/"
+echo ""
+echo "For direct backend access (debugging):"
 echo "  kubectl -n hadron port-forward svc/hadron-controller 8000:8000 &"
 echo "  kubectl -n hadron port-forward svc/hadron-orchestrator 8002:8002 &"
 echo "  kubectl -n hadron port-forward svc/hadron-gateway 8001:8001 &"
@@ -42,5 +49,3 @@ echo "Health checks:"
 echo "  curl http://localhost:8000/healthz   # Dashboard API"
 echo "  curl http://localhost:8002/healthz   # Orchestrator"
 echo "  curl http://localhost:8001/healthz   # SSE Gateway"
-echo ""
-echo "Dashboard: http://localhost:8000/"

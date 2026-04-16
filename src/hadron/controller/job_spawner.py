@@ -127,7 +127,7 @@ class K8sJobSpawner:
                     ),
                     spec=client.V1PodSpec(
                         restart_policy="Never",
-                        service_account_name="hadron-controller",
+                        service_account_name="hadron-worker",
                         containers=[
                             client.V1Container(
                                 name="worker",

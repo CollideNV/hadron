@@ -12,6 +12,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import re
 
 from dotenv import load_dotenv
@@ -120,6 +121,14 @@ async def _execute_pipeline(
         ))
 
         pipeline_cfg = config_snapshot.get("pipeline", {})
+
+        # E2E runner lifecycle — only wired in K8s mode. Local dev / tests keep
+        # the subprocess path in pipeline.testing.run_test_command untouched.
+        e2e_lifecycle = None
+        if os.environ.get("HADRON_E2E_USE_K8S", "").lower() == "true":
+            from hadron.pipeline.e2e_runner import E2ERunnerLifecycle
+            e2e_lifecycle = E2ERunnerLifecycle(redis=infra.redis_client)
+
         runnable_config = {
             "configurable": {
                 "thread_id": f"{cr_id}:{repo_name}",
@@ -135,6 +144,7 @@ async def _execute_pipeline(
                 "default_backend": pipeline_cfg.get("default_backend", "claude"),
                 "redis": infra.redis_client,
                 "prompt_composer": prompt_composer,
+                "e2e_lifecycle": e2e_lifecycle,
             }
         }
 

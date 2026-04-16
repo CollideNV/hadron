@@ -86,6 +86,15 @@ async def release_node(state: PipelineState, ctx: NodeContext, cr_id: str) -> di
         data={"repos": [r["repo_name"] for r in release_results]},
     ))
 
+    # Terminal node — tell the CR-scoped E2E runner pod (if any) to exit.
+    # Job ttl_seconds_after_finished is the backstop if this is missed.
+    if ctx.e2e_lifecycle:
+        try:
+            await ctx.e2e_lifecycle.shutdown(cr_id, ri.repo_name)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("E2E runner shutdown failed for %s:%s: %s",
+                           cr_id, ri.repo_name, e)
+
     return {
         "release_results": release_results,
         "current_stage": "release",

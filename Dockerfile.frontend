@@ -1,0 +1,18 @@
+# Stage 1: build React assets
+FROM node:24-slim AS frontend-build
+
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm install
+COPY frontend/ ./
+RUN npm run build
+
+# Stage 2: serve with nginx
+FROM nginx:alpine
+
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=frontend-build /frontend/dist /usr/share/nginx/html
+
+EXPOSE 8080
+
+CMD ["nginx", "-g", "daemon off;"]

@@ -6,7 +6,7 @@ paths:
 
 # Frontend Conventions
 
-- React 19 + Vite + TypeScript
+- React + Vite + TypeScript
 - Tests co-located as `*.test.ts(x)` next to source, using vitest
 - Run all: `cd frontend && npm test` | watch: `cd frontend && npm run test:watch`
 - Environment: jsdom, globals enabled (`describe`, `it`, `expect`, `vi` available without import)

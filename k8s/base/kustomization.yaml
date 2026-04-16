@@ -8,4 +8,5 @@ resources:
   - controller-deployment.yaml
   - gateway-deployment.yaml
   - orchestrator-deployment.yaml
+  - frontend-deployment.yaml
   - keda-scaledobject.yaml

@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
     from hadron.agent.base import AgentBackend
     from hadron.events.interventions import InterventionManager
+    from hadron.pipeline.e2e_runner import E2ERunnerLifecycle
 
 
 @dataclass
@@ -41,6 +42,7 @@ class NodeContext:
     stage_models: dict[str, dict] = field(default_factory=dict)
     default_backend: str = "claude"
     backend_pool: Any = None
+    e2e_lifecycle: E2ERunnerLifecycle | None = None
 
     @classmethod
     def from_config(cls, config: RunnableConfig) -> NodeContext:
@@ -62,4 +64,5 @@ class NodeContext:
             stage_models=configurable.get("stage_models", {}),
             default_backend=configurable.get("default_backend", "claude"),
             backend_pool=configurable.get("backend_pool"),
+            e2e_lifecycle=configurable.get("e2e_lifecycle"),
         )

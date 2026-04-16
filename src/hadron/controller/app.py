@@ -16,9 +16,7 @@ from typing import Any, AsyncIterator
 
 import redis.asyncio as aioredis
 import structlog
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI
 
 from hadron.config.bootstrap import load_bootstrap_config
 from hadron.db.engine import create_engine, create_session_factory
@@ -93,24 +91,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             metrics_task = asyncio.create_task(_metrics_listener(redis_client))
     else:
         logger.info("Orchestrator routes disabled (running as Dashboard API)")
-        # Set up HTTP client for proxying mutation requests to orchestrator
-        import httpx
-
-        orchestrator_url = os.environ.get(
-            "HADRON_ORCHESTRATOR_URL",
-            "http://hadron-orchestrator:8002",
-        )
-        app.state.orchestrator_url = orchestrator_url
-        app.state.orchestrator_client = httpx.AsyncClient(
-            base_url=orchestrator_url, timeout=30.0,
-        )
 
     yield
 
     if metrics_task:
         metrics_task.cancel()
-    if hasattr(app.state, "orchestrator_client"):
-        await app.state.orchestrator_client.aclose()
     await redis_client.aclose()
     await engine.dispose()
 
@@ -148,18 +133,16 @@ def create_app() -> FastAPI:
     app.include_router(settings_router, prefix="/api")
 
     # SSE routes are embedded by default (local dev). When running a separate
-    # SSE gateway (K8s), set HADRON_EMBED_SSE=false to exclude them.
+    # SSE gateway (K8s), set HADRON_EMBED_SSE=false and let nginx route
+    # /api/events/* straight to the gateway.
     cfg = load_bootstrap_config()
     if cfg.embed_sse:
         from hadron.controller.routes.events import router as events_router
         app.include_router(events_router, prefix="/api")
-    else:
-        from hadron.controller.proxy import mount_gateway_proxy
-
-        mount_gateway_proxy(app)
 
     # Orchestrator routes are embedded by default (local dev). When running a
-    # separate orchestrator (K8s), set HADRON_EMBED_ORCHESTRATOR=false.
+    # separate orchestrator (K8s), set HADRON_EMBED_ORCHESTRATOR=false and let
+    # nginx route mutation endpoints straight to the orchestrator.
     if cfg.embed_orchestrator:
         from hadron.controller.routes.intake import router as intake_router
         from hadron.controller.routes.pipeline_ops import router as pipeline_ops_router
@@ -168,12 +151,6 @@ def create_app() -> FastAPI:
         app.include_router(intake_router, prefix="/api")
         app.include_router(pipeline_ops_router, prefix="/api")
         app.include_router(release_ops_router, prefix="/api")
-    else:
-        # Proxy mutation routes to the orchestrator so the frontend
-        # can talk to a single origin regardless of the deployment mode.
-        from hadron.controller.proxy import mount_orchestrator_proxy
-
-        mount_orchestrator_proxy(app)
 
     # Instrument FastAPI with OpenTelemetry if available
     try:
@@ -184,25 +161,5 @@ def create_app() -> FastAPI:
             FastAPIInstrumentor.instrument_app(app)
     except ImportError:
         pass
-
-    # Mount frontend static files (after API routes so they don't shadow them)
-    frontend_dir = os.environ.get(
-        "HADRON_FRONTEND_DIR",
-        str(Path(__file__).resolve().parents[3] / "frontend" / "dist"),
-    )
-    if Path(frontend_dir).is_dir():
-        # Serve static assets (JS, CSS, images) from the dist directory
-        app.mount("/assets", StaticFiles(directory=str(Path(frontend_dir) / "assets")), name="frontend-assets")
-
-        # SPA catch-all: serve index.html for any non-API route so client-side
-        # routing (React Router) works for paths like /cr/<id>.
-        index_html = Path(frontend_dir) / "index.html"
-
-        @app.get("/{full_path:path}")
-        async def _spa_fallback(request: Request, full_path: str) -> FileResponse:
-            # Don't catch API, health, or metrics routes
-            if full_path.startswith(("api/", "livez", "readyz", "healthz", "metrics")):
-                raise HTTPException(status_code=404, detail="Not Found")
-            return FileResponse(index_html)
 
     return app

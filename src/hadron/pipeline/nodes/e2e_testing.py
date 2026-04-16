@@ -14,6 +14,35 @@ from hadron.pipeline.nodes.cr_format import format_cr_section
 from hadron.pipeline.nodes.diff_capture import emit_stage_diff
 from hadron.pipeline.testing import _find_free_port, run_test_command
 
+
+async def _run_e2e(
+    ctx: NodeContext,
+    ri: RepoInfo,
+    cr_id: str,
+    command: str,
+    env: dict[str, str],
+    timeout: int,
+) -> tuple[bool, str]:
+    """Route E2E execution through the runner pod when in K8s mode.
+
+    Subprocess path stays live for local dev and the dummy_server flow.
+    """
+    if ctx.e2e_lifecycle:
+        from hadron.pipeline.e2e_runner import build_e2e_contract
+        contract = build_e2e_contract(
+            worktree_path=ri.worktree_path,
+            command=command,
+            env=env,
+            timeout=timeout,
+            languages=ri.languages,
+        )
+        return await ctx.e2e_lifecycle.submit(
+            cr_id, ri.repo_name, ri.worktree_path, contract,
+        )
+    return await run_test_command(
+        ri.worktree_path, command, cr_id, timeout=timeout, extra_env=env,
+    )
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,11 +74,22 @@ async def e2e_testing_node(state: PipelineState, ctx: NodeContext, cr_id: str) -
 
     e2e_command = ri.e2e_test_commands[0]
 
-    # Allocate ephemeral ports so multiple workers don't collide
-    e2e_env = {
-        "HADRON_TEST_BACKEND_PORT": str(_find_free_port()),
-        "HADRON_TEST_FRONTEND_PORT": str(_find_free_port()),
-    }
+    # Port allocation:
+    # - Subprocess mode: pick free ports on the worker host so concurrent
+    #   workers don't collide.
+    # - K8s mode: the runner pod has its own network namespace, so fixed
+    #   ports are safe and detection logic in build_e2e_contract can key off
+    #   HADRON_TEST_BACKEND_PORT.
+    if ctx.e2e_lifecycle:
+        e2e_env = {
+            "HADRON_TEST_BACKEND_PORT": "8080",
+            "HADRON_TEST_FRONTEND_PORT": "5173",
+        }
+    else:
+        e2e_env = {
+            "HADRON_TEST_BACKEND_PORT": str(_find_free_port()),
+            "HADRON_TEST_FRONTEND_PORT": str(_find_free_port()),
+        }
     logger.info("E2E ports: backend=%s, frontend=%s",
                 e2e_env["HADRON_TEST_BACKEND_PORT"], e2e_env["HADRON_TEST_FRONTEND_PORT"])
 
@@ -60,9 +100,8 @@ async def e2e_testing_node(state: PipelineState, ctx: NodeContext, cr_id: str) -
     )
 
     # Initial E2E test run
-    tests_passing, test_output = await run_test_command(
-        ri.worktree_path, e2e_command, cr_id, timeout=E2E_TEST_TIMEOUT_SECONDS,
-        extra_env=e2e_env,
+    tests_passing, test_output = await _run_e2e(
+        ctx, ri, cr_id, e2e_command, e2e_env, E2E_TEST_TIMEOUT_SECONDS,
     )
 
     await ctx.event_bus.emit(PipelineEvent(
@@ -112,9 +151,8 @@ async def e2e_testing_node(state: PipelineState, ctx: NodeContext, cr_id: str) -
         costs.add(agent_run.result)
 
         # Re-run E2E tests after agent modifications
-        tests_passing, test_output = await run_test_command(
-            ri.worktree_path, e2e_command, cr_id, timeout=E2E_TEST_TIMEOUT_SECONDS,
-            extra_env=e2e_env,
+        tests_passing, test_output = await _run_e2e(
+            ctx, ri, cr_id, e2e_command, e2e_env, E2E_TEST_TIMEOUT_SECONDS,
         )
 
         await ctx.event_bus.emit(PipelineEvent(

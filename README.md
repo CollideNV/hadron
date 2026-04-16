@@ -14,15 +14,16 @@ CR Source ──> Intake ──> Behaviour Specs ──> Implementation ──> 
                └────────────────── Control Room (pause / redirect / intervene) ─┘
 ```
 
-**One pipeline, five process types:**
+**One pipeline, six process types:**
 
-- **Dashboard API** (controller) -- Always-on FastAPI service. Serves analytics, settings, pipeline status, config mutations, and the React frontend.
+- **Frontend** -- nginx container (~32Mi) serving the React SPA on port 8080 and reverse-proxying `/api/*` to the right backend (SSE to gateway, mutations to orchestrator, everything else to dashboard). Single browser-facing origin.
+- **Dashboard API** (controller) -- Always-on FastAPI service. Serves analytics, settings, pipeline status, and config mutations.
 - **Orchestrator** -- FastAPI service for pipeline mutations: intake, worker spawning, interventions, release coordination. Scales to zero via KEDA when idle.
 - **SSE Gateway** -- Lightweight, always-on FastAPI service (~64Mi). Handles real-time event streaming and proxies CI webhooks to the orchestrator.
 - **Worker** -- Ephemeral K8s pod (one per repo per CR). Runs the full pipeline: specs -> TDD -> review -> push PR -> terminate.
 - **Scanner** -- Background CronJob that builds landscape knowledge of your repos.
 
-All three API services share the same Docker image with different entry points. In local dev, a single process serves everything (controlled by `HADRON_EMBED_SSE` and `HADRON_EMBED_ORCHESTRATOR` flags, both defaulting to `true`).
+The three API services share the same Docker image with different entry points. The frontend uses its own nginx image (`hadron-frontend:latest`). In local dev, a single Python process serves everything (controlled by `HADRON_EMBED_SSE` and `HADRON_EMBED_ORCHESTRATOR` flags, both defaulting to `true`).
 
 ## Quick Start
 
@@ -118,8 +119,8 @@ API keys can also be configured via the Settings dashboard (encrypted at rest, D
 
 | Layer | Technology |
 |-------|-----------|
-| **Backend** | Python 3.12+, FastAPI, LangGraph, SQLAlchemy, Alembic |
-| **Frontend** | React 19, TypeScript, Vite, Tailwind CSS, Recharts |
+| **Backend** | Python, FastAPI, LangGraph, SQLAlchemy, Alembic |
+| **Frontend** | React, TypeScript, Vite, Tailwind CSS, Recharts |
 | **Database** | PostgreSQL (checkpoints, config, audit), Redis (events, interventions) |
 | **AI** | Anthropic Claude (primary), OpenAI, Google Gemini (configurable per stage) |
 | **Observability** | structlog (structured logging), Prometheus (metrics), OpenTelemetry (tracing) |
@@ -172,7 +173,7 @@ hadron/
 │   ├── utils/               Shared utilities
 │   └── worker/              CLI entry point for pipeline execution
 │
-├── frontend/                React 19 + Vite + TypeScript dashboard
+├── frontend/                React + Vite + TypeScript dashboard
 │   ├── src/api/             API client, SSE stream, TypeScript types
 │   ├── src/components/      UI components (pipeline, agents, events, diff, settings)
 │   ├── src/hooks/           Custom React hooks

@@ -36,3 +36,24 @@ roleRef:
   kind: Role
   name: hadron-job-manager
   apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hadron-worker
+  namespace: hadron
+---
+# Workers create and manage the per-CR E2E runner Job.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: hadron-worker-job-manager
+  namespace: hadron
+subjects:
+  - kind: ServiceAccount
+    name: hadron-worker
+    namespace: hadron
+roleRef:
+  kind: Role
+  name: hadron-job-manager
+  apiGroup: rbac.authorization.k8s.io

@@ -14,15 +14,19 @@ Hadron is an AI-powered SDLC pipeline that transforms change requests into produ
 - **Core:** LangGraph-based orchestration with feedback loops, persistent checkpointing, and human intervention
 - **Tail:** Delivery strategies (`self_contained`, `push_and_wait`, `push_and_forget`)
 
-### Five Process Types
+### Seven Process Types
 
 | Process | Lifecycle | Role |
 |---------|-----------|------|
-| **Dashboard API** (controller) | Always-on (1 replica) | Read-only dashboard REST API, analytics, settings + config mutations, static file serving |
+| **Frontend** (nginx) | Always-on (1 replica, ~32Mi) | Serves the React SPA on port 8080; reverse-proxies `/api/*` to dashboard/orchestrator/gateway so the browser talks to a single origin |
+| **Dashboard API** (controller) | Always-on (1 replica) | Read-only dashboard REST API, analytics, settings + config mutations |
 | **Orchestrator** | KEDA-managed (0→N replicas) | Intake, worker spawning, interventions, CI webhooks, release coordination |
 | **SSE Gateway** | Always-on (1 replica, ~64Mi) | Real-time event streaming (SSE), CI webhook proxy to orchestrator |
 | **Worker** | Ephemeral K8s Job (one per repo per CR) | LangGraph pipeline executor, agent backends, worktree management |
+| **E2E Runner** | Persistent K8s Job (one per CR-repo when E2E detected, ttl 1h) | Runs Playwright suites outside the worker; Redis-dispatched tarballs, shared log stream with worker |
 | **Scanner** | CronJob (nightly + incremental) | Landscape knowledge building via LLM analysis |
+
+The frontend container is the only browser-facing origin. nginx routes `/api/events/*` to the gateway (buffering disabled for SSE), orchestrator mutation paths (`/api/pipeline/trigger`, `/api/pipeline/{id}/{intervene,resume,ci-result,nudge,release/approve}`) to the orchestrator, and everything else under `/api/` to the dashboard. This removes the need for a Python-level reverse proxy inside the dashboard.
 
 ### Infrastructure
 
@@ -344,12 +348,12 @@ Workers run as K8s Jobs spawned by the Orchestrator via `K8sJobSpawner`:
 | Aspect | Detail |
 |--------|--------|
 | **Image** | Configurable via `HADRON_WORKER_IMAGE` env var (default: `hadron-worker:latest`) |
-| **Base** | Python 3.12-slim + Node.js 20 + Git + Playwright Chromium |
+| **Base** | Python-slim + Node.js + Git (Playwright/Chromium live in the dedicated E2E runner image; exact pins in `Dockerfile.worker`) |
 | **Resources** | Requests: 512Mi / 500m CPU. Limits: 2Gi / 2 CPU |
 | **Restart** | `Never` — failures are handled by the pipeline's pause mechanism |
 | **Backoff** | `backoffLimit: 1` — single retry before permanent failure |
 | **Cleanup** | `ttlSecondsAfterFinished: 3600` — auto-deleted 1 hour after completion |
-| **Service Account** | `hadron-controller` — needs RBAC for job creation in the hadron namespace |
+| **Service Account** | `hadron-worker` — needs RBAC for ensuring/observing the E2E runner Job in the hadron namespace |
 
 ### K8s Resources Required
 
@@ -377,9 +381,14 @@ The Controller auto-detects the environment:
 2. If `HADRON_USE_K8S=true` env var is set → `K8sJobSpawner` (override for local K8s dev)
 3. Otherwise → `SubprocessJobSpawner` (local dev, inherits parent env)
 
-### E2E Testing in Worker Pods
+### E2E Testing in a Dedicated Runner Pod
 
-Worker images include Playwright with Chromium (`npx playwright install --with-deps chromium`) so E2E tests can run inside the pod without a browser sidecar. Each pod has its own network namespace, so dev servers started by E2E tests don't conflict across concurrent workers.
+E2E execution is hoisted out of the worker into a **persistent per-CR-repo runner pod** (`hadron-e2e-runner:latest`, polyglot image: Playwright base + Python + JDK + Maven + Gradle; exact pins in `Dockerfile.e2e-runner`). The worker detects E2E at Worktree Setup and calls `E2ERunnerLifecycle.ensure_running(cr_id, repo_name, stack_hint)`; the pod warms up (image pull, browser install against the target repo's pinned `@playwright/test`) in parallel with Translation and Implementation. For each E2E iteration the worker tars the worktree, pushes it through Redis alongside a structured `{setup, services, command, timeout, env}` contract, and the runner extracts, runs, streams stdout/stderr back into the shared worker log stream (prefixed `[E2E] `), and posts a JSON result. At Release (or abort) the worker pushes a sentinel that drains the queue; `ttl_seconds_after_finished=3600` on the Job is the backstop.
+
+Three properties drive the shape:
+- **Persistent-per-CR-repo, not per-request.** Review ⇄ Rework can invoke E2E `MAX_E2E_RETRIES + 1` times. Per-request pods pay ~90s cold-start each iteration; a persistent pod spawned at Worktree Setup is warm by the time Implementation finishes and reuses browsers across iterations.
+- **Persistent-per-CR-repo, not always-on.** CRs without E2E markers never spawn the runner (`ensure_running` is gated on detection), so idle cost is zero. Worker checkpoint-and-terminate during CI waits doesn't kill the runner: `ensure_running` is idempotent by label (`cr-id`, `repo-name`), so a resuming worker re-attaches.
+- **Defensive contract, not autodetect in the runner.** The worker derives the contract (trust Playwright's `webServer:` block when present; otherwise synthesize Maven/Gradle/Python service definitions with health-check URLs). The runner blindly executes setup, launches services in their own process groups, waits on `wait_url`/`wait_tcp`, runs the test command, and tears services down with SIGTERM→SIGKILL. One polyglot image avoids per-stack image matrix churn since runner RAM is roughly image-size-independent (~30 Mi idle) and most real repos are multi-stack.
 
 ### Local Development
 

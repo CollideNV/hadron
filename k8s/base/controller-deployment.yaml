@@ -14,6 +14,7 @@ data:
   HADRON_OTLP_ENDPOINT: "http://localhost:4317"
   HADRON_EMBED_SSE: "false"
   HADRON_EMBED_ORCHESTRATOR: "false"
+  HADRON_E2E_USE_K8S: "true"
 ---
 apiVersion: apps/v1
 kind: Deployment

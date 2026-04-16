@@ -23,7 +23,7 @@ hadron/
 │   ├── utils/               Shared utilities (text truncation)
 │   └── worker/              CLI entry point for pipeline execution
 │
-├── frontend/                React 19 + Vite + TypeScript dashboard
+├── frontend/                React + Vite + TypeScript dashboard
 │   ├── src/api/             API client, SSE stream, TypeScript types
 │   ├── src/components/      UI components (pipeline, agents, events, diff, etc.)
 │   ├── src/hooks/           Custom React hooks
@@ -38,8 +38,8 @@ hadron/
 
 ## Key Conventions
 
-- **Python 3.12+**, async throughout, `src/` layout
-- **psycopg v3** (not psycopg2) — sync URL uses `postgresql+psycopg://`
+- **Python**, async throughout, `src/` layout
+- **psycopg** (not psycopg2) — sync URL uses `postgresql+psycopg://`
 - **LangGraph** for pipeline orchestration with PostgreSQL checkpointing
 - **Agent tool-use loop** is manual (anthropic SDK `messages.create`, not a higher-level framework)
 - **Git ops** via `asyncio.create_subprocess_exec`
