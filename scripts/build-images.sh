@@ -14,3 +14,12 @@ docker build -t hadron-worker:latest -f "$PROJECT_DIR/Dockerfile.worker" "$PROJE
 
 echo "Done! Images built:"
 docker images | grep hadron
+
+# Load images into K8s containerd if running Docker Desktop with containerd
+if docker exec desktop-control-plane true 2>/dev/null; then
+    echo ""
+    echo "==> Loading images into K8s containerd..."
+    docker save hadron-controller:latest | docker exec -i desktop-control-plane ctr -n k8s.io images import -
+    docker save hadron-worker:latest | docker exec -i desktop-control-plane ctr -n k8s.io images import -
+    echo "Images loaded into K8s containerd."
+fi

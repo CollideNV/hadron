@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - ../../base
 patches:
+  # Reduce Postgres resources for local dev
   - target:
       kind: StatefulSet
       name: hadron-postgres
@@ -23,6 +24,7 @@ patches:
                   limits:
                     memory: "256Mi"
                     cpu: "250m"
+  # Reduce Redis resources for local dev
   - target:
       kind: Deployment
       name: hadron-redis
@@ -43,3 +45,43 @@ patches:
                   limits:
                     memory: "128Mi"
                     cpu: "100m"
+  # Reduce orchestrator resources for local dev
+  - target:
+      kind: Deployment
+      name: hadron-orchestrator
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: hadron-orchestrator
+      spec:
+        template:
+          spec:
+            containers:
+              - name: orchestrator
+                resources:
+                  requests:
+                    memory: "128Mi"
+                    cpu: "100m"
+                  limits:
+                    memory: "256Mi"
+                    cpu: "250m"
+  # Remove KEDA resources (CRDs not installed locally)
+  - target:
+      kind: ScaledObject
+      name: hadron-orchestrator
+    patch: |
+      $patch: delete
+      apiVersion: keda.sh/v1alpha1
+      kind: ScaledObject
+      metadata:
+        name: hadron-orchestrator
+  - target:
+      kind: TriggerAuthentication
+      name: hadron-redis-auth
+    patch: |
+      $patch: delete
+      apiVersion: keda.sh/v1alpha1
+      kind: TriggerAuthentication
+      metadata:
+        name: hadron-redis-auth
