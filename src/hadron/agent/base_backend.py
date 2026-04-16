@@ -215,6 +215,16 @@ class BaseAgentBackend:
                 "throttle_count": result.throttle_count, "throttle_seconds": result.throttle_seconds,
                 "cache_read_tokens": result.cache_read_tokens,
             })
+        # Count write-type tool calls so it's obvious from the logs whether the
+        # model actually produced changes or just read around.
+        write_tools = sum(
+            1 for tc in result.tool_calls
+            if tc.get("name") in {"write_file", "edit_file", "apply_patch", "str_replace"}
+        )
+        logger.info(
+            "Act phase complete: %d rounds, %d input tokens, %d write tool calls",
+            result.round_count, result.input_tokens, write_tools,
+        )
         return result
 
     # ------------------------------------------------------------------

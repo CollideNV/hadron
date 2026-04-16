@@ -161,6 +161,22 @@ def derive_stack_hint(languages: list[str], worktree_path: str) -> StackHint:
 
 _WEBSERVER_RE = re.compile(r"webServer\s*:", re.MULTILINE)
 
+_PLAYWRIGHT_CONFIG_NAMES = (
+    "playwright.config.ts",
+    "playwright.config.js",
+    "playwright.config.mjs",
+)
+
+
+def _iter_playwright_configs(worktree_path: Path) -> list[Path]:
+    """Return absolute paths of playwright.config.* files at root or one dir deep."""
+    found: list[Path] = []
+    for name in _PLAYWRIGHT_CONFIG_NAMES:
+        for cfg in [worktree_path / name, *worktree_path.glob(f"*/{name}")]:
+            if cfg.is_file():
+                found.append(cfg)
+    return found
+
 
 def _has_playwright_webserver(worktree_path: Path) -> bool:
     """Scan for a `webServer:` block in any playwright.config.* file.
@@ -168,15 +184,46 @@ def _has_playwright_webserver(worktree_path: Path) -> bool:
     If present, the target repo handles server lifecycle itself via Playwright —
     we leave `services` empty.
     """
-    for name in ("playwright.config.ts", "playwright.config.js", "playwright.config.mjs"):
-        for cfg in [worktree_path / name, *worktree_path.glob(f"*/{name}")]:
-            if cfg.is_file():
-                try:
-                    if _WEBSERVER_RE.search(cfg.read_text(errors="replace")):
-                        return True
-                except OSError:
-                    pass
+    for cfg in _iter_playwright_configs(worktree_path):
+        try:
+            if _WEBSERVER_RE.search(cfg.read_text(errors="replace")):
+                return True
+        except OSError:
+            pass
     return False
+
+
+def _playwright_install_setup(worktree_path: Path) -> list[str]:
+    """Install npm deps + match Chromium to the repo's pinned Playwright.
+
+    For every dir that has both a playwright.config.* and a package.json:
+      1. `npm ci` (or `npm install` when no lockfile) — the tarball excludes
+         `node_modules`, so /workspace/repo starts dep-less. Without deps
+         Playwright can't resolve `@playwright/test`.
+      2. `npx playwright install chromium` — runs against the *local*
+         @playwright/test just installed. No-op when the base image's
+         baked-in Chromium matches; otherwise ~20s download. This closes
+         the gap between the base image's Playwright version and whatever
+         the target repo pins in its lockfile.
+    """
+    steps: list[str] = []
+    seen_dirs: set[Path] = set()
+    for cfg in _iter_playwright_configs(worktree_path):
+        pkg_dir = cfg.parent
+        if pkg_dir in seen_dirs:
+            continue
+        if not (pkg_dir / "package.json").is_file():
+            continue
+        seen_dirs.add(pkg_dir)
+        rel = pkg_dir.relative_to(worktree_path)
+        # Prefer `npm ci` when a lockfile is present (reproducible, fails fast
+        # on drift). Fall back to `npm install` otherwise so repos without a
+        # committed lockfile still work.
+        npm_cmd = "npm ci" if (pkg_dir / "package-lock.json").is_file() else "npm install"
+        prefix = "" if str(rel) == "." else f"cd {rel} && "
+        steps.append(f"{prefix}{npm_cmd}")
+        steps.append(f"{prefix}npx playwright install chromium")
+    return steps
 
 
 def build_e2e_contract(
@@ -194,7 +241,11 @@ def build_e2e_contract(
       3. Otherwise empty — runner just runs `command` and hopes target repo handles it.
     """
     base = Path(worktree_path)
-    setup: list[str] = []
+    # node_modules is excluded from the tarball — the runner must reinstall
+    # npm deps before Playwright can resolve @playwright/test. Do this first
+    # so later setup steps (like `npx playwright install chromium`, handled
+    # by the runner) have the Playwright CLI available.
+    setup: list[str] = _playwright_install_setup(base)
     services: list[ServiceSpec] = []
 
     if not _has_playwright_webserver(base):
