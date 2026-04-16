@@ -6,7 +6,8 @@ __pycache__/
 .pytest_cache/
 adr/
 k8s/
-scripts/
+scripts/*
+!scripts/run-e2e.py
 tests/
 test-repo/
 docker-compose.yaml

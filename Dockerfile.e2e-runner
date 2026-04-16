@@ -10,11 +10,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 COPY scripts/run-e2e.py /app/run-e2e.py
-RUN pip3 install --no-cache-dir "redis>=5" "structlog>=24"
+
+# Isolated venv so we don't fight Noble's PEP 668 system-Python lock.
+RUN python3.12 -m venv /opt/hadron-venv \
+    && /opt/hadron-venv/bin/pip install --no-cache-dir "redis>=5" "structlog>=24"
+ENV PATH="/opt/hadron-venv/bin:${PATH}"
 
 # Runner pod state lives under /workspace/repo; entry script wipes and
 # repopulates it per run.
 RUN mkdir -p /workspace
 ENV HADRON_WORKSPACE_DIR=/workspace
 
-ENTRYPOINT ["python3", "/app/run-e2e.py"]
+ENTRYPOINT ["/opt/hadron-venv/bin/python", "/app/run-e2e.py"]

@@ -37,8 +37,11 @@ spec:
               memory: "512Mi"
               cpu: "500m"
           volumeMounts:
+            # pg18+ expects the mount at /var/lib/postgresql so it can lay out
+            # major-version-specific subdirs (…/18/docker/); mounting at
+            # /var/lib/postgresql/data as pg16 expected is now rejected.
             - name: postgres-data
-              mountPath: /var/lib/postgresql/data
+              mountPath: /var/lib/postgresql
   volumeClaimTemplates:
     - metadata:
         name: postgres-data
