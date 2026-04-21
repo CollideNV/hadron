@@ -40,6 +40,7 @@ def _make_cr(cr_id="cr-1", status="running", raw_cr_json=None, **kwargs):
         "external_id": None,
         "cost_usd": 0.0,
         "error": None,
+        "pause_reason": None,
         "created_at": None,
         "updated_at": None,
         "raw_cr_json": raw_cr_json or {"title": "Test CR"},

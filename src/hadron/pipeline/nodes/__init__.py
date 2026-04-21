@@ -92,6 +92,16 @@ def pipeline_node(stage: str) -> Callable:
                     for entry in result.get("stage_history", []):
                         entry.setdefault("entered_at", entered_at)
                         entry.setdefault("completed_at", completed_at)
+                    # If the node soft-paused (returned status=paused
+                    # without exception), emit an error stage_completed
+                    # event so the frontend knows which stage caused it.
+                    if result.get("status") == "paused" and result.get("error"):
+                        await ctx.event_bus.emit(PipelineEvent(
+                            cr_id=cr_id,
+                            event_type=EventType.STAGE_COMPLETED,
+                            stage=stage,
+                            data={"error": result["error"]},
+                        ))
                     return result
                 except Exception as exc:
                     record_span_error(s, exc)

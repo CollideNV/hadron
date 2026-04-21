@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
+import structlog
 from sqlalchemy import select, update
 
 from hadron.config.defaults import BRANCH_PREFIX, get_config_snapshot
@@ -15,7 +15,7 @@ from hadron.observability.retrospective import generate_retrospective
 from hadron.observability.summary import build_run_summary
 from hadron.worker.infra import WorkerInfra
 
-logger = logging.getLogger(__name__)
+logger = structlog.stdlib.get_logger(__name__)
 
 
 async def load_cr_and_mark_running(
@@ -27,7 +27,7 @@ async def load_cr_and_mark_running(
         cr_run = result.scalar_one_or_none()
 
         if cr_run is None:
-            logger.error("CR %s not found in database", cr_id)
+            logger.error("cr_not_found", cr_id=cr_id)
             return None
 
         await session.execute(
@@ -109,6 +109,7 @@ async def persist_result(
                 status=final_status,
                 cost_usd=final_cost,
                 error=final_state.get("error"),
+                pause_reason=final_state.get("pause_reason"),
             )
         )
         session.add(RunSummary(**summary_dict))
@@ -121,7 +122,7 @@ async def persist_result(
             "repo_name": repo_name,
         })
     except Exception:
-        logger.debug("Failed to publish worker failure metrics", exc_info=True)
+        logger.debug("metrics_publish_failed", phase="failure")
     await infra.event_bus.emit(PipelineEvent(
         cr_id=cr_id, event_type=EventType.RETROSPECTIVE, stage="retrospective",
         data={"repo": repo_name, "insights": retrospective},
@@ -131,7 +132,11 @@ async def persist_result(
     if final_status == "paused":
         await infra.event_bus.emit(PipelineEvent(
             cr_id=cr_id, event_type=EventType.PIPELINE_PAUSED, stage="worker",
-            data={**event_data, "error": final_state.get("error", "")},
+            data={
+                **event_data,
+                "reason": final_state.get("pause_reason", "unknown"),
+                "error": final_state.get("error", ""),
+            },
         ))
     elif final_status == "completed":
         await infra.event_bus.emit(PipelineEvent(
@@ -153,11 +158,14 @@ async def persist_result(
             "cost_usd": final_cost,
         })
     except Exception:
-        logger.debug("Failed to publish worker metrics", exc_info=True)
+        logger.debug("metrics_publish_failed", phase="completion")
 
     logger.info(
-        "Worker completed for CR %s repo %s with status=%s cost=$%.4f",
-        cr_id, repo_name, final_status, final_cost,
+        "worker_completed",
+        cr_id=cr_id,
+        repo_name=repo_name,
+        status=final_status,
+        cost_usd=final_cost,
     )
 
 

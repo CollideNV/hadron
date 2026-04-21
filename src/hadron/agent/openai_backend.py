@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
+import time
 from typing import Any
+
+import structlog
 
 from hadron.agent.base import OnAgentEvent
 from hadron.agent.base_backend import BaseAgentBackend
@@ -20,7 +22,7 @@ from hadron.config.limits import (
     MAX_TOOL_RESULT_EVENT_CHARS,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.stdlib.get_logger(__name__)
 
 _DEFAULT_OPENAI_MODEL = "gpt-4.1"
 
@@ -87,6 +89,7 @@ class OpenAIAgentBackend(BaseAgentBackend):
                         "round": round_num,
                     })
 
+            t0 = time.monotonic()
             retry_result = await call_with_retry(
                 lambda: self._client.chat.completions.create(
                     model=cfg.model,
@@ -99,13 +102,25 @@ class OpenAIAgentBackend(BaseAgentBackend):
                 transient_errors=self._transient_errors,
             )
             response = retry_result.value
+            elapsed = time.monotonic() - t0
             total_throttle_count += retry_result.throttle_count
             total_throttle_seconds += retry_result.throttle_seconds
 
             usage = response.usage
+            input_t = usage.prompt_tokens if usage else 0
+            output_t = usage.completion_tokens if usage else 0
             if usage:
-                total_input += usage.prompt_tokens
-                total_output += usage.completion_tokens
+                total_input += input_t
+                total_output += output_t
+            logger.info(
+                "llm_response",
+                phase=cfg.phase,
+                model=cfg.model,
+                round=round_num,
+                input_tokens=input_t,
+                output_tokens=output_t,
+                elapsed_s=round(elapsed, 2),
+            )
 
             choice = response.choices[0]
             msg = choice.message
@@ -129,7 +144,7 @@ class OpenAIAgentBackend(BaseAgentBackend):
                 except json.JSONDecodeError:
                     tool_input = {"raw": tc.function.arguments}
 
-                logger.info("[%s] Tool call: %s(%s)", cfg.phase, tool_name, json.dumps(tool_input)[:200])
+                logger.info("tool_call", phase=cfg.phase, tool=tool_name, input_preview=json.dumps(tool_input)[:200])
                 all_tool_calls.append({"name": tool_name, "input": tool_input})
 
                 if cfg.on_event:

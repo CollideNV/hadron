@@ -10,6 +10,17 @@ import StageDetailView from "../components/stages/StageDetailView";
 import LogsPanel from "../components/logs/LogsPanel";
 import RetrospectivePanel from "../components/retrospective/RetrospectivePanel";
 
+function pauseReasonToLabel(reason: string | null): string {
+  switch (reason) {
+    case "budget_exceeded": return "Cost budget exceeded";
+    case "circuit_breaker": return "Maximum retry loops reached";
+    case "rebase_conflict": return "Merge conflicts during rebase";
+    case "waiting_for_ci": return "Waiting for CI results";
+    case "error": return "Pipeline error";
+    default: return reason || "Unknown reason";
+  }
+}
+
 export default function CRDetailPage() {
   const { crId, stage: urlStage } = useParams<{ crId: string; stage?: string }>();
   const navigate = useNavigate();
@@ -47,11 +58,25 @@ export default function CRDetailPage() {
           currentStage={stream.currentStage}
           completedStages={stream.completedStages}
           status={displayStatus}
+          errorStage={stream.errorStage}
           selectedStage={selectedStage}
           onSelectStage={handleSelectStage}
           events={stream.events}
         />
       </div>
+
+      {/* Pause reason banner */}
+      {displayStatus === "paused" && (stream.error || stream.pauseReason) && (
+        <div className="bg-amber-950/30 border-b border-amber-800/50 px-4 py-3">
+          <div className="flex items-center gap-2 text-amber-300 text-sm font-medium">
+            <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" /></svg>
+            Pipeline Paused{stream.errorStage ? ` at ${stream.errorStage.replace(/_/g, " ")}` : ""}
+          </div>
+          <p className="text-amber-200/80 text-sm mt-1">
+            {stream.error || pauseReasonToLabel(stream.pauseReason)}
+          </p>
+        </div>
+      )}
 
       {/* Stage filter indicator (overview mode only) */}
       {selectedStage && (

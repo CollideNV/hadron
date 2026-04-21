@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import sys
 from typing import Any, Protocol
 
+import structlog
+
 from hadron.git.url import extract_repo_name
 from hadron.observability.tracing import inject_trace_context
+from hadron.pipeline.e2e_runner import workspace_pvc_name
 
-logger = logging.getLogger(__name__)
+logger = structlog.stdlib.get_logger(__name__)
 
 
 class JobSpawner(Protocol):
@@ -108,23 +110,65 @@ class K8sJobSpawner:
             k8s_config.load_kube_config()
 
         batch_v1 = client.BatchV1Api()
+        core_v1 = client.CoreV1Api()
 
         safe_name = f"{cr_id}-{repo_name}".lower().replace("_", "-")
         job_name = f"hadron-worker-{safe_name}"
+        pvc_name = workspace_pvc_name(cr_id, repo_name)
+
+        # Create shared workspace PVC (idempotent — skip if it already exists
+        # from a previous run or checkpoint-resume).
+        pvc_size = os.environ.get("HADRON_WORKSPACE_PVC_SIZE", "10Gi")
+        loop = asyncio.get_event_loop()
+        try:
+            await loop.run_in_executor(
+                None,
+                lambda: core_v1.read_namespaced_persistent_volume_claim(
+                    name=pvc_name, namespace=self._namespace,
+                ),
+            )
+        except client.ApiException as e:
+            if e.status == 404:
+                pvc = client.V1PersistentVolumeClaim(
+                    metadata=client.V1ObjectMeta(
+                        name=pvc_name,
+                        namespace=self._namespace,
+                        labels={
+                            "app": "hadron-workspace",
+                            "cr-id": cr_id,
+                            "repo-name": repo_name,
+                        },
+                    ),
+                    spec=client.V1PersistentVolumeClaimSpec(
+                        access_modes=["ReadWriteOnce"],
+                        resources=client.V1VolumeResourceRequirements(
+                            requests={"storage": pvc_size},
+                        ),
+                    ),
+                )
+                await loop.run_in_executor(
+                    None,
+                    lambda: core_v1.create_namespaced_persistent_volume_claim(
+                        namespace=self._namespace, body=pvc,
+                    ),
+                )
+                logger.info("workspace_pvc_created", pvc=pvc_name, size=pvc_size)
+            else:
+                raise
+
+        worker_labels = {"app": "hadron-worker", "cr-id": cr_id, "repo-name": repo_name}
 
         job = client.V1Job(
             metadata=client.V1ObjectMeta(
                 name=job_name,
                 namespace=self._namespace,
-                labels={"app": "hadron-worker", "cr-id": cr_id, "repo-name": repo_name},
+                labels=worker_labels,
             ),
             spec=client.V1JobSpec(
                 backoff_limit=1,
                 ttl_seconds_after_finished=3600,
                 template=client.V1PodTemplateSpec(
-                    metadata=client.V1ObjectMeta(
-                        labels={"app": "hadron-worker", "cr-id": cr_id, "repo-name": repo_name},
-                    ),
+                    metadata=client.V1ObjectMeta(labels=worker_labels),
                     spec=client.V1PodSpec(
                         restart_policy="Never",
                         service_account_name="hadron-worker",
@@ -201,19 +245,32 @@ class K8sJobSpawner:
                                     requests={"memory": "512Mi", "cpu": "500m"},
                                     limits={"memory": "2Gi", "cpu": "2"},
                                 ),
+                                volume_mounts=[
+                                    client.V1VolumeMount(
+                                        name="workspace",
+                                        mount_path="/workspace",
+                                    ),
+                                ],
                             )
+                        ],
+                        volumes=[
+                            client.V1Volume(
+                                name="workspace",
+                                persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
+                                    claim_name=pvc_name,
+                                ),
+                            ),
                         ],
                     ),
                 ),
             ),
         )
 
-        loop = asyncio.get_event_loop()
         await loop.run_in_executor(
             None,
             lambda: batch_v1.create_namespaced_job(namespace=self._namespace, body=job),
         )
-        logger.info("K8s Job %s created for CR %s", job_name, cr_id)
+        logger.info("worker_job_created", job=job_name, cr_id=cr_id, pvc=pvc_name)
 
         # Stream pod logs to Redis in the background so the UI can display them
         if self._redis:
@@ -281,8 +338,10 @@ class K8sJobSpawner:
                     # write synchronously — will be called from executor
                     pass  # yield lines to caller
 
-            # Use a simpler approach: poll logs periodically
-            last_len = 0
+            # Poll recent logs using since_seconds to bound memory usage.
+            # Each iteration fetches only logs from the last interval,
+            # preventing unbounded memory growth on long-running pods.
+            poll_interval = 3
             while True:
                 try:
                     pod = await asyncio.get_event_loop().run_in_executor(
@@ -296,20 +355,19 @@ class K8sJobSpawner:
                         lambda: v1.read_namespaced_pod_log(
                             name=pod_name,
                             namespace=self._namespace,
+                            since_seconds=poll_interval + 1,
                         ),
                     )
-                    if logs and len(logs) > last_len:
-                        new_content = logs[last_len:]
-                        await self._redis.append(redis_key, new_content)
+                    if logs:
+                        await self._redis.append(redis_key, logs)
                         await self._redis.expire(redis_key, 86400)
-                        last_len = len(logs)
 
                     if phase in ("Succeeded", "Failed"):
                         break
                 except Exception:
                     break
 
-                await asyncio.sleep(3)
+                await asyncio.sleep(poll_interval)
 
             logger.info("Log streaming finished for %s", worker_key)
         except Exception as e:

@@ -29,7 +29,8 @@ For each file, describe the specific changes (functions to add/modify, imports n
 Numbered steps in execution order. Each step should be self-contained and verifiable.
 
 ### Testing Strategy
-What tests to write or run to verify the implementation.
+What unit/integration tests to write or run to verify the implementation.
+IMPORTANT: Only plan for unit and integration tests (pytest, vitest, jest, etc.). Do NOT include E2E tests (Playwright, Cypress) in the plan — a separate dedicated stage handles those.
 
 ### Risks & Edge Cases
 Any potential issues the implementer should watch for.

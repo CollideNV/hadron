@@ -3,6 +3,8 @@ import type { PipelineEvent } from "../api/types";
 export interface EventStreamState {
   events: PipelineEvent[];
   currentStage: string;
+  errorStage: string | null;
+  pauseReason: string | null;
   completedStages: Set<string>;
   stageData: Map<string, unknown>;
   toolCalls: PipelineEvent[];
@@ -19,6 +21,8 @@ export interface EventStreamState {
 export const INITIAL_STATE: EventStreamState = {
   events: [],
   currentStage: "",
+  errorStage: null,
+  pauseReason: null,
   completedStages: new Set(),
   stageData: new Map(),
   toolCalls: [],
@@ -44,6 +48,8 @@ export function reduceEvent(
   const events = [...prev.events, event];
   let {
     currentStage,
+    errorStage,
+    pauseReason,
     toolCalls,
     agentOutputs,
     agentNudges,
@@ -73,6 +79,8 @@ export function reduceEvent(
       break;
     case "pipeline_paused":
       status = "paused";
+      pauseReason = event.data.reason || null;
+      if (event.data.error) error = event.data.error;
       break;
     case "stage_entered":
       currentStage = event.stage;
@@ -81,6 +89,9 @@ export function reduceEvent(
     case "stage_completed":
       completedStages.add(event.stage);
       stageData.set(event.stage, event.data);
+      if (event.data.error) {
+        errorStage = event.stage;
+      }
       break;
     case "agent_tool_call":
       toolCalls = [...toolCalls, event];
@@ -118,6 +129,8 @@ export function reduceEvent(
   return {
     events,
     currentStage,
+    errorStage,
+    pauseReason,
     completedStages,
     stageData,
     toolCalls,

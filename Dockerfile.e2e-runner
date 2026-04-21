@@ -13,7 +13,9 @@ COPY scripts/run-e2e.py /app/run-e2e.py
 
 # Isolated venv so we don't fight Noble's PEP 668 system-Python lock.
 RUN python3.12 -m venv /opt/hadron-venv \
-    && /opt/hadron-venv/bin/pip install --no-cache-dir "redis>=5" "structlog>=24"
+    && /opt/hadron-venv/bin/pip install --no-cache-dir \
+       "redis>=5" "structlog>=24" \
+       "fastapi>=0.115" "uvicorn[standard]>=0.34" "sse-starlette>=2"
 ENV PATH="/opt/hadron-venv/bin:${PATH}"
 
 # Runner pod state lives under /workspace/repo; entry script wipes and

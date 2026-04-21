@@ -1640,3 +1640,132 @@ class TestAgentRunResult:
         r = AgentRunResult(result=AgentResult(output="test"), conversation_key="key-123")
         assert r.conversation_key == "key-123"
         assert r.result.output == "test"
+
+
+class TestIsTransientLlmError:
+    """Tests for _is_transient_llm_error."""
+
+    def test_generic_503_in_message(self) -> None:
+        from hadron.pipeline.nodes.agent_run import _is_transient_llm_error
+        assert _is_transient_llm_error(Exception("503 UNAVAILABLE. Service overloaded"))
+
+    def test_rate_limit_in_message(self) -> None:
+        from hadron.pipeline.nodes.agent_run import _is_transient_llm_error
+        assert _is_transient_llm_error(Exception("rate limit exceeded"))
+
+    def test_non_transient_error(self) -> None:
+        from hadron.pipeline.nodes.agent_run import _is_transient_llm_error
+        assert not _is_transient_llm_error(ValueError("invalid argument"))
+
+    def test_resource_exhausted_in_message(self) -> None:
+        from hadron.pipeline.nodes.agent_run import _is_transient_llm_error
+        assert _is_transient_llm_error(Exception("resource exhausted"))
+
+
+class TestRunAgentNodeLevelRetry:
+    """Tests for node-level retry in run_agent."""
+
+    async def test_retries_on_transient_error_then_succeeds(self) -> None:
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from hadron.pipeline.nodes.agent_run import run_agent
+        from hadron.agent.base import AgentResult
+
+        ctx = MagicMock()
+        ctx.stage_models = {}
+        ctx.model = "test-model"
+        ctx.explore_model = ""
+        ctx.plan_model = ""
+        ctx.default_backend = "test"
+        ctx.redis = None
+        ctx.event_bus = AsyncMock()
+        ctx.event_bus.emit = AsyncMock()
+
+        good_result = AgentResult(output="done", cost_usd=0.01, input_tokens=100, output_tokens=50)
+        backend = AsyncMock()
+        backend.execute = AsyncMock(side_effect=[
+            Exception("503 UNAVAILABLE. High demand"),
+            good_result,
+        ])
+        ctx.backend_pool = {"test": backend}
+
+        with patch("hadron.pipeline.nodes.agent_run._NODE_LEVEL_COOLDOWN_SECONDS", 0):
+            result = await run_agent(
+                ctx,
+                role="e2e_testing",
+                system_prompt="sys",
+                user_prompt="usr",
+                cr_id="CR-test",
+                stage="e2e_testing",
+                repo_name="repo",
+                working_directory="/tmp",
+            )
+
+        assert result.result.output == "done"
+        assert backend.execute.call_count == 2
+
+    async def test_raises_after_max_retries_exhausted(self) -> None:
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from hadron.pipeline.nodes.agent_run import run_agent, _NODE_LEVEL_MAX_RETRIES
+        import pytest
+
+        ctx = MagicMock()
+        ctx.stage_models = {}
+        ctx.model = "test-model"
+        ctx.explore_model = ""
+        ctx.plan_model = ""
+        ctx.default_backend = "test"
+        ctx.redis = None
+        ctx.event_bus = AsyncMock()
+        ctx.event_bus.emit = AsyncMock()
+
+        backend = AsyncMock()
+        backend.execute = AsyncMock(side_effect=Exception("503 UNAVAILABLE"))
+        ctx.backend_pool = {"test": backend}
+
+        with patch("hadron.pipeline.nodes.agent_run._NODE_LEVEL_COOLDOWN_SECONDS", 0):
+            with pytest.raises(Exception, match="503"):
+                await run_agent(
+                    ctx,
+                    role="e2e_testing",
+                    system_prompt="sys",
+                    user_prompt="usr",
+                    cr_id="CR-test",
+                    stage="e2e_testing",
+                    repo_name="repo",
+                    working_directory="/tmp",
+                )
+
+        assert backend.execute.call_count == _NODE_LEVEL_MAX_RETRIES
+
+    async def test_non_transient_error_raises_immediately(self) -> None:
+        from unittest.mock import AsyncMock, MagicMock
+        from hadron.pipeline.nodes.agent_run import run_agent
+        import pytest
+
+        ctx = MagicMock()
+        ctx.stage_models = {}
+        ctx.model = "test-model"
+        ctx.explore_model = ""
+        ctx.plan_model = ""
+        ctx.default_backend = "test"
+        ctx.redis = None
+        ctx.event_bus = AsyncMock()
+        ctx.event_bus.emit = AsyncMock()
+
+        backend = AsyncMock()
+        backend.execute = AsyncMock(side_effect=ValueError("bad input"))
+        ctx.backend_pool = {"test": backend}
+
+        with pytest.raises(ValueError, match="bad input"):
+            await run_agent(
+                ctx,
+                role="e2e_testing",
+                system_prompt="sys",
+                user_prompt="usr",
+                cr_id="CR-test",
+                stage="e2e_testing",
+                repo_name="repo",
+                working_directory="/tmp",
+            )
+
+        assert backend.execute.call_count == 1

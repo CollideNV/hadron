@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
 import anthropic
+import structlog
+
 # InternalServerError covers 500, 503 (ServiceUnavailableError), and 529 (OverloadedError)
 _ANTHROPIC_TRANSIENT = (anthropic.RateLimitError, anthropic.InternalServerError)
 
-logger = logging.getLogger(__name__)
+logger = structlog.stdlib.get_logger(__name__)
 
 _T = TypeVar("_T")
 
@@ -104,10 +105,14 @@ async def call_with_retry(
             throttle_seconds += wait
             status = getattr(e, "status_code", None) or type(e).__name__
             logger.warning(
-                "Transient API error %s [%s] (attempt %d/%d), waiting %.0fs%s: %s",
-                status, label, attempt + 1, max_retries, wait,
-                " (from Retry-After)" if retry_after is not None else "",
-                e,
+                "api_retry",
+                status=status,
+                label=label,
+                attempt=attempt + 1,
+                max_retries=max_retries,
+                wait_s=round(wait, 1),
+                from_retry_after=retry_after is not None,
+                error=str(e),
             )
             if on_retry:
                 await on_retry(int(wait))

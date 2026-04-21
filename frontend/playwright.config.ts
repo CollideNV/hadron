@@ -18,7 +18,7 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: `HADRON_CONTROLLER_PORT=${backendPort} ../.venv/bin/python ../scripts/dummy_server.py`,
+      command: `HADRON_CONTROLLER_PORT=${backendPort} python ../scripts/dummy_server.py`,
       port: backendPort,
       reuseExistingServer: true,
     },

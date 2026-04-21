@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import os
 from typing import Any, AsyncIterator
 
@@ -28,8 +27,6 @@ from hadron.config.limits import (
 
 # Re-export for backwards compatibility (tests import these directly from claude.py)
 from hadron.agent.cost import _MODEL_COSTS, _DEFAULT_COST, register_model_cost  # noqa: F401
-
-logger = logging.getLogger(__name__)
 
 
 class ClaudeAgentBackend(BaseAgentBackend):

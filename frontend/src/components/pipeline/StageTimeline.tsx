@@ -16,6 +16,7 @@ interface StageTimelineProps {
   currentStage: string;
   completedStages: Set<string>;
   status: string;
+  errorStage?: string | null;
   selectedStage?: string | null;
   onSelectStage?: (stage: string) => void;
   events?: PipelineEvent[];
@@ -25,6 +26,7 @@ export default function StageTimeline({
   currentStage,
   completedStages,
   status,
+  errorStage,
   selectedStage,
   onSelectStage,
   events = [],
@@ -99,8 +101,9 @@ export default function StageTimeline({
                   {groupStages.map((stage, i) => {
                     const isCompleted = completedStages.has(stage);
                     const isCurrent = currentStage === stage;
-                    const isFailed = isCurrent && status === "failed";
-                    const isPaused = isCurrent && status === "paused";
+                    const isErrorStage = stage === errorStage;
+                    const isFailed = (isCurrent && status === "failed") || (isErrorStage && status === "failed");
+                    const isPaused = (isCurrent && status === "paused") || (isErrorStage && status === "paused");
                     const isSelected = selectedStage === stage;
 
                     return (

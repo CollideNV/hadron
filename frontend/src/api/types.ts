@@ -16,6 +16,7 @@ export interface CRRun {
   external_id: string | null;
   cost_usd: number;
   error: string | null;
+  pause_reason: string | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -32,7 +33,10 @@ export interface PipelineCompletedData {}
 export interface PipelineFailedData {
   error?: string;
 }
-export interface PipelinePausedData {}
+export interface PipelinePausedData {
+  reason?: string;
+  error?: string;
+}
 export interface StageEnteredData {}
 export interface StageCompletedData {
   error?: string;

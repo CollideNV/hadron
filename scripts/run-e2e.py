@@ -2,12 +2,14 @@
 """E2E runner entry point.
 
 Runs inside a dedicated K8s Job pod (image `hadron-e2e-runner:latest`),
-scoped to one (CR, repo). Loops on a Redis queue:
+scoped to one (CR, repo). The runner shares a PVC with the worker pod,
+so the worktree (with all installed deps) is directly accessible.
+
+Loops on a Redis queue:
 
   BLPOP hadron:e2e:{cr_id}:{repo_name}:queue
-    → GET  hadron:e2e:{run_id}:src      (tarball)
-    → GET  hadron:e2e:{run_id}:cmd      (JSON contract)
-    → wipe /workspace/repo, extract tarball
+    → GET  hadron:e2e:{run_id}:cmd      (JSON contract with worktree_path)
+    → cd to worktree_path on the shared PVC
     → npx playwright install chromium   (no-op on version match)
     → run setup[] sequentially
     → start services[] in their own process groups, wait for readiness
@@ -26,14 +28,11 @@ A 3600 s BLPOP timeout + K8s Job TTL back each other up for leaked pods.
 from __future__ import annotations
 
 import asyncio
-import io
 import json
 import os
-import shlex
-import shutil
 import signal
 import socket
-import tarfile
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -42,7 +41,6 @@ from typing import Any
 
 import redis.asyncio as aioredis
 
-WORKSPACE = Path(os.environ.get("HADRON_WORKSPACE_DIR", "/workspace")) / "repo"
 OUTPUT_TAIL_CHARS = 8192
 BLPOP_TIMEOUT_S = 3600
 SENTINEL = "__hadron_shutdown__"
@@ -239,51 +237,86 @@ async def _execute_run(
     run_id: str,
     logger: RedisLogger,
 ) -> None:
-    """Fetch source + contract, execute, write result."""
-    src_key = f"hadron:e2e:{run_id}:src"
+    """Fetch contract, execute in the shared worktree, write result."""
     cmd_key = f"hadron:e2e:{run_id}:cmd"
     result_key = f"hadron:e2e:{run_id}:result"
 
     await logger.info(f"=== run {run_id} starting ===")
 
-    tarball = await redis.get(src_key)
     cmd_json = await redis.get(cmd_key)
-    if tarball is None or cmd_json is None:
-        await _write_result(redis, result_key, False, "missing src or cmd key in Redis", 2, logger)
+    if cmd_json is None:
+        await _write_result(redis, result_key, False, "missing cmd key in Redis", 2, logger)
         return
 
     contract: dict[str, Any] = json.loads(cmd_json)
+    worktree_path = contract.get("worktree_path", "")
     setup: list[str] = contract.get("setup", []) or []
     services: list[dict[str, Any]] = contract.get("services", []) or []
     command: str = contract.get("command", "")
     timeout: int = int(contract.get("timeout", 600))
     extra_env: dict[str, str] = contract.get("env", {}) or {}
 
-    # Wipe and extract
-    if WORKSPACE.exists():
-        shutil.rmtree(WORKSPACE)
-    WORKSPACE.mkdir(parents=True)
-    with tarfile.open(fileobj=io.BytesIO(tarball), mode="r:gz") as tf:
-        tf.extractall(WORKSPACE)  # noqa: S202 — trusted tarball from our own worker
-    await logger.info(f"extracted {len(tarball)} bytes into {WORKSPACE}")
+    # Validate the worktree exists on the shared PVC
+    cwd = Path(worktree_path) if worktree_path else None
+    if not cwd or not cwd.is_dir():
+        await _write_result(
+            redis, result_key, False,
+            f"worktree not found on shared volume: {worktree_path}",
+            2, logger,
+        )
+        return
+
+    await logger.info(f"worktree: {cwd}")
+
+    # The worker's .venv has symlinks pointing to the worker container's
+    # Python binary (e.g. /usr/local/bin/python3.14), which doesn't exist
+    # in the runner. We patch the .venv to use the runner's python + packages.
+    #
+    # How Python venv detection works: when invoked as /path/.venv/bin/python,
+    # Python checks ../ for pyvenv.cfg. If found, it uses that venv's
+    # site-packages. We rewrite both the python symlinks AND the pyvenv.cfg
+    # to point to the runner's venv, giving us the runner's packages (fastapi,
+    # uvicorn, etc.) regardless of what path the agent hardcoded.
+    _runner_venv = Path("/opt/hadron-venv")
+    _runner_python = _runner_venv / "bin" / "python3.12"
+    _runner_bin = str(_runner_venv / "bin")
+    for venv_root in [cwd / ".venv", cwd.parent / ".venv"]:
+        venv_bin = venv_root / "bin"
+        if venv_bin.is_dir() or venv_root.exists():
+            # Rewrite pyvenv.cfg to point to runner's Python home
+            pyvenv_cfg = venv_root / "pyvenv.cfg"
+            pyvenv_cfg.write_text(
+                "home = /usr/bin\n"
+                "include-system-site-packages = false\n"
+                f"version = 3.12.3\n"
+                f"executable = /usr/bin/python3.12\n"
+                f"command = /usr/bin/python3.12 -m venv {venv_root}\n"
+            )
+            # Replace python symlinks to point to runner's python
+            venv_bin.mkdir(parents=True, exist_ok=True)
+            for name in ("python", "python3", "python3.12"):
+                p = venv_bin / name
+                p.unlink(missing_ok=True)
+                p.symlink_to(_runner_python)
+            # Symlink the runner's site-packages into this venv
+            lib_dir = venv_root / "lib" / "python3.12" / "site-packages"
+            runner_site = _runner_venv / "lib" / "python3.12" / "site-packages"
+            if runner_site.is_dir() and not lib_dir.is_symlink():
+                lib_dir.parent.mkdir(parents=True, exist_ok=True)
+                if lib_dir.exists():
+                    import shutil
+                    shutil.rmtree(lib_dir)
+                lib_dir.symlink_to(runner_site)
 
     env = {**os.environ, **extra_env}
     env.setdefault("CI", "true")
     env.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/ms-playwright")
-
-    # Refresh Chromium to match the target repo's pinned Playwright version.
-    # No-op when versions match the baked-in one (common case).
-    if (WORKSPACE / "package.json").exists():
-        rc, _ = await _run_command(
-            "npx --yes playwright install chromium",
-            WORKSPACE, env, logger, timeout=300,
-        )
-        if rc != 0:
-            await logger.info("playwright install returned non-zero; continuing anyway")
+    # Ensure runner's python is first in PATH
+    env["PATH"] = _runner_bin + os.pathsep + env.get("PATH", "")
 
     # Setup steps — fail fast
     for step in setup:
-        rc, output = await _run_command(step, WORKSPACE, env, logger, timeout=timeout)
+        rc, output = await _run_command(step, cwd, env, logger, timeout=timeout)
         if rc != 0:
             await _write_result(redis, result_key, False,
                                 f"setup step failed ({rc}): {step}\n{_tail(output)}",
@@ -294,7 +327,7 @@ async def _execute_run(
     service_procs: list[tuple[str, asyncio.subprocess.Process]] = []
     try:
         for spec in services:
-            proc = await _start_service(spec, WORKSPACE, env, logger)
+            proc = await _start_service(spec, cwd, env, logger)
             service_procs.append((spec.get("name", "service"), proc))
         for spec, (name, proc) in zip(services, service_procs):
             if not await _wait_ready(spec, logger):
@@ -303,7 +336,7 @@ async def _execute_run(
                 return
 
         # The test command
-        rc, output = await _run_command(command, WORKSPACE, env, logger, timeout=timeout)
+        rc, output = await _run_command(command, cwd, env, logger, timeout=timeout)
         await _write_result(redis, result_key, rc == 0, _tail(output), rc, logger)
     finally:
         for name, proc in reversed(service_procs):

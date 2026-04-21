@@ -7,17 +7,18 @@ environment scrubbing, and tool dispatch.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 from pathlib import Path
 from typing import Any
+
+import structlog
 
 from hadron.config.limits import MAX_COMMAND_OUTPUT_CHARS, MAX_READ_FILE_CHARS
 from hadron.security.validators import sanitize_agent_command, validate_agent_command
 from hadron.utils.text import truncate
 from hadron.utils.venv import find_worktree_venv
 
-logger = logging.getLogger(__name__)
+logger = structlog.stdlib.get_logger(__name__)
 
 # Env var prefixes / keys stripped from agent subprocess environments.
 _SCRUB_PREFIXES = ("HADRON_", "ANTHROPIC_", "OPENAI_", "GEMINI_", "GITHUB_", "AZURE_", "AWS_")
@@ -230,7 +231,7 @@ async def _execute_write_file(working_dir: str, input_data: dict[str, Any]) -> s
             venv_path = find_worktree_venv(install_dir)
             if venv_path:
                 install_cmd[0] = os.path.join(venv_path, "bin", "pip")
-        logger.info("Auto-installing deps after %s write in %s", filename, install_dir)
+        logger.info("auto_install_deps", manifest=filename, install_dir=install_dir)
         proc = await asyncio.create_subprocess_exec(
             *install_cmd,
             cwd=install_dir,

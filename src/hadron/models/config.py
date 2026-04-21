@@ -47,7 +47,11 @@ class BootstrapConfig(BaseModel):
     )
     opencode_base_url: str = Field(
         default="",
-        description="Base URL for OpenCode (local OpenAI-compatible) backend.",
+        description="Base URL for the OpenCode server (opencode serve).",
+    )
+    opencode_provider_id: str = Field(
+        default="",
+        description="OpenCode provider ID (e.g. 'ollama', 'anthropic').",
     )
     controller_host: str = Field(default="0.0.0.0")
     controller_port: int = Field(default=8000)

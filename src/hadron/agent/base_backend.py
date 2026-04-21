@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-import logging
+import time
 from typing import Any, AsyncIterator
+
+import structlog
 
 from hadron.agent.base import AgentEvent, AgentResult, AgentTask, ModelStats, OnAgentEvent
 from hadron.agent.phases import PhasePromptBuilder
@@ -11,7 +13,7 @@ from hadron.agent.tool_loop import ToolLoopConfig, _PhaseResult
 from hadron.agent.tools import make_tools
 from hadron.observability.tracing import set_span_attributes, span
 
-logger = logging.getLogger(__name__)
+logger = structlog.stdlib.get_logger(__name__)
 
 
 class _ResultAccumulator:
@@ -104,6 +106,7 @@ class BaseAgentBackend:
         if task.on_event:
             await task.on_event("phase_started", {"phase": "explore", "model": task.explore_model})
 
+        t0 = time.monotonic()
         with span("backend.explore", {"model": task.explore_model}) as s:
             result = await self._call_tool_loop(ToolLoopConfig(
             model=task.explore_model,
@@ -134,8 +137,15 @@ class BaseAgentBackend:
                 "cache_read_tokens": result.cache_read_tokens,
             })
         logger.info(
-            "Explore phase complete: %d rounds, %d input tokens, summary=%d chars",
-            result.round_count, result.input_tokens, len(result.output),
+            "phase_completed",
+            phase="explore",
+            model=task.explore_model,
+            rounds=result.round_count,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            cost_usd=result.cost_usd,
+            summary_len=len(result.output),
+            elapsed_s=round(time.monotonic() - t0, 2),
         )
         return result.output
 
@@ -143,6 +153,7 @@ class BaseAgentBackend:
         if task.on_event:
             await task.on_event("phase_started", {"phase": "plan", "model": task.plan_model})
 
+        t0 = time.monotonic()
         with span("backend.plan", {"model": task.plan_model}) as s:
             result = await self._call_plan(
                 model=task.plan_model,
@@ -168,14 +179,21 @@ class BaseAgentBackend:
                 "cache_read_tokens": result.cache_read_tokens,
             })
         logger.info(
-            "Plan phase complete: %d input tokens, plan=%d chars",
-            result.input_tokens, len(result.output),
+            "phase_completed",
+            phase="plan",
+            model=task.plan_model,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            cost_usd=result.cost_usd,
+            plan_len=len(result.output),
+            elapsed_s=round(time.monotonic() - t0, 2),
         )
         return result.output
 
     async def _run_act_phase(
         self, task: AgentTask, acc: _ResultAccumulator, exploration_summary: str, plan_text: str,
     ) -> _PhaseResult:
+        t0 = time.monotonic()
         is_multiphase = bool(task.explore_model or task.plan_model)
         if task.on_event and is_multiphase:
             await task.on_event("phase_started", {"phase": "act", "model": task.model})
@@ -222,8 +240,16 @@ class BaseAgentBackend:
             if tc.get("name") in {"write_file", "edit_file", "apply_patch", "str_replace"}
         )
         logger.info(
-            "Act phase complete: %d rounds, %d input tokens, %d write tool calls",
-            result.round_count, result.input_tokens, write_tools,
+            "phase_completed",
+            phase="act",
+            model=task.model,
+            rounds=result.round_count,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            cost_usd=result.cost_usd,
+            write_tool_calls=write_tools,
+            total_tool_calls=len(result.tool_calls),
+            elapsed_s=round(time.monotonic() - t0, 2),
         )
         return result
 

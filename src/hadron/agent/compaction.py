@@ -12,12 +12,14 @@ Two strategies for managing context growth:
 from __future__ import annotations
 
 import json
-import logging
+import time
 from typing import Any
+
+import structlog
 
 from hadron.agent.base import OnAgentEvent
 
-logger = logging.getLogger(__name__)
+logger = structlog.stdlib.get_logger(__name__)
 
 _HANDOFF_SYSTEM_PROMPT = (
     "You are creating a structured handoff document for an AI agent that will "
@@ -112,11 +114,14 @@ async def compact_messages(
         })
 
     logger.info(
-        "Compacting conversation [%s]: %d messages → summarizing %d middle messages",
-        phase, len(messages), len(middle),
+        "compaction_started",
+        phase=phase,
+        total_messages=len(messages),
+        middle_messages=len(middle),
     )
 
     try:
+        t0 = time.monotonic()
         summary_response = await client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=8192,
@@ -130,7 +135,7 @@ async def compact_messages(
         )
         summary = summary_response.content[0].text
     except Exception as e:
-        logger.warning("Compaction failed [%s], keeping original messages: %s", phase, e)
+        logger.warning("compaction_failed", phase=phase, error=str(e))
         return messages
 
     compacted = [
@@ -149,8 +154,12 @@ async def compact_messages(
         })
 
     logger.info(
-        "Compaction complete [%s]: %d → %d messages, summary=%d chars",
-        phase, len(messages), len(compacted), len(summary),
+        "compaction_completed",
+        phase=phase,
+        messages_before=len(messages),
+        messages_after=len(compacted),
+        summary_len=len(summary),
+        elapsed_s=round(time.monotonic() - t0, 2),
     )
     return compacted
 
@@ -195,12 +204,10 @@ async def context_reset(
             "messages_before": len(messages),
         })
 
-    logger.info(
-        "Context reset [%s]: generating handoff from %d messages",
-        phase, len(messages),
-    )
+    logger.info("context_reset_started", phase=phase, total_messages=len(messages))
 
     try:
+        t0 = time.monotonic()
         handoff_response = await client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=16384,
@@ -209,7 +216,7 @@ async def context_reset(
         )
         handoff = handoff_response.content[0].text
     except Exception as e:
-        logger.warning("Context reset failed [%s], falling back to compaction: %s", phase, e)
+        logger.warning("context_reset_failed", phase=phase, error=str(e))
         return await compact_messages(client, messages, phase=phase, on_event=on_event)
 
     reset_messages = [
@@ -233,7 +240,10 @@ async def context_reset(
         })
 
     logger.info(
-        "Context reset complete [%s]: %d messages → fresh start, handoff=%d chars",
-        phase, len(messages), len(handoff),
+        "context_reset_completed",
+        phase=phase,
+        messages_before=len(messages),
+        handoff_len=len(handoff),
+        elapsed_s=round(time.monotonic() - t0, 2),
     )
     return reset_messages

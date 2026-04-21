@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
-import logging
+import time
 from dataclasses import dataclass
 from typing import Any, Callable
+
+import structlog
 
 from hadron.agent.base import ModelStats, OnAgentEvent, OnToolCall
 from hadron.agent.compaction import compact_messages, context_reset
@@ -21,7 +23,7 @@ from hadron.config.limits import (
     MAX_TOOL_RESULT_EVENT_CHARS,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.stdlib.get_logger(__name__)
 
 
 @dataclass
@@ -134,6 +136,7 @@ async def run_tool_loop(
                 })
 
         with span(f"llm.{cfg.phase}", {"model": cfg.model, "round": round_num}) as llm_span:
+            t0 = time.monotonic()
             retry_result = await call_with_retry(
                 lambda: client.messages.create(
                     model=cfg.model,
@@ -146,10 +149,20 @@ async def run_tool_loop(
                 on_retry=_on_retry,
             )
             response = retry_result.value
+            elapsed = time.monotonic() - t0
             set_span_attributes(llm_span, {
                 "input_tokens": response.usage.input_tokens,
                 "output_tokens": response.usage.output_tokens,
             })
+            logger.info(
+                "llm_response",
+                phase=cfg.phase,
+                model=cfg.model,
+                round=round_num,
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
+                elapsed_s=round(elapsed, 2),
+            )
         total_throttle_count += retry_result.throttle_count
         total_throttle_seconds += retry_result.throttle_seconds
 
@@ -174,7 +187,7 @@ async def run_tool_loop(
 
         tool_results = []
         for tu in tool_uses:
-            logger.info("[%s] Tool call: %s(%s)", cfg.phase, tu.name, json.dumps(tu.input)[:200])
+            logger.info("tool_call", phase=cfg.phase, tool=tu.name, input_preview=json.dumps(tu.input)[:200])
             all_tool_calls.append({"name": tu.name, "input": tu.input})
 
             if cfg.on_event:
@@ -183,7 +196,15 @@ async def run_tool_loop(
                 })
 
             with span(f"tool.{tu.name}", {"tool": tu.name}):
+                t0_tool = time.monotonic()
                 result_text = await execute_tool(tu.name, tu.input, cfg.working_dir)
+                logger.info(
+                    "tool_result",
+                    phase=cfg.phase,
+                    tool=tu.name,
+                    result_len=len(result_text),
+                    elapsed_s=round(time.monotonic() - t0_tool, 2),
+                )
 
             if cfg.on_event:
                 await cfg.on_event("tool_result", {

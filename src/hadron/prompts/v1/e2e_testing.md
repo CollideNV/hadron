@@ -28,6 +28,7 @@ Given the change request and code changes, ensure E2E tests are up to date and p
 - Do NOT over-engineer — write the minimum tests that verify the new behaviour
 - Use existing test patterns and helpers from the codebase
 - Ensure tests are deterministic — avoid flaky assertions, use proper waits
+- Do NOT attempt to install browser binaries (e.g. `npx playwright install`, `playwright install`). If tests fail because browsers/executables are missing, this is an environment issue — report it in your summary and stop. Do not retry or attempt workarounds.
 
 ## Output
 

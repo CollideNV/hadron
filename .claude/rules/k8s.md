@@ -15,4 +15,6 @@ paths:
 - Observability: ConfigMap includes `HADRON_LOG_FORMAT=json`, `HADRON_OTEL_ENABLED`, `HADRON_OTLP_ENDPOINT`
 - Dashboard and Orchestrator pods have Prometheus scrape annotations (`/metrics` on port 8000/8002)
 - Trace context propagated orchestrator → worker via `TRACEPARENT` env var in Job spec
-- E2E Runner pods are labeled `app=hadron-e2e-runner,cr-id=<id>,repo-name=<repo>`; worker spawns at Worktree Setup, sends Redis-dispatched tarballs per iteration, sends sentinel at Release; polyglot image bundles Node (Playwright base), Python, JDK, Maven, Gradle; runtime `npx playwright install chromium` matches target repo's pinned version
+- E2E Runner pods are labeled `app=hadron-e2e-runner,cr-id=<id>,repo-name=<repo>`; worker spawns at Worktree Setup, shares a PVC with the worker (mounted at /workspace), sends Redis-dispatched contracts per iteration, sends sentinel at Release; polyglot image bundles Node (Playwright base), Python, JDK, Maven, Gradle; runtime `npx playwright install chromium` matches target repo's pinned version
+- Worker and E2E Runner share a ReadWriteOnce PVC (pod affinity ensures co-location on same node); runner accesses worktree directly — no tarball transfer
+- `hadron-job-manager` Role grants: Jobs (create/get/list/watch/delete), Pods+Logs (get/list/watch), PVCs (create/get/list/delete)

@@ -5,9 +5,12 @@ through the CR's Review ↔ Rework iterations, and is terminated by sentinel
 at the Release node. Workers communicate with the pod via Redis:
 
   hadron:e2e:{cr_id}:{repo_name}:queue   LIST — run IDs (or sentinel)
-  hadron:e2e:{run_id}:src                BYTES — gzipped worktree tarball
-  hadron:e2e:{run_id}:cmd                JSON — {setup, services, command, timeout, env}
+  hadron:e2e:{run_id}:cmd                JSON — {worktree_path, setup, services, command, timeout, env}
   hadron:e2e:{run_id}:result             JSON — {passed, output, exit_code}
+
+Worker and runner share a PVC mounted at /workspace, so the runner sees the
+worker's worktree (with all installed deps) directly on the filesystem.
+No tarball transfer or dependency reinstallation needed.
 
 The worker pod requires RBAC to create Jobs + read pod logs (granted by the
 `hadron-worker` ServiceAccount bound to the existing `hadron-job-manager`
@@ -17,8 +20,6 @@ Design notes:
 - `ensure_running` is idempotent — label lookup first, so worker pods that
   resume after a checkpoint-and-terminate cycle re-attach to the existing
   runner rather than spawning a new one.
-- `submit` streams the whole tarball through Redis (typical webapp worktree
-  is 5–50 MB gzipped — well under the 512 MB value-size ceiling).
 - `shutdown` pushes a sentinel string; the K8s Job's `ttl_seconds_after_finished`
   is the backstop if any terminal path forgets to call it.
 """
@@ -26,21 +27,20 @@ Design notes:
 from __future__ import annotations
 
 import asyncio
-import io
 import json
-import logging
 import os
 import re
-import tarfile
 import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+import structlog
+
 from hadron.observability.tracing import inject_trace_context
 
-logger = logging.getLogger(__name__)
+logger = structlog.stdlib.get_logger(__name__)
 
 # Runner loop exit signal (must match SENTINEL in scripts/run-e2e.py)
 SENTINEL = "__hadron_shutdown__"
@@ -48,27 +48,6 @@ SENTINEL = "__hadron_shutdown__"
 # Result polling — wait a bit past the per-run timeout for the runner to write back
 _RESULT_POLL_S = 2
 _RESULT_GRACE_S = 60
-
-# Tarball excludes — keep payload to source-only, runner reinstalls deps
-_TAR_EXCLUDES = {
-    ".git",
-    "node_modules",
-    ".venv",
-    "venv",
-    "__pycache__",
-    ".pytest_cache",
-    ".mypy_cache",
-    ".ruff_cache",
-    "target",
-    "build",
-    "dist",
-    ".next",
-    ".svelte-kit",
-    "test-results",
-    "playwright-report",
-    ".gradle",
-}
-
 
 StackHint = Literal["node", "node_python", "node_jvm", "node_jvm_python"]
 
@@ -101,6 +80,7 @@ class E2EContract:
     """What the worker sends to the runner for one test execution."""
 
     command: str
+    worktree_path: str = ""
     setup: list[str] = field(default_factory=list)
     services: list[ServiceSpec] = field(default_factory=list)
     timeout: int = 600
@@ -109,6 +89,7 @@ class E2EContract:
     def to_json(self) -> str:
         return json.dumps({
             "command": self.command,
+            "worktree_path": self.worktree_path,
             "setup": self.setup,
             "services": [s.to_dict() for s in self.services],
             "timeout": self.timeout,
@@ -194,17 +175,12 @@ def _has_playwright_webserver(worktree_path: Path) -> bool:
 
 
 def _playwright_install_setup(worktree_path: Path) -> list[str]:
-    """Install npm deps + match Chromium to the repo's pinned Playwright.
+    """Match Chromium to the repo's pinned Playwright version.
 
-    For every dir that has both a playwright.config.* and a package.json:
-      1. `npm ci` (or `npm install` when no lockfile) — the tarball excludes
-         `node_modules`, so /workspace/repo starts dep-less. Without deps
-         Playwright can't resolve `@playwright/test`.
-      2. `npx playwright install chromium` — runs against the *local*
-         @playwright/test just installed. No-op when the base image's
-         baked-in Chromium matches; otherwise ~20s download. This closes
-         the gap between the base image's Playwright version and whatever
-         the target repo pins in its lockfile.
+    With shared-volume architecture, node_modules are already installed by the
+    worker. We only need to ensure the runner pod's Chromium binary matches the
+    repo's pinned @playwright/test version. This is a no-op when versions match
+    the baked-in one (~common case); otherwise a ~20s download.
     """
     steps: list[str] = []
     seen_dirs: set[Path] = set()
@@ -216,12 +192,7 @@ def _playwright_install_setup(worktree_path: Path) -> list[str]:
             continue
         seen_dirs.add(pkg_dir)
         rel = pkg_dir.relative_to(worktree_path)
-        # Prefer `npm ci` when a lockfile is present (reproducible, fails fast
-        # on drift). Fall back to `npm install` otherwise so repos without a
-        # committed lockfile still work.
-        npm_cmd = "npm ci" if (pkg_dir / "package-lock.json").is_file() else "npm install"
         prefix = "" if str(rel) == "." else f"cd {rel} && "
-        steps.append(f"{prefix}{npm_cmd}")
         steps.append(f"{prefix}npx playwright install chromium")
     return steps
 
@@ -241,17 +212,13 @@ def build_e2e_contract(
       3. Otherwise empty — runner just runs `command` and hopes target repo handles it.
     """
     base = Path(worktree_path)
-    # node_modules is excluded from the tarball — the runner must reinstall
-    # npm deps before Playwright can resolve @playwright/test. Do this first
-    # so later setup steps (like `npx playwright install chromium`, handled
-    # by the runner) have the Playwright CLI available.
     setup: list[str] = _playwright_install_setup(base)
     services: list[ServiceSpec] = []
 
     if not _has_playwright_webserver(base):
         # No webServer block — worker synthesizes server startup.
         # Stack markers live at root or one directory deep (monorepo layout).
-        backend_port = env.get("HADRON_TEST_BACKEND_PORT", "8080")
+        backend_port = env.get("HADRON_TEST_BACKEND_PORT", "8000")
 
         if (base / "pom.xml").exists():
             setup.append("mvn -q -DskipTests package")
@@ -278,6 +245,7 @@ def build_e2e_contract(
 
     return E2EContract(
         command=command,
+        worktree_path=worktree_path,
         setup=setup,
         services=services,
         timeout=timeout,
@@ -294,6 +262,12 @@ def _label_safe(s: str) -> str:
     """K8s labels: lowercase alphanumeric + '-'; max 63 chars."""
     s = re.sub(r"[^A-Za-z0-9-]+", "-", s).lower().strip("-")
     return s[:63] or "x"
+
+
+def workspace_pvc_name(cr_id: str, repo_name: str) -> str:
+    """Deterministic PVC name for the shared workspace volume."""
+    safe = f"{_label_safe(cr_id)}-{_label_safe(repo_name)}"
+    return f"hadron-workspace-{safe}"[:253]
 
 
 class E2ERunnerLifecycle:
@@ -352,13 +326,14 @@ class E2ERunnerLifecycle:
     ) -> None:
         """Create the runner Job if one isn't already alive for this CR-repo."""
         if await self._job_exists(cr_id, repo_name):
-            logger.info("E2E runner for %s:%s already exists", cr_id, repo_name)
+            logger.info("e2e_runner_exists", cr_id=cr_id, repo_name=repo_name)
             return
 
         from kubernetes import client
 
         res = _RESOURCES[stack_hint]
         name = self._job_name(cr_id, repo_name)
+        pvc_name = workspace_pvc_name(cr_id, repo_name)
 
         env = [
             client.V1EnvVar(name="HADRON_CR_ID", value=cr_id),
@@ -388,12 +363,36 @@ class E2ERunnerLifecycle:
             ),
             spec=client.V1JobSpec(
                 backoff_limit=1,
-                ttl_seconds_after_finished=3600,
+                ttl_seconds_after_finished=7200,  # 2x BLPOP timeout for clean exit
                 template=client.V1PodTemplateSpec(
                     metadata=client.V1ObjectMeta(labels=labels),
                     spec=client.V1PodSpec(
                         restart_policy="Never",
                         service_account_name=self._sa,
+                        # Co-locate with the worker pod so both can mount
+                        # the same ReadWriteOnce PVC.  Use preferred (not
+                        # required) so the runner can still schedule if the
+                        # worker's node becomes unavailable (e.g. node failure
+                        # or checkpoint-resume on a different node).
+                        affinity=client.V1Affinity(
+                            pod_affinity=client.V1PodAffinity(
+                                preferred_during_scheduling_ignored_during_execution=[
+                                    client.V1WeightedPodAffinityTerm(
+                                        weight=100,
+                                        pod_affinity_term=client.V1PodAffinityTerm(
+                                            label_selector=client.V1LabelSelector(
+                                                match_labels={
+                                                    "app": "hadron-worker",
+                                                    "cr-id": _label_safe(cr_id),
+                                                    "repo-name": _label_safe(repo_name),
+                                                },
+                                            ),
+                                            topology_key="kubernetes.io/hostname",
+                                        ),
+                                    ),
+                                ],
+                            ),
+                        ),
                         containers=[
                             client.V1Container(
                                 name="runner",
@@ -411,6 +410,25 @@ class E2ERunnerLifecycle:
                                     requests=res["requests"],
                                     limits=res["limits"],
                                 ),
+                                volume_mounts=[
+                                    client.V1VolumeMount(
+                                        name="workspace",
+                                        mount_path="/workspace",
+                                    ),
+                                ],
+                                # Run as root so we can read/write files
+                                # created by the worker pod.
+                                security_context=client.V1SecurityContext(
+                                    run_as_user=0,
+                                ),
+                            ),
+                        ],
+                        volumes=[
+                            client.V1Volume(
+                                name="workspace",
+                                persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
+                                    claim_name=pvc_name,
+                                ),
                             ),
                         ],
                     ),
@@ -418,38 +436,45 @@ class E2ERunnerLifecycle:
             ),
         )
 
+        from kubernetes import client as k8s_client
+
         batch = self._k8s_batch()
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(
-            None,
-            lambda: batch.create_namespaced_job(namespace=self._namespace, body=job),
-        )
-        logger.info("E2E runner Job %s created (stack=%s)", name, stack_hint)
+        try:
+            await loop.run_in_executor(
+                None,
+                lambda: batch.create_namespaced_job(namespace=self._namespace, body=job),
+            )
+            logger.info("e2e_runner_created", job=name, stack=stack_hint, pvc=pvc_name)
+        except k8s_client.ApiException as e:
+            if e.status == 409:
+                # Race: another call created the job between our check and create
+                logger.info("e2e_runner_already_exists", job=name)
+            else:
+                raise
 
     async def submit(
         self,
         cr_id: str,
         repo_name: str,
-        worktree_path: str,
         contract: E2EContract,
     ) -> tuple[bool, str]:
-        """Push tarball + contract, enqueue run_id, wait for result."""
+        """Push contract, enqueue run_id, wait for result.
+
+        The runner accesses the worktree directly via the shared PVC —
+        no tarball transfer needed.
+        """
         if self._redis is None:
             return False, "E2ERunnerLifecycle: no redis client configured"
 
         run_id = uuid.uuid4().hex
-        src_key = f"hadron:e2e:{run_id}:src"
         cmd_key = f"hadron:e2e:{run_id}:cmd"
         result_key = f"hadron:e2e:{run_id}:result"
         queue_key = self._queue_key(cr_id, repo_name)
 
-        tarball = await asyncio.get_event_loop().run_in_executor(
-            None, _tar_worktree, worktree_path,
-        )
-        logger.info("E2E submit cr=%s repo=%s run=%s tar=%d bytes",
-                    cr_id, repo_name, run_id, len(tarball))
+        logger.info("e2e_submit", cr_id=cr_id, repo_name=repo_name, run_id=run_id,
+                    worktree_path=contract.worktree_path)
 
-        await self._redis.set(src_key, tarball, ex=3600)
         await self._redis.set(cmd_key, contract.to_json(), ex=3600)
         await self._redis.lpush(queue_key, run_id)
 
@@ -463,10 +488,8 @@ class E2ERunnerLifecycle:
                 await asyncio.sleep(_RESULT_POLL_S)
             return False, f"E2E runner timed out after {contract.timeout + _RESULT_GRACE_S}s (no result)"
         finally:
-            # Leave result_key so a second reader could see it; we delete to
-            # keep Redis clean. TTL covers any exception path.
             try:
-                await self._redis.delete(src_key, cmd_key, result_key)
+                await self._redis.delete(cmd_key, result_key)
             except Exception:
                 pass
 
@@ -477,30 +500,38 @@ class E2ERunnerLifecycle:
         queue_key = self._queue_key(cr_id, repo_name)
         try:
             await self._redis.lpush(queue_key, SENTINEL)
-            logger.info("E2E runner shutdown sentinel sent for %s:%s", cr_id, repo_name)
+            logger.info("e2e_runner_shutdown", cr_id=cr_id, repo_name=repo_name)
         except Exception as e:
-            logger.warning("E2E runner shutdown signal failed for %s:%s: %s",
-                           cr_id, repo_name, e)
+            logger.warning("e2e_runner_shutdown_failed", cr_id=cr_id, repo_name=repo_name, error=str(e))
 
+    async def cleanup_pvc(self, cr_id: str, repo_name: str) -> None:
+        """Delete the shared workspace PVC after the CR is complete.
 
-# ---------------------------------------------------------------------------
-# Tarball helper (worker → runner transport)
-# ---------------------------------------------------------------------------
+        Called from the release node (happy path) and the worker's finally
+        block (crash path). Idempotent — ignores 404.
+        """
+        from kubernetes import client, config as k8s_config
 
+        pvc_name = workspace_pvc_name(cr_id, repo_name)
+        try:
+            try:
+                k8s_config.load_incluster_config()
+            except k8s_config.ConfigException:
+                k8s_config.load_kube_config()
 
-def _tar_worktree(worktree_path: str) -> bytes:
-    """Tar + gzip a worktree, excluding build artefacts and caches."""
-    base = Path(worktree_path)
-    buf = io.BytesIO()
-
-    def _filter(info: tarfile.TarInfo) -> tarfile.TarInfo | None:
-        parts = Path(info.name).parts
-        for p in parts:
-            if p in _TAR_EXCLUDES:
-                return None
-        return info
-
-    with tarfile.open(fileobj=buf, mode="w:gz", compresslevel=6) as tf:
-        tf.add(str(base), arcname=".", filter=_filter)
-
-    return buf.getvalue()
+            v1 = client.CoreV1Api()
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None,
+                lambda: v1.delete_namespaced_persistent_volume_claim(
+                    name=pvc_name, namespace=self._namespace,
+                ),
+            )
+            logger.info("workspace_pvc_deleted", pvc=pvc_name, cr_id=cr_id, repo_name=repo_name)
+        except client.ApiException as e:
+            if e.status == 404:
+                pass  # Already gone — idempotent
+            else:
+                logger.warning("workspace_pvc_delete_failed", pvc=pvc_name, error=str(e))
+        except Exception as e:
+            logger.warning("workspace_pvc_delete_failed", pvc=pvc_name, error=str(e))

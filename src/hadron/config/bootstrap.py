@@ -17,6 +17,7 @@ _FIELD_MAP = {
     "gemini_api_key": "GEMINI_API_KEY",
     "openai_api_key": "OPENAI_API_KEY",
     "opencode_base_url": "OPENCODE_BASE_URL",
+    "opencode_provider_id": "OPENCODE_PROVIDER_ID",
     "workspace_dir": "WORKSPACE_DIR",
     "controller_host": "CONTROLLER_HOST",
     "controller_port": "CONTROLLER_LISTEN_PORT",

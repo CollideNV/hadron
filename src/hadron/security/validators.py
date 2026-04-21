@@ -145,3 +145,36 @@ def _validate_bare_test_command(cmd: str) -> bool:
     if any(c in cmd for c in _TEST_EXTRA_DANGEROUS):
         return False
     return any(p.match(cmd) for p in TEST_RUNNER_PATTERNS)
+
+
+# Patterns for E2E setup steps (build, install, browser download).
+_E2E_SETUP_PATTERNS: list[_re.Pattern[str]] = [
+    _re.compile(r"^npx\s+playwright\s+install(\s|$)"),
+    _re.compile(r"^npm\s+(ci|install)(\s|$)"),
+    _re.compile(r"^mvn\s+"),
+    _re.compile(r"^\./gradlew\s+"),
+    _re.compile(r"^gradle\s+"),
+    _re.compile(r"^(pip|pip3)\s+install(\s|$)"),
+]
+
+
+def validate_e2e_setup_command(cmd: str) -> bool:
+    """Validate an E2E setup step (build/install commands).
+
+    Less strict than test command validation: allows build tools and
+    package managers, but still blocks shell metacharacters and chaining.
+
+    Allows a single ``cd <dir> && <allowed_cmd>`` prefix for monorepo layouts.
+    """
+    inner = _strip_cd_prefix(cmd)
+    if inner is not None:
+        return _validate_bare_setup_command(inner)
+    return _validate_bare_setup_command(cmd)
+
+
+def _validate_bare_setup_command(cmd: str) -> bool:
+    if _has_dangerous_shell_chars(cmd):
+        return False
+    if _has_dangerous_shell_patterns(cmd):
+        return False
+    return any(p.match(cmd) for p in _E2E_SETUP_PATTERNS)

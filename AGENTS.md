@@ -193,7 +193,7 @@ This server is designed for:
 1. **Frontend development** — visually test components without running the full stack
 2. **E2E testing** — Playwright/Cypress tests against a deterministic, reproducible backend
 
-### E2E Testing (planned)
+### E2E Testing
 
 The dummy server enables E2E tests because:
 - **Deterministic** — same events in same order every time
@@ -201,7 +201,13 @@ The dummy server enables E2E tests because:
 - **No infrastructure** — single Python process, no Docker needed
 - **Full coverage** — all stages, feedback loops, review rounds, diff events
 
-E2E tests should go in `frontend/e2e/` using Playwright. The test setup starts the dummy server as a fixture, then runs the Vite dev server (or a production build) against it.
+E2E tests live in `frontend/e2e/` using Playwright. The config is `frontend/playwright.config.ts`.
+
+**IMPORTANT — Do NOT modify `playwright.config.ts` webServer settings:**
+- The backend uses `python ../scripts/dummy_server.py` — bare `python` (no venv path)
+- The frontend uses `npx vite --port ${frontendPort}`
+- These commands work in both local dev and the CI/E2E runner pod
+- Never change `python` to a venv-specific path like `.venv/bin/python` — it breaks E2E in CI
 
 ## API Contract
 

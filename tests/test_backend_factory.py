@@ -53,20 +53,16 @@ class TestFactoryOpenAI:
 
 class TestFactoryOpenCode:
     def test_creates_opencode_backend(self) -> None:
-        mock_openai = MagicMock()
-        mock_openai.RateLimitError = type("RateLimitError", (Exception,), {})
-        mock_openai.InternalServerError = type("InternalServerError", (Exception,), {})
-        mock_openai.AsyncOpenAI.return_value = MagicMock()
-        sys.modules["openai"] = mock_openai
-        sys.modules.pop("hadron.agent.openai_backend", None)
+        mock_opencode_ai = MagicMock()
+        mock_opencode_ai.AsyncOpencode.return_value = MagicMock()
+        sys.modules["opencode_ai"] = mock_opencode_ai
         sys.modules.pop("hadron.agent.opencode", None)
         try:
             backend = create_agent_backend("opencode")
             from hadron.agent.opencode import OpenCodeAgentBackend
             assert isinstance(backend, OpenCodeAgentBackend)
         finally:
-            sys.modules.pop("openai", None)
-            sys.modules.pop("hadron.agent.openai_backend", None)
+            sys.modules.pop("opencode_ai", None)
             sys.modules.pop("hadron.agent.opencode", None)
 
 

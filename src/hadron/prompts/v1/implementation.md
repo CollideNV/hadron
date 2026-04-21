@@ -22,6 +22,7 @@ Given the verified Gherkin specifications and change request, implement the requ
 ## Important
 
 - Do NOT run git commands (add, commit, push) — the pipeline handles version control automatically
+- Do NOT run E2E tests (Playwright, Cypress, etc.) — a dedicated E2E stage runs those later in a pod with browsers pre-installed. Only run unit and integration tests (pytest, vitest, jest, etc.)
 - Do NOT over-engineer — write the minimum code that satisfies the specs
 - Use descriptive test names that explain the expected behaviour
 - Include necessary imports and fixtures

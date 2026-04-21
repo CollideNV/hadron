@@ -101,6 +101,7 @@ async def get_pipeline_status(
             "external_id": cr_run.external_id,
             "cost_usd": cr_run.cost_usd,
             "error": cr_run.error,
+            "pause_reason": cr_run.pause_reason,
             "created_at": cr_run.created_at.isoformat() if cr_run.created_at else None,
             "updated_at": cr_run.updated_at.isoformat() if cr_run.updated_at else None,
             "repos": [

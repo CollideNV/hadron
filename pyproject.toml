@@ -30,8 +30,8 @@ dependencies = [
 [project.optional-dependencies]
 gemini = ["google-genai>=1.68"]
 openai = ["openai>=2.30"]
-opencode = ["openai>=2.30"]
-all-backends = ["google-genai>=1.68", "openai>=2.30"]
+opencode = ["opencode-ai>=0.1.0a36"]
+all-backends = ["google-genai>=1.68", "openai>=2.30", "opencode-ai>=0.1.0a36"]
 observability = [
     "prometheus-client>=0.25",
     "opentelemetry-api>=1.41",

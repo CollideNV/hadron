@@ -110,7 +110,7 @@ async def _execute_pipeline(
         checkpointer = await checkpointer_cm.__aenter__()
         await checkpointer.setup()
     except (ImportError, ConnectionError, OSError, ValueError) as e:
-        logger.warning("Failed to set up postgres checkpointer, running without: %s", e)
+        logger.warning("checkpointer_setup_failed", error=str(e))
         checkpointer = None
 
     try:
@@ -154,7 +154,7 @@ async def _execute_pipeline(
         raw_overrides = await infra.redis_client.getdel(override_key)
         if raw_overrides:
             state_overrides = json.loads(raw_overrides)
-            logger.info("Resume overrides for CR %s: %s", cr_id, state_overrides)
+            logger.info("resume_overrides_loaded", cr_id=cr_id, keys=list(state_overrides.keys()))
 
         # Determine whether a checkpoint already exists for this CR
         has_checkpoint = False
@@ -163,19 +163,19 @@ async def _execute_pipeline(
                 saved = await compiled.aget_state(runnable_config)
                 has_checkpoint = saved.values is not None and len(saved.values) > 0
             except (ValueError, OSError, RuntimeError) as e:
-                logger.debug("Failed to check for existing checkpoint: %s", e)
+                logger.debug("checkpoint_check_failed", error=str(e))
                 has_checkpoint = False
 
         if has_checkpoint and state_overrides:
             resume_node = pick_resume_node(state_overrides)
             state_overrides.setdefault("status", "running")
-            logger.info("Resuming CR %s from node '%s' with overrides", cr_id, resume_node)
+            logger.info("pipeline_resuming", cr_id=cr_id, node=resume_node, with_overrides=True)
             await compiled.aupdate_state(runnable_config, state_overrides, as_node=resume_node)
             return await compiled.ainvoke(None, config=runnable_config)
         elif has_checkpoint:
             # Find the last real node before "paused" to resume from its outgoing edge
             resume_from = _find_resume_node(saved.values)
-            logger.info("Resuming CR %s from node '%s'", cr_id, resume_from)
+            logger.info("pipeline_resuming", cr_id=cr_id, node=resume_from, with_overrides=False)
             await compiled.aupdate_state(
                 runnable_config, {"status": "running", "error": None}, as_node=resume_from,
             )
@@ -185,6 +185,17 @@ async def _execute_pipeline(
                 initial_state.update(state_overrides)
             return await compiled.ainvoke(initial_state, config=runnable_config)
     finally:
+        # Best-effort E2E runner shutdown + PVC cleanup — covers worker crash
+        # paths that never reach the release node's shutdown call.
+        if e2e_lifecycle:
+            try:
+                await e2e_lifecycle.shutdown(cr_id, repo_name)
+            except Exception:
+                pass
+            try:
+                await e2e_lifecycle.cleanup_pvc(cr_id, repo_name)
+            except Exception:
+                pass
         if checkpointer_cm:
             await checkpointer_cm.__aexit__(None, None, None)
 
@@ -284,6 +295,23 @@ async def run_worker(cr_id: str, repo_url: str, repo_name: str = "", default_bra
         if snapshot_opencode_url:
             cfg.opencode_base_url = snapshot_opencode_url
 
+        # Start opencode serve subprocess if this CR uses an opencode backend.
+        _needs_opencode = (
+            getattr(cfg, "agent_backend", "claude") == "opencode"
+            or pipeline_snapshot.get("opencode_base_url")
+        )
+        if _needs_opencode:
+            from hadron.worker.infra import OpencodeServeManager
+
+            opencode_mgr = OpencodeServeManager(
+                cwd=cfg.workspace_dir,
+                provider_id=getattr(cfg, "opencode_provider_id", "") or "ollama",
+                provider_base_url=cfg.opencode_base_url or "http://host.docker.internal:11434/v1",
+            )
+            serve_url = await opencode_mgr.start()
+            cfg.opencode_base_url = serve_url
+            infra.opencode_serve = opencode_mgr
+
         # Build PromptComposer from snapshot if available
         snapshot_prompts = config_snapshot.get("prompts")
         if snapshot_prompts:
@@ -298,16 +326,15 @@ async def run_worker(cr_id: str, repo_url: str, repo_name: str = "", default_bra
         await persist_result(infra, cr_id, repo_name, final_state)
 
     except KeyboardInterrupt:
-        logger.info("Worker interrupted for CR %s repo %s", cr_id, repo_name)
+        logger.info("worker_interrupted", cr_id=cr_id, repo_name=repo_name)
         raise
     except (RuntimeError, OSError, ConnectionError, ValueError, TypeError) as e:
-        logger.exception("Worker failed for CR %s repo %s", cr_id, repo_name)
+        logger.exception("worker_failed", cr_id=cr_id, repo_name=repo_name, error=str(e))
         await persist_failure(infra, cr_id, repo_name, e)
     except Exception as e:
         # Catch-all for truly unexpected errors (e.g. third-party library bugs).
-        # Log at critical level so these stand out and can be narrowed further.
-        logger.critical("Unexpected worker failure for CR %s repo %s: %s", cr_id, repo_name, type(e).__name__)
-        logger.exception("Full traceback:")
+        logger.critical("worker_unexpected_failure", cr_id=cr_id, repo_name=repo_name, error_type=type(e).__name__)
+        logger.exception("worker_traceback")
         await persist_failure(infra, cr_id, repo_name, e)
     finally:
         logging.getLogger().removeHandler(redis_handler)

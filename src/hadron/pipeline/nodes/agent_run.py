@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any
+
+import structlog
 
 from hadron.agent.base import AgentCallbacks, AgentResult, AgentTask, OnAgentEvent, OnToolCall, PhaseConfig
 from hadron.events.bus import EventBus
@@ -18,6 +21,43 @@ from hadron.pipeline.nodes.callbacks import (
     store_conversation,
 )
 from hadron.pipeline.nodes.context import NodeContext
+
+logger = structlog.stdlib.get_logger(__name__)
+
+# Node-level retry for transient LLM outages (after per-call retries are exhausted)
+_NODE_LEVEL_MAX_RETRIES = 3
+_NODE_LEVEL_COOLDOWN_SECONDS = 120  # 2 minutes between node-level retries
+
+
+def _is_transient_llm_error(exc: Exception) -> bool:
+    """Check if an exception is a transient LLM API error worth retrying at node level."""
+    # Anthropic transient errors
+    try:
+        import anthropic
+        if isinstance(exc, (anthropic.RateLimitError, anthropic.InternalServerError)):
+            return True
+    except ImportError:
+        pass
+
+    # Google/Gemini transient errors
+    try:
+        from google.api_core import exceptions as google_exc
+        if isinstance(exc, (google_exc.ResourceExhausted, google_exc.ServiceUnavailable, google_exc.InternalServerError)):
+            return True
+    except ImportError:
+        pass
+
+    # OpenAI transient errors
+    try:
+        import openai
+        if isinstance(exc, (openai.RateLimitError, openai.InternalServerError)):
+            return True
+    except ImportError:
+        pass
+
+    # Catch-all: check error message for common transient patterns
+    msg = str(exc).lower()
+    return any(kw in msg for kw in ("503", "unavailable", "overloaded", "rate limit", "resource exhausted"))
 
 
 @dataclass
@@ -99,7 +139,38 @@ async def run_agent(
         ))
 
     with span(f"agent.{role}", {"role": role, "stage": stage, "model": effective_model}) as s:
-        result = await effective_backend.execute(task)
+        # Node-level retry: if per-call retries are exhausted (transient LLM
+        # outage persists beyond ~8 min), cool down and retry the entire agent
+        # execution. This prevents pipeline pauses on temporary API outages.
+        last_exc: Exception | None = None
+        for node_attempt in range(_NODE_LEVEL_MAX_RETRIES):
+            try:
+                result = await effective_backend.execute(task)
+                break
+            except Exception as exc:
+                if not _is_transient_llm_error(exc) or node_attempt == _NODE_LEVEL_MAX_RETRIES - 1:
+                    raise
+                last_exc = exc
+                logger.warning(
+                    "agent_node_retry",
+                    stage=stage,
+                    role=role,
+                    attempt=node_attempt + 1,
+                    max_retries=_NODE_LEVEL_MAX_RETRIES,
+                    cooldown_s=_NODE_LEVEL_COOLDOWN_SECONDS,
+                    error=str(exc)[:200],
+                )
+                await ctx.event_bus.emit(PipelineEvent(
+                    cr_id=cr_id, event_type=EventType.AGENT_STARTED, stage=stage,
+                    data={
+                        "role": role, "repo": repo_name,
+                        "retry": True,
+                        "attempt": node_attempt + 1,
+                        "reason": f"Transient LLM error, retrying in {_NODE_LEVEL_COOLDOWN_SECONDS}s",
+                    },
+                ))
+                await asyncio.sleep(_NODE_LEVEL_COOLDOWN_SECONDS)
+
         set_span_attributes(s, {
             "input_tokens": result.input_tokens,
             "output_tokens": result.output_tokens,

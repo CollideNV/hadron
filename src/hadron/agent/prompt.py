@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 import functools
-import logging
 from pathlib import Path
 
 from hadron.utils.text import truncate
-
-logger = logging.getLogger(__name__)
 
 _PROMPTS_DIR = Path(__file__).parent.parent / "prompts" / "v1"
 _MAX_STATIC_CONTEXT_CHARS = 48_000  # ~12k tokens
